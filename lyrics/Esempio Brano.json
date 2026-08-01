@@ -1,0 +1,8 @@
+{
+  "lines": [
+    { "beat": 0,  "chords": "Am  F", "text": "Prima riga del testo, parte con la canzone" },
+    { "beat": 8,  "chords": "C  G",  "text": "Seconda riga, alla battuta 3" },
+    { "beat": 16, "chords": "Am  F", "text": "Ritornello che si illumina a tempo" },
+    { "beat": 24, "text": "I 'beat' sono in quarti dall'inizio del brano" }
+  ]
+}

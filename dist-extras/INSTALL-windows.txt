@@ -1,0 +1,23 @@
+OPENSET - INSTALLAZIONE SU WINDOWS
+==================================
+
+1. Estrai lo zip openset-win-x64.zip in una cartella, es. C:\OpenSet
+
+2. Avvia il server con doppio click su openset.exe
+   (oppure da Prompt dei comandi:  cd C:\OpenSet  poi  openset.exe)
+   Se Windows Defender chiede conferma: "Ulteriori informazioni" -> "Esegui comunque".
+   Consenti l'accesso alla rete privata quando richiesto dal firewall.
+
+3. Installa il Remote Script in Ableton Live 12:
+   - Copia la cartella  remote-script\OpenSet  in:
+     C:\Users\<tuo nome>\Documents\Ableton\User Library\Remote Scripts\
+     (crea "Remote Scripts" se non esiste)
+   - Riavvia Live -> Opzioni -> Preferenze -> Link/Tempo/MIDI ->
+     Superficie di controllo -> OpenSet (Input/Output: Nessuno)
+
+4. Apri nel browser l'indirizzo mostrato nella finestra del server
+   (http://localhost:39080 sul PC, http://<ip>:39080 dal telefono
+   sulla stessa rete Wi-Fi).
+
+Progetto offline senza Live:
+     openset.exe "C:\percorso\Progetto Project\Progetto.als"

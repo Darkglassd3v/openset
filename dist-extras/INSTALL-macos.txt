@@ -1,0 +1,26 @@
+OPENSET - INSTALLAZIONE SU MACOS
+================================
+
+1. Scarica ed estrai lo zip:
+     unzip openset-macos-x64.zip -d openset && cd openset
+
+2. Rimuovi la quarantena e avvia (binario non firmato):
+     chmod +x openset
+     xattr -d com.apple.quarantine openset 2>/dev/null || true
+     ./openset
+
+3. Installa il Remote Script in Ableton Live 12:
+   - Copia la cartella  remote-script/OpenSet  in:
+     ~/Music/Ableton/User Library/Remote Scripts/
+     (crea "Remote Scripts" se non esiste)
+   - Riavvia Live -> Live -> Impostazioni -> Link/Tempo/MIDI ->
+     Superficie di controllo -> OpenSet (Input/Output: Nessuno)
+
+4. Apri nel browser l'indirizzo mostrato nel terminale
+   (http://localhost:39080 sul Mac, http://<ip>:39080 dal telefono
+   sulla stessa rete Wi-Fi).
+
+Progetto offline senza Live:
+     ./openset "/percorso/Progetto Project/Progetto.als"
+
+Nota Apple Silicon (M1/M2/M3): il binario x64 funziona via Rosetta.

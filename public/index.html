@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>OpenSet</title>
+<style>
+  /* ---- tokens: stage console. Everything must be readable at 2 m in the dark. ---- */
+  :root {
+    --ink: #0d0d11;          /* stage black */
+    --panel: #16161c;
+    --line: #26262e;
+    --text: #e8e6df;
+    --dim: #8b8a84;
+    --amber: #ffb03a;        /* desk VU amber: playhead, active states */
+    --amber-dim: #6b4a1a;
+    --red: #ff5347;          /* stop / live */
+    --green: #57d97a;        /* play */
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--ink);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    display: flex; flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; }
+
+  /* ---- header: connection + beat clock ---- */
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--line);
+    flex-shrink: 0;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
+  .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
+  .conn { font-size: 12px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+  .clock {
+    margin-left: auto;
+    font-size: 26px; font-weight: 600; letter-spacing: .04em;
+    color: var(--amber);
+    font-variant-numeric: tabular-nums;
+  }
+  .bpm { font-size: 12px; color: var(--dim); text-align: right; }
+
+  /* ---- tabs ---- */
+  nav { display: flex; border-bottom: 1px solid var(--line); flex-shrink: 0; }
+  nav button {
+    flex: 1; padding: 12px 0; background: none; border: none;
+    color: var(--dim); font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
+    border-bottom: 2px solid transparent; cursor: pointer;
+  }
+  nav button.active { color: var(--amber); border-bottom-color: var(--amber); }
+
+  main { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
+
+  /* ---- setlist ---- */
+  .song {
+    border-bottom: 1px solid var(--line);
+  }
+  .song-head {
+    display: flex; align-items: center; gap: 14px;
+    padding: 16px 14px; cursor: pointer;
+  }
+  .song-time { font-size: 12px; color: var(--dim); width: 52px; flex-shrink: 0; }
+  .song-name { font-size: 19px; font-weight: 600; flex: 1; }
+  .song.current { background: var(--panel); }
+  .song.current .song-name { color: var(--amber); }
+  .song.current .marker { color: var(--amber); }
+  .marker { color: var(--line); font-size: 18px; width: 14px; }
+  .sections { padding: 0 14px 10px 80px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px;
+    background: none; color: var(--text); font-size: 14px; cursor: pointer;
+  }
+  .chip.playing { border-color: var(--amber); color: var(--amber); }
+  .chip:active { background: var(--amber-dim); }
+  .loop-chip { border-style: dashed; color: var(--dim); }
+  .empty {
+    padding: 48px 24px; text-align: center; color: var(--dim); line-height: 1.6; font-size: 14px;
+  }
+  .empty b { color: var(--text); }
+
+  /* ---- lyrics ---- */
+  #lyrics { padding: 24px 18px 40vh; }
+  .lyr-line {
+    font-size: 26px; line-height: 1.5; font-weight: 500;
+    color: var(--dim); padding: 6px 0; transition: color .15s;
+  }
+  .lyr-line.now { color: var(--text); }
+  .lyr-line.now::before { content: "▸ "; color: var(--amber); }
+  .lyr-chord { font-size: 15px; color: var(--amber); font-weight: 600; }
+  .lyr-none { color: var(--dim); text-align: center; padding-top: 60px; font-size: 15px; }
+
+  /* ---- signature: song progress strip ---- */
+  .strip {
+    height: 44px; flex-shrink: 0; position: relative;
+    border-top: 1px solid var(--line);
+    display: flex; background: var(--panel);
+  }
+  .strip-seg {
+    height: 100%; border-right: 1px solid var(--ink);
+    position: relative; overflow: hidden; min-width: 2px;
+  }
+  .strip-seg span {
+    position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
+    font-size: 10px; color: var(--dim); white-space: nowrap; letter-spacing: .05em;
+    pointer-events: none;
+  }
+  .strip-seg.cur span { color: var(--amber); }
+  .playhead {
+    position: absolute; top: 0; bottom: 0; width: 2px;
+    background: var(--amber); box-shadow: 0 0 10px var(--amber);
+    pointer-events: none; transition: left .1s linear;
+  }
+
+  /* ---- transport ---- */
+  footer {
+    display: flex; gap: 1px; background: var(--line); flex-shrink: 0;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  footer button {
+    flex: 1; padding: 20px 0; border: none; background: var(--panel);
+    color: var(--text); font-size: 15px; font-weight: 600; letter-spacing: .1em;
+    text-transform: uppercase; cursor: pointer;
+  }
+  footer button:active { background: var(--line); }
+  #btnPlay.playing { color: var(--green); }
+  #btnStop { color: var(--red); }
+  #btnLoop.on { color: var(--amber); }
+
+  @media (min-width: 700px) {
+    .song-name { font-size: 22px; }
+    .lyr-line { font-size: 34px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .playhead, .lyr-line { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="dot" id="dot"></div>
+  <div class="conn" id="connLabel">In attesa di Live…</div>
+  <div>
+    <div class="clock mono" id="clock">1.1.1</div>
+    <div class="bpm mono" id="bpm">— BPM</div>
+  </div>
+</header>
+
+<nav>
+  <button class="active" data-view="setlist">Scaletta</button>
+  <button data-view="lyrics">Testi</button>
+</nav>
+
+<main>
+  <div id="setlist"></div>
+  <div id="lyrics" hidden></div>
+</main>
+
+<div class="strip" id="strip"><div class="playhead" id="playhead"></div></div>
+
+<footer>
+  <button id="btnPrev">‹ Prec</button>
+  <button id="btnPlay">Play</button>
+  <button id="btnStop">Stop</button>
+  <button id="btnLoop">Loop</button>
+  <button id="btnNext">Succ ›</button>
+</footer>
+
+<script>
+"use strict";
+let state = null;
+let lyricsCache = {};   // songName -> lyrics json or null
+let currentSongIdx = -1;
+let view = "setlist";
+
+// ---------- websocket ----------
+let ws;
+function connect() {
+  ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host);
+  ws.onmessage = (e) => {
+    const msg = JSON.parse(e.data);
+    if (msg.type === "state") { state = msg.state; render(); }
+  };
+  ws.onclose = () => setTimeout(connect, 1500);
+}
+connect();
+function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+// ---------- helpers ----------
+const $ = (id) => document.getElementById(id);
+function beatToBBT(beat, num) {
+  const bar = Math.floor(beat / num) + 1;
+  const b = Math.floor(beat % num) + 1;
+  const t = Math.floor((beat % 1) * 4) + 1;
+  return bar + "." + b + "." + t;
+}
+function songIndexAt(beat) {
+  if (!state) return -1;
+  const s = state.setlist;
+  for (let i = s.length - 1; i >= 0; i--) if (beat >= s[i].time - 0.001) return i;
+  return -1;
+}
+
+// ---------- render ----------
+function render() {
+  if (!state) return;
+  const connected = state.connected;
+  $("dot").className = "dot" + (connected ? " on" : "");
+  $("connLabel").textContent = connected
+    ? "Live connesso"
+    : state.offline ? "Offline · progetto .als" : "In attesa di Live…";
+  $("clock").textContent = beatToBBT(state.beat || 0, state.sig_num || 4);
+  $("bpm").textContent = Math.round(state.tempo || 0) + " BPM";
+  $("btnPlay").textContent = state.is_playing ? "Playing" : "Play";
+  $("btnPlay").classList.toggle("playing", !!state.is_playing);
+  $("btnLoop").classList.toggle("on", !!state.loop);
+
+  const idx = songIndexAt(state.beat || 0);
+  if (idx !== currentSongIdx) { currentSongIdx = idx; renderSetlist(); loadLyrics(); }
+  else updateHighlights();
+  renderStrip();
+  if (view === "lyrics") renderLyrics();
+}
+
+function renderSetlist() {
+  const el = $("setlist");
+  if (!state.setlist.length) {
+    el.innerHTML = `<div class="empty">Nessun brano trovato.<br><br>
+      Aggiungi dei <b>locator</b> nella timeline di Ableton:<br>
+      "<b>Nome brano</b>" inizia un brano · "<b>&gt;Sezione</b>" segna una sezione ·
+      "<b>=END</b>" chiude il brano.</div>`;
+    return;
+  }
+  el.innerHTML = state.setlist.map((song, i) => `
+    <div class="song ${i === currentSongIdx ? "current" : ""}" data-i="${i}">
+      <div class="song-head" onclick="jumpSong(${i})">
+        <div class="marker">${i === currentSongIdx ? "▶" : "•"}</div>
+        <div class="song-name">${esc(song.name)}</div>
+        <div class="song-time mono">${beatToBBT(song.time, state.sig_num)}</div>
+      </div>
+      ${song.sections.length ? `<div class="sections">
+        ${song.sections.map((sec, j) => `
+          <button class="chip" data-song="${i}" data-sec="${j}"
+                  onclick="jumpTo(${sec.time})">${esc(sec.name)}</button>`).join("")}
+        <button class="chip loop-chip" onclick="loopSong(${i})">⟲ loop brano</button>
+      </div>` : ""}
+    </div>`).join("");
+}
+
+function updateHighlights() {
+  document.querySelectorAll(".song").forEach((el) => {
+    const i = +el.dataset.i;
+    el.classList.toggle("current", i === currentSongIdx);
+    el.querySelector(".marker").textContent = i === currentSongIdx ? "▶" : "•";
+  });
+  // highlight current section chip
+  document.querySelectorAll(".chip[data-sec]").forEach((c) => c.classList.remove("playing"));
+  const song = state.setlist[currentSongIdx];
+  if (song) {
+    let cur = -1;
+    song.sections.forEach((sec, j) => { if (state.beat >= sec.time - 0.001) cur = j; });
+    if (cur >= 0) {
+      const chip = document.querySelector(`.chip[data-song="${currentSongIdx}"][data-sec="${cur}"]`);
+      if (chip) chip.classList.add("playing");
+    }
+  }
+}
+
+function renderStrip() {
+  const strip = $("strip");
+  const list = state.setlist;
+  strip.querySelectorAll(".strip-seg").forEach((n) => n.remove());
+  if (!list.length) return;
+  const total = (list[list.length - 1].end ?? list[list.length - 1].time + 32) - list[0].time;
+  const t0 = list[0].time;
+  list.forEach((song, i) => {
+    const end = song.end ?? (i + 1 < list.length ? list[i + 1].time : song.time + 32);
+    const seg = document.createElement("div");
+    seg.className = "strip-seg" + (i === currentSongIdx ? " cur" : "");
+    seg.style.width = ((end - song.time) / total * 100) + "%";
+    seg.innerHTML = "<span>" + esc(song.name) + "</span>";
+    seg.onclick = () => jumpSong(i);
+    strip.insertBefore(seg, $("playhead"));
+  });
+  const pos = Math.min(1, Math.max(0, ((state.beat || 0) - t0) / total));
+  $("playhead").style.left = (pos * 100) + "%";
+}
+
+// ---------- lyrics ----------
+async function loadLyrics() {
+  const song = state.setlist[currentSongIdx];
+  if (!song) return;
+  if (!(song.name in lyricsCache)) {
+    try {
+      const r = await fetch("/api/lyrics/" + encodeURIComponent(song.name));
+      lyricsCache[song.name] = r.ok ? await r.json() : null;
+    } catch { lyricsCache[song.name] = null; }
+  }
+  renderLyrics();
+}
+
+function renderLyrics() {
+  const el = $("lyrics");
+  const song = state.setlist[currentSongIdx];
+  if (!song) { el.innerHTML = '<div class="lyr-none">Nessun brano attivo</div>'; return; }
+  const lyr = lyricsCache[song.name];
+  if (!lyr) {
+    el.innerHTML = `<div class="lyr-none">Nessun testo per «${esc(song.name)}».<br>
+      Crea <span class="mono">lyrics/${esc(song.name)}.json</span></div>`;
+    return;
+  }
+  const rel = (state.beat || 0) - song.time; // beats from song start
+  let nowIdx = -1;
+  lyr.lines.forEach((l, i) => { if (rel >= l.beat - 0.001) nowIdx = i; });
+  el.innerHTML = lyr.lines.map((l, i) => `
+    <div class="lyr-line ${i === nowIdx ? "now" : ""}" id="lyr-${i}">
+      ${l.chords ? `<div class="lyr-chord mono">${esc(l.chords)}</div>` : ""}
+      ${esc(l.text)}
+    </div>`).join("");
+  const now = $("lyr-" + nowIdx);
+  if (now) now.scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+// ---------- actions ----------
+function jumpTo(time) { send({ cmd: "jump", time }); }
+function jumpSong(i) { const s = state.setlist[i]; if (s) jumpTo(s.time); }
+function loopSong(i) {
+  const s = state.setlist[i];
+  if (!s || s.end == null) return;
+  send({ cmd: "loopSection", start: s.time, length: s.end - s.time });
+}
+function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+$("btnPlay").onclick = () => send({ cmd: state && state.is_playing ? "continue" : "play" });
+$("btnStop").onclick = () => send({ cmd: "stop" });
+$("btnLoop").onclick = () => {
+  if (state && state.loop) send({ cmd: "loopOff" });
+  else loopSong(currentSongIdx);
+};
+$("btnPrev").onclick = () => jumpSong(Math.max(0, currentSongIdx - 1));
+$("btnNext").onclick = () => jumpSong(Math.min((state?.setlist.length || 1) - 1, currentSongIdx + 1));
+
+document.querySelectorAll("nav button").forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll("nav button").forEach((x) => x.classList.remove("active"));
+    b.classList.add("active");
+    view = b.dataset.view;
+    $("setlist").hidden = view !== "setlist";
+    $("lyrics").hidden = view !== "lyrics";
+    if (view === "lyrics") renderLyrics();
+  };
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Read version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Build standalone binaries (pkg)
+        run: |
+          npx pkg@5.8.1 . \
+            --targets node18-linux-x64,node18-win-x64,node18-macos-x64 \
+            --out-path build
+
+      - name: Assemble platform packages
+        run: |
+          VERSION="${{ steps.ver.outputs.version }}"
+          mkdir -p release
+          for PLAT in linux win macos; do
+            DIR="pkg-$PLAT"
+            mkdir -p "$DIR"
+            # binary
+            if [ "$PLAT" = "win" ]; then
+              cp build/openset-win.exe "$DIR/openset.exe"
+            else
+              cp "build/openset-$PLAT" "$DIR/openset"
+              chmod +x "$DIR/openset"
+            fi
+            # app assets
+            cp -r public lyrics remote-script README.md "$DIR/"
+            # required files: openset_<version>, version file, install guide
+            echo "$VERSION" > "$DIR/openset_$VERSION"
+            echo "$VERSION" > "$DIR/VERSION.txt"
+            case "$PLAT" in
+              linux)  cp dist-extras/INSTALL-linux.txt   "$DIR/INSTALL.txt" ;;
+              win)    cp dist-extras/INSTALL-windows.txt "$DIR/INSTALL.txt" ;;
+              macos)  cp dist-extras/INSTALL-macos.txt   "$DIR/INSTALL.txt" ;;
+            esac
+            ( cd "$DIR" && zip -rq "../release/openset-$PLAT-x64.zip" . )
+          done
+          ls -la release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OpenSet ${{ github.ref_name }}
+          files: release/*.zip
+          body: |
+            ## OpenSet ${{ github.ref_name }}
+
+            Controller di scaletta open-source per Ableton Live. Ogni zip contiene
+            l'eseguibile standalone (Node.js incluso), il Remote Script per Live,
+            l'interfaccia web, `openset_${{ steps.ver.outputs.version }}`,
+            `VERSION.txt` e la guida `INSTALL.txt` per la piattaforma.
+
+            ### Linux
+            ```bash
+            unzip openset-linux-x64.zip -d openset && cd openset
+            chmod +x openset
+            ./openset
+            ```
+
+            ### Windows
+            ```powershell
+            Expand-Archive openset-win-x64.zip -DestinationPath C:\OpenSet
+            cd C:\OpenSet
+            .\openset.exe
+            ```
+            Poi copia `remote-script\OpenSet` in
+            `Documenti\Ableton\User Library\Remote Scripts\` e attiva OpenSet
+            nelle preferenze Link/Tempo/MIDI di Live.
+
+            ### macOS
+            ```bash
+            unzip openset-macos-x64.zip -d openset && cd openset
+            chmod +x openset
+            xattr -d com.apple.quarantine openset 2>/dev/null || true
+            ./openset
+            ```
+            Poi copia `remote-script/OpenSet` in
+            `~/Music/Ableton/User Library/Remote Scripts/` e attiva OpenSet
+            nelle preferenze Link/Tempo/MIDI di Live.
+
+            Interfaccia web: `http://localhost:39080` (o `http://<ip>:39080` dal telefono sulla stessa Wi-Fi).
