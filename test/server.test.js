@@ -478,6 +478,28 @@ test("tempo map of a loaded .als is used offline and for the same set in Live", 
   assert.equal((await c.state()).setlist[0].seconds, 16);
 });
 
+test("spoken cues are broadcast over WebSocket", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  t.after(() => ws.close());
+  const got = [];
+  ws.on("message", (b) => {
+    const m = JSON.parse(b);
+    if (m.type === "cue") got.push(m.cue);
+  });
+  await new Promise((r) => ws.once("open", r));
+  await c.at(7.5, { is_playing: true });
+  await c.at(8.5, { is_playing: true }); // Chorus (16) is two bars away
+  await c.at(11.5, { is_playing: true });
+  await c.at(12.5, { is_playing: true });
+  await waitFor(() => got.length >= 2, "cues");
+  assert.deepEqual(got, [
+    { type: "section", text: "Chorus", at: 16 },
+    { type: "count", n: 1, at: 16 },
+  ]);
+});
+
 test("real song durations are learned from playback and can be cleared", async (t) => {
   let now = 0;
   const c = await setup(t, { now: () => now });

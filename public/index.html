@@ -281,6 +281,12 @@
     <label><input type="checkbox" data-set="autoplay"> Avvia la riproduzione quando salti a un brano o a una sezione</label>
     <label>Quantizzazione dei salti in Live <select id="quant"></select></label>
 
+    <h2>Questo dispositivo</h2>
+    <label><input type="checkbox" data-dev="speakSongs"> Annuncia a voce il brano corrente</label>
+    <label><input type="checkbox" data-dev="speakSections"> Annuncia la sezione successiva (due battute prima)</label>
+    <label><input type="checkbox" data-dev="speakCount"> Count-in parlato sull'ultima battuta</label>
+    <p id="speechStatus">La voce esce da questo dispositivo (cuffie, in-ear, mixer).</p>
+
     <h2>MIDI</h2>
     <p id="midiStatus">Web MIDI funziona in Chrome o Edge aperti su questo computer (http://localhost:39080). Tieni aperta una sola scheda.</p>
     <ul id="midiList"></ul>
@@ -334,6 +340,10 @@ const KEYS = {
 
 let state = null;
 let view = store.get("openset.view", "setlist");
+// per-device preferences (voice, stage layout), kept in this browser only
+const device = (() => { try { return JSON.parse(store.get("openset.device", "{}")) || {}; } catch { return {}; } })();
+const saveDevice = () => store.set("openset.device", JSON.stringify(device));
+let spokenSong = null;
 let editing = false;
 let listKey = "";
 let stripKey = "";
@@ -348,6 +358,7 @@ function connect() {
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === "state") { state = msg.state; render(); }
+    if (msg.type === "cue") onCue(msg.cue);
   };
   ws.onclose = () => setTimeout(connect, 1500);
 }
@@ -387,6 +398,10 @@ function render() {
   $("btnPlay").classList.toggle("playing", !!st.is_playing);
   $("btnLoop").classList.toggle("on", !!st.loop);
   $("btnLoop").setAttribute("aria-pressed", String(!!st.loop));
+
+  const song = curSong();
+  if (song && spokenSong !== null && song.name !== spokenSong && device.speakSongs) speak(song.name, true);
+  spokenSong = song ? song.name : "";
 
   renderSetlist();
   renderStrip();
@@ -645,6 +660,20 @@ function renderLyrics() {
   }
 }
 
+// ---------- spoken cues (Web Speech API, on this device) ----------
+function speak(text, interrupt) {
+  if (!("speechSynthesis" in window) || !text) return;
+  if (interrupt) speechSynthesis.cancel(); // a late word is worse than a skipped one
+  const u = new SpeechSynthesisUtterance(String(text));
+  u.lang = "it-IT";
+  u.rate = 1.15;
+  speechSynthesis.speak(u);
+}
+function onCue(cue) {
+  if (cue.type === "section" && device.speakSections) speak(cue.text, true);
+  if (cue.type === "count" && device.speakCount) speak(String(cue.n), true);
+}
+
 // ---------- settings ----------
 $("quant").innerHTML = QUANT.map((q, i) => `<option value="${i}">${q}</option>`).join("");
 $("midiAction").innerHTML = Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
@@ -654,6 +683,8 @@ function renderSettings() {
   if (key === settingsKey) return;
   settingsKey = key;
   document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });
+  document.querySelectorAll("[data-dev]").forEach((c) => { c.checked = !!device[c.dataset.dev]; });
+  if (!("speechSynthesis" in window)) $("speechStatus").textContent = "Sintesi vocale non disponibile in questo browser.";
   $("quant").value = String(state.quant);
   $("midiStatus").textContent = midi.status;
   $("midiLearn").textContent = midi.learning ? "Premi un tasto MIDI… (annulla)" : "Impara da MIDI";
@@ -665,6 +696,11 @@ function renderSettings() {
 }
 $("settings").addEventListener("change", (e) => {
   if (e.target.dataset.set) send({ cmd: "settings", [e.target.dataset.set]: e.target.checked });
+  if (e.target.dataset.dev) {
+    device[e.target.dataset.dev] = e.target.checked;
+    saveDevice();
+    if (e.target.checked && e.target.dataset.dev.startsWith("speak")) speak("ok", true); // unlocks audio on iOS
+  }
   if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
 });
 $("midiList").addEventListener("click", (e) => {

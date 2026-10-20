@@ -20,6 +20,7 @@ const L = require("./lyrics");
 const osc = require("./osc");
 const { createEngine } = require("./engine");
 const { createMeter } = require("./meter");
+const { cuesBetween } = require("./cues");
 
 // When packaged as a standalone executable (pkg), public/ and lyrics/
 // live next to the binary; from source they live in the project root.
@@ -256,6 +257,16 @@ function start(opts = {}) {
         prefs.measured = { ...prefs.measured, [measured.name]: measured.seconds };
         savePrefs();
       }
+      for (const cue of cuesBetween({
+        songs: list,
+        prevBeat,
+        beat: liveState.beat,
+        playing: liveState.is_playing,
+        loop: liveState.loop,
+        sigNum: liveState.sig_num,
+        sigDen: liveState.sig_den,
+      }))
+        broadcast({ type: "cue", cue });
     }
     changed(list);
   }

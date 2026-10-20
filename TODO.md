@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [ ] D — annunci vocali e count-in
+- [ ] E — ridondanza a due computer (stile AbleNet)
 
 ## Da fare
 
@@ -23,8 +23,8 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 - [x] GREEN: `server/meter.js` + `songSeconds`: `[m:ss]` > mappa tempo > misurata > stima; pulsante "Azzera durate misurate"
 
 ### D — Annunci vocali e count-in
-- [ ] RED `test/cues.test.js`: annuncio sezione/brano una battuta prima, numeri del count-in sull'ultima battuta, nessun annuncio su seek
-- [ ] GREEN `server/cues.js`, evento WS `cue`; UI: sintesi vocale del browser, attivabile per dispositivo
+- [x] RED `test/cues.test.js`: annuncio sezione/brano una battuta prima, numeri del count-in sull'ultima battuta, nessun annuncio su seek
+- [x] GREEN `server/cues.js`, evento WS `cue`; UI: sintesi vocale del browser, attivabile per dispositivo
 
 ### E — Ridondanza a due computer (stile AbleNet)
 - [ ] RED: server principale inoltra i comandi ai peer (`/api/cmd` con `mirror`), niente loop, stato dei peer (online, scarto di beat)
