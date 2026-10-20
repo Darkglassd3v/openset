@@ -28,7 +28,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 - [x] Release CI: `OpenSet-<versione>-Guida.pdf` dentro ogni zip e tra gli asset; la CI su Ubuntu genera la guida a ogni push
 
 ### Q — Dispositivi
-- [ ] RED: nome per dispositivo, lista dei connessi (nome, IP, pagina, latenza), OSC `/devices/showPage|reload|lock|unlock|toggleLock` con `all`, nome/tag o IP
+- [x] RED: nome per dispositivo, lista dei connessi (nome, IP, pagina, latenza), OSC `/devices/showPage|reload|lock|unlock|toggleLock` con `all`, nome/tag o IP
 - [ ] GREEN: server + UI (nome, vista predefinita, blocco ⇧L, lista in Opzioni)
 
 ### R — Modalità di salto e coda

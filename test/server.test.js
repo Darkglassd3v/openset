@@ -171,6 +171,52 @@ test("WebSocket: initial state and commands", async (t) => {
   assert.equal((await c.state()).connected, true);
 });
 
+// a browser tab: collects the messages sent to it
+async function browser(c, t, info) {
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  const msgs = [];
+  ws.on("message", (b) => msgs.push(JSON.parse(b)));
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  if (info) ws.send(JSON.stringify({ type: "device", ...info }));
+  return { ws, msgs, got: (want) => waitFor(() => msgs.find((m) => m.type === "device" && Object.keys(want).every((k) => m[k] === want[k])), JSON.stringify(want)) };
+}
+
+test("devices: connected browsers are listed with name, address, view and lock", async (t) => {
+  const c = await setup(t);
+  const tab = await browser(c, t, { name: "ipad-1, stage", view: "stage", locked: false });
+  const listed = await waitFor(async () => (await c.state()).devices.find((d) => d.name === "ipad-1, stage"), "device");
+  assert.deepEqual({ ...listed, latencyMs: undefined }, { name: "ipad-1, stage", ip: "127.0.0.1", view: "stage", locked: false, latencyMs: undefined });
+  tab.ws.send(JSON.stringify({ type: "device", name: 7, view: "nowhere" })); // ignored
+  tab.ws.close();
+  await waitFor(async () => (await c.state()).devices.length === 0, "device gone");
+});
+
+test("devices: OSC and HTTP commands reach the matching browsers only", async (t) => {
+  const c = await setup(t);
+  const ipad = await browser(c, t, { name: "ipad-1, stage" });
+  const phone = await browser(c, t, { name: "phone" });
+  await waitFor(async () => (await c.state()).devices.filter((d) => d.name).length === 2, "two devices");
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+
+  sendOsc(c, osc, "/devices/showPage", ["stage", "performance"]);
+  await ipad.got({ action: "showPage", view: "stage" });
+  sendOsc(c, osc, "/devices/toggleLock", ["all"]);
+  await ipad.got({ action: "lock", locked: true });
+  await phone.got({ action: "lock", locked: true });
+  await waitFor(async () => (await c.state()).devices.every((d) => d.locked), "all locked");
+  sendOsc(c, osc, "/devices/unlock", ["PHONE"]);
+  await phone.got({ action: "lock", locked: false });
+  sendOsc(c, osc, "/devices/reload", ["127.0.0.1"]);
+  await ipad.got({ action: "reload" });
+  await phone.got({ action: "reload" });
+  assert.ok(!phone.msgs.some((m) => m.action === "showPage"), "phone kept its page");
+  assert.equal((await c.cmd({ cmd: "devices", action: "lock", devices: "phone" })).status, 200);
+  assert.equal((await c.cmd({ cmd: "devices", action: "showPage", devices: "all", page: "canvas" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "devices", action: "explode", devices: "all" })).status, 400);
+});
+
 test("HTTP /api/cmd: valid, invalid and unknown commands", async (t) => {
   const c = await setup(t);
   await c.connect();
