@@ -21,9 +21,11 @@ const osc = require("./osc");
 const { createEngine } = require("./engine");
 const { createMeter } = require("./meter");
 const { cuesBetween } = require("./cues");
+const { dataDir, migrateData } = require("./datadir");
 
-// When packaged as a standalone executable (pkg), public/ and lyrics/
+// When packaged as a standalone executable (pkg), public/ and remote-script/
 // live next to the binary; from source they live in the project root.
+// The CLI keeps the user's data in dataDir() instead (see datadir.js).
 const BASE_DIR = process.pkg
   ? path.dirname(process.execPath)
   : path.join(__dirname, "..");
@@ -98,6 +100,7 @@ function cleanMidi(list) {
 function start(opts = {}) {
   const cfg = {
     baseDir: BASE_DIR,
+    publicDir: path.join(BASE_DIR, "public"),
     httpPort: HTTP_PORT,
     udpPort: UDP_LISTEN,
     liveHost: UDP_LIVE.host,
@@ -670,7 +673,7 @@ function start(opts = {}) {
   const app = express();
   app.use(express.json({ limit: "1mb" }));
 
-  // optional user stylesheet next to the binary, like AbleSet's custom styles
+  // optional user stylesheet in the data folder, like AbleSet's custom styles
   app.get("/custom.css", (_req, res) => {
     let css = "";
     try {
@@ -678,7 +681,7 @@ function start(opts = {}) {
     } catch {}
     res.type("text/css").send(css);
   });
-  app.use(express.static(cfg.publicDir || path.join(cfg.baseDir, "public")));
+  app.use(express.static(cfg.publicDir));
 
   app.get("/api/state", (_req, res) => res.json(publicState()));
 
@@ -813,7 +816,15 @@ function printAddresses(port) {
 }
 
 if (require.main === module) {
-  start({ alsFile: process.argv[2] }).catch((e) => {
+  let dir = dataDir(process.platform, process.env, os.homedir());
+  try {
+    for (const name of migrateData(BASE_DIR, dir)) console.log(`[data] copied ${name} to ${dir}`);
+  } catch (e) {
+    console.error(`[data] cannot use ${dir}: ${e.message}`);
+    dir = BASE_DIR;
+  }
+  console.log(`[data] ${dir}`);
+  start({ baseDir: dir, alsFile: process.argv[2] }).catch((e) => {
     const hint = e.code === "EADDRINUSE" ? " (is OpenSet or AbleSet already running?)" : "";
     console.error(`OpenSet cannot start: ${e.message}${hint}`);
     process.exit(1);

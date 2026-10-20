@@ -7,13 +7,13 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] I — cartella dati utente (fase GREEN)
+- [ ] J — apertura automatica del browser (fase RED)
 
 ## Da fare
 
 ### I — Cartella dati utente stabile
 - [x] RED `test/datadir.test.js`: `dataDir(platform, env, home)` per macOS/Windows/Linux; migrazione che copia `setlist.json`, `lyrics/`, `custom.css` dalla cartella del programma senza sovrascrivere
-- [ ] GREEN `server/datadir.js`; il CLI usa la cartella dati come `baseDir`, `public/` resta nella cartella del programma
+- [x] GREEN `server/datadir.js`; il CLI usa la cartella dati come `baseDir`, `public/` resta nella cartella del programma
 
 ### J — Apertura automatica del browser
 - [ ] RED `test/launch.test.js`: `openCommand(platform, url)`, `parseArgs(argv)` (`--no-open`, `.als` primo argomento non-flag), errori dello spawn ignorati
