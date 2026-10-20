@@ -7,7 +7,9 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] M — release CI v0.4.0 (4 zip)
+- [x] v0.4.0 rilasciata (run 39495893233): 4 zip con `remote-script/OpenSet`, nessun `__pycache__`
+
+(nessun lavoro in corso: prossima proposta in "Da decidere", v0.5.0)
 
 ## Da fare
 
