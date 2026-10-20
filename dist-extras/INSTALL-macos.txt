@@ -20,8 +20,12 @@ OPENSET - INSTALLAZIONE SU MACOS
      Superficie di controllo -> OpenSet (Input/Output: Nessuno)
 
 4. Apri nel browser l'indirizzo mostrato nel terminale
-   (http://localhost:39080 sul Mac, http://<ip>:39080 dal telefono
-   sulla stessa rete Wi-Fi).
+   (http://localhost:39080 sul Mac, http://<nome-mac>.local:39080 dal
+   telefono sulla stessa rete Wi-Fi).
+
+5. iPad/iPhone come app: in Safari apri http://<nome-mac>.local:39080,
+   poi Condividi -> Aggiungi alla schermata Home. Per lo schermo sempre
+   acceso: Impostazioni -> Schermo e luminosita' -> Blocco automatico -> Mai.
 
 Progetto offline senza Live:
      ./openset "/percorso/Progetto Project/Progetto.als"

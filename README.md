@@ -86,6 +86,18 @@ controllo remoto, oppure carica un progetto offline:
 Se all'avvio compare `OpenSet cannot start: ... (is OpenSet or AbleSet already running?)`,
 c'è già un'istanza aperta (o AbleSet, che usa la stessa porta 39051): chiudila.
 
+### iPad e iPhone come app
+
+Il server gira sul computer con Live; iPad e iPhone si collegano dalla stessa rete.
+
+1. In Safari apri l'indirizzo stampato all'avvio. Su Mac usa
+   `http://<nome-mac>.local:39080`, che resta valido anche se cambia l'IP.
+2. Condividi → **Aggiungi alla schermata Home**: OpenSet si apre a schermo
+   intero con la sua icona.
+3. Via Wi-Fi il browser non può tenere acceso lo schermo (serve HTTPS):
+   imposta Impostazioni → Schermo e luminosità → **Blocco automatico → Mai**.
+   Sul computer (`localhost`) lo schermo resta acceso da solo.
+
 ### Da sorgente (tutte le piattaforme, richiede Node.js ≥ 18)
 
 ```bash
