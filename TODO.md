@@ -1,17 +1,51 @@
-# TODO — OpenSet v0.4.0
+# TODO — OpenSet v0.5.0
 
 Stato aggiornato a ogni passo. Protocollo di ripresa: vedi `CLAUDE.md`.
 Obiettivo utente: coprire il più possibile le funzioni di AbleSet; Windows e
-macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
-"facile da avviare e da usare su tutti i dispositivi" (confermati il 2026-10-20).
+macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
+2026-10-20 (confermati il 2026-10-21) + regola degli artefatti di rilascio
+(versione nei nomi e all'avvio, guida PDF, icona ovunque).
 
 ## In corso
 
-- [x] v0.4.0 rilasciata (run 39495893233): 4 zip con `remote-script/OpenSet`, nessun `__pycache__`
-
-(nessun lavoro in corso: prossima proposta in "Da decidere", v0.5.0)
+- [ ] v0.5.0 — inizio da N (versione visibile e nomi con versione)
 
 ## Da fare
+
+### N — Versione visibile e nomi con la versione
+- [ ] RED: `/api/state` espone `version`; il CLI stampa `OpenSet <versione>` all'avvio
+- [ ] GREEN: banner nel terminale, versione e logo nell'intestazione della UI
+- [ ] Release CI: zip `openset-<versione>-<piattaforma>.zip`, programma `openset-<versione>[.exe]`; smoke test CI aggiornato
+
+### O — Icona ovunque
+- [ ] Logo nell'intestazione della UI (favicon e PWA già fatti)
+- [ ] Icona del `.exe` Windows (risorsa PE, verificata dallo smoke test su Windows)
+- [ ] macOS: `OpenSet <versione>.app` con icona `.icns` che apre il Terminale con il server (dove possibile)
+
+### P — Guida PDF e CHANGELOG
+- [ ] RED `test/guide.test.js`: la guida generata contiene versione, novità della versione da `CHANGELOG.md` e i passi per Windows, macOS, Linux, iPad/iPhone
+- [ ] GREEN `scripts/build-guide.js` (HTML con logo → PDF con Chrome headless), `CHANGELOG.md`
+- [ ] Release CI: `OpenSet-<versione>-Guida.pdf` dentro ogni zip e tra gli asset
+
+### Q — Dispositivi
+- [ ] RED: nome per dispositivo, lista dei connessi (nome, IP, pagina, latenza), OSC `/devices/showPage|reload|lock|unlock|toggleLock` con `all`, nome/tag o IP
+- [ ] GREEN: server + UI (nome, vista predefinita, blocco ⇧L, lista in Opzioni)
+
+### R — Modalità di salto e coda
+- [ ] RED: modalità Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale; coda; J, ⇧J, C; OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`
+- [ ] GREEN: motore + UI (brano/sezione in coda evidenziati, pulsanti salta / salta subito)
+
+### S — Editor della scaletta
+- [ ] RED: ricerca approssimata (iniziali, parti del titolo, tag), scaletta come testo (`{nota}`, `-- stop --`) e incolla con match approssimato, backup a ogni sovrascrittura
+- [ ] GREEN: trascinamento anche touch, Ctrl+K, copia/incolla, backup
+
+### T — Safe Mode e password
+- [ ] RED: Safe Mode (niente salti di brano dalla UI mentre suona, conferma prima della pausa; MIDI/OSC esclusi); password facoltativa (hash scrypt) per modificare e comandare dalla web app, `localhost` sempre ammesso
+- [ ] GREEN: server + UI
+
+### U — Rilascio v0.5.0
+- [ ] Copertura, README, report TDD, guida PDF, CI verde, tag `v0.5.0`, asset verificati
+
 
 ### I — Cartella dati utente stabile
 - [x] RED `test/datadir.test.js`: `dataDir(platform, env, home)` per macOS/Windows/Linux; migrazione che copia `setlist.json`, `lyrics/`, `custom.css` dalla cartella del programma senza sovrascrivere
@@ -49,16 +83,6 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 - Brani aggiunti a mano dalla UI, senza progetto Live (solo scaletta e testi):
   proposto il 2026-10-20, in attesa di risposta.
-- v0.5.0 (resto della proposta del 2026-10-20 da https://ableset.com/docs/all,
-  in attesa di conferma):
-  1. Nome per dispositivo, vista predefinita, blocco (⇧L), lista dei dispositivi
-     connessi; OSC `/devices/showPage` e `/devices/reload`.
-  2. Modalità di salto (Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale)
-     con coda: J, ⇧J, C.
-  3. Editor: trascinamento anche touch, Ctrl+K per cercare (iniziali, tag),
-     copia/incolla della scaletta come testo con match approssimato, backup a
-     ogni sovrascrittura.
-  4. Safe Mode e password facoltativa per le modifiche.
 
 ## Rimandato
 

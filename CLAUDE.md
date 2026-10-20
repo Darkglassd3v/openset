@@ -46,9 +46,23 @@ Ogni modifica segue questo ordine. Non saltare passi.
 3. **`ecc:test-coverage`**: `npm run coverage`, obiettivo ≥ 80% sulle righe di
    `server/`. Aggiungi test per i buchi. Commit `test: ...`.
 4. **Build**: binario pkg locale, avvio e verifica `GET /api/state`.
-5. **Rilascio**: aggiorna `VERSION` e `package.json`, README, report TDD in
+5. **Rilascio**: aggiorna `VERSION` e `package.json`, README, `CHANGELOG.md`
+   (sezione della versione con tutte le novità), report TDD in
    `docs/releases/<versione>/`, commit, `git push origin main`, poi tag
    `v<versione>` e `git push origin v<versione>` (il tag avvia la release CI).
+
+## Regole per gli artefatti di rilascio (regola dell'utente, 2026-10-21)
+
+- Il nome di ogni zip contiene la versione: `openset-<versione>-<piattaforma>.zip`.
+- Anche il programma dentro lo zip ha la versione nel nome:
+  `openset-<versione>` / `openset-<versione>.exe`.
+- La versione è sempre visibile all'avvio: nel terminale e nella UI.
+- Ogni rilascio include un PDF generato (`OpenSet-<versione>-Guida.pdf`) con la
+  presentazione dell'app e i comandi passo passo per ogni piattaforma; per un
+  aggiornamento elenca tutte le novità (da `CHANGELOG.md`). Va dentro ogni zip e
+  tra gli asset della release.
+- L'icona dell'app (`docs/brand/logo.svg`) va ovunque si può: UI, favicon, PDF,
+  icona del programma.
 
 ## Regole per i commit
 
