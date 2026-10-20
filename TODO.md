@@ -8,14 +8,14 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — N: nomi degli artefatti con la versione (release CI)
+- [ ] v0.5.0 — O: icona del `.exe` Windows e `.app` macOS
 
 ## Da fare
 
 ### N — Versione visibile e nomi con la versione
 - [x] RED: `/api/state` espone `version`; il CLI stampa `OpenSet <versione>` all'avvio
 - [x] GREEN: banner nel terminale, versione e logo nell'intestazione della UI
-- [ ] Release CI: zip `openset-<versione>-<piattaforma>.zip`, programma `openset-<versione>[.exe]`; smoke test CI aggiornato
+- [x] Release CI: zip `openset-<versione>-<piattaforma>.zip`, programma `openset-<versione>[.exe]`; smoke test CI aggiornato (versione nello stato e prima riga del log); `INSTALL-*.txt` con `{{VERSION}}`; la release fallisce se il tag non coincide con `package.json`
 
 ### O — Icona ovunque
 - [x] Logo nell'intestazione della UI (favicon e PWA già fatti), fatto in N

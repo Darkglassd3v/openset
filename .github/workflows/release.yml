@@ -43,9 +43,12 @@ jobs:
           npm test
           python3 -m unittest discover -s remote-script/tests
 
-      - name: Read version
+      - name: Read version (the tag must match package.json)
         id: ver
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          test "$VERSION" = "$(node -p "require('./package.json').version")"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Build standalone binaries (pkg)
         run: |
@@ -65,13 +68,14 @@ jobs:
           for PLAT in linux-x64 win-x64 macos-x64 macos-arm64; do
             DIR="pkg-$PLAT"
             mkdir -p "$DIR"
-            # binary
+            # binary, named with the version
+            BIN="$DIR/openset-$VERSION"
             case "$PLAT" in
-              win-x64)     cp build/openset-win.exe "$DIR/openset.exe" ;;
-              macos-arm64) cp build/openset-macos-arm64 "$DIR/openset" ;;
-              *)           cp "build/openset-${PLAT%-x64}" "$DIR/openset" ;;
+              win-x64)     BIN="$BIN.exe"; cp build/openset-win.exe "$BIN" ;;
+              macos-arm64) cp build/openset-macos-arm64 "$BIN" ;;
+              *)           cp "build/openset-${PLAT%-x64}" "$BIN" ;;
             esac
-            [ -f "$DIR/openset" ] && chmod +x "$DIR/openset"
+            chmod +x "$BIN"
             # app assets (the Remote Script without its tests)
             cp -r public lyrics remote-script README.md "$DIR/"
             rm -rf "$DIR/remote-script/tests"
@@ -80,11 +84,12 @@ jobs:
             echo "$VERSION" > "$DIR/openset_$VERSION"
             echo "$VERSION" > "$DIR/VERSION.txt"
             case "$PLAT" in
-              linux-*) cp dist-extras/INSTALL-linux.txt   "$DIR/INSTALL.txt" ;;
-              win-*)   cp dist-extras/INSTALL-windows.txt "$DIR/INSTALL.txt" ;;
-              macos-*) cp dist-extras/INSTALL-macos.txt   "$DIR/INSTALL.txt" ;;
+              linux-*) GUIDE=dist-extras/INSTALL-linux.txt ;;
+              win-*)   GUIDE=dist-extras/INSTALL-windows.txt ;;
+              macos-*) GUIDE=dist-extras/INSTALL-macos.txt ;;
             esac
-            ( cd "$DIR" && zip -rq "../release/openset-$PLAT.zip" . )
+            sed "s/{{VERSION}}/$VERSION/g" "$GUIDE" > "$DIR/INSTALL.txt"
+            ( cd "$DIR" && zip -rq "../release/openset-$VERSION-$PLAT.zip" . )
           done
           ls -la release/
 
@@ -94,40 +99,35 @@ jobs:
           name: OpenSet ${{ github.ref_name }}
           files: release/*.zip
           body: |
-            ## OpenSet ${{ github.ref_name }}
+            ## OpenSet ${{ steps.ver.outputs.version }}
 
             Controller di scaletta open-source per Ableton Live. Ogni zip contiene
-            l'eseguibile standalone (Node.js incluso), il Remote Script per Live,
-            l'interfaccia web, `openset_${{ steps.ver.outputs.version }}`,
-            `VERSION.txt` e la guida `INSTALL.txt` per la piattaforma.
-
-            ### Linux
-            ```bash
-            unzip openset-linux-x64.zip -d openset && cd openset
-            chmod +x openset
-            ./openset
-            ```
+            il programma `openset-${{ steps.ver.outputs.version }}` (Node.js incluso),
+            il Remote Script per Live, l'interfaccia web, `VERSION.txt` e la guida
+            `INSTALL.txt` per la piattaforma.
 
             ### Windows
             ```powershell
-            Expand-Archive openset-win-x64.zip -DestinationPath C:\OpenSet
-            cd C:\OpenSet
-            .\openset.exe
+            Expand-Archive openset-${{ steps.ver.outputs.version }}-win-x64.zip -DestinationPath C:\OpenSet
+            C:\OpenSet\openset-${{ steps.ver.outputs.version }}.exe
             ```
-            Poi copia `remote-script\OpenSet` in
-            `Documenti\Ableton\User Library\Remote Scripts\` e attiva OpenSet
-            nelle preferenze Link/Tempo/MIDI di Live.
 
             ### macOS
-            `openset-macos-arm64.zip` per Apple Silicon (M1–M4), `openset-macos-x64.zip` per Mac Intel.
+            `openset-${{ steps.ver.outputs.version }}-macos-arm64.zip` per Apple Silicon (M1–M4),
+            `openset-${{ steps.ver.outputs.version }}-macos-x64.zip` per Mac Intel.
             ```bash
-            unzip openset-macos-arm64.zip -d openset && cd openset
-            chmod +x openset
-            xattr -d com.apple.quarantine openset 2>/dev/null || true
-            ./openset
+            unzip openset-${{ steps.ver.outputs.version }}-macos-arm64.zip -d openset && cd openset
+            xattr -d com.apple.quarantine openset-${{ steps.ver.outputs.version }} 2>/dev/null || true
+            ./openset-${{ steps.ver.outputs.version }}
             ```
-            Poi copia `remote-script/OpenSet` in
-            `~/Music/Ableton/User Library/Remote Scripts/` e attiva OpenSet
-            nelle preferenze Link/Tempo/MIDI di Live.
 
-            Interfaccia web: `http://localhost:39080` (o `http://<ip>:39080` dal telefono sulla stessa Wi-Fi).
+            ### Linux
+            ```bash
+            unzip openset-${{ steps.ver.outputs.version }}-linux-x64.zip -d openset && cd openset
+            chmod +x openset-${{ steps.ver.outputs.version }}
+            ./openset-${{ steps.ver.outputs.version }}
+            ```
+
+            Il browser si apre da solo; su Windows e macOS il Remote Script viene
+            installato nella User Library di Live. Riavvia Live e scegli OpenSet in
+            Impostazioni → Link, Tempo e MIDI → Superficie di controllo.

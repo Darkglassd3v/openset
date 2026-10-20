@@ -1,11 +1,12 @@
-OPENSET - INSTALLAZIONE SU WINDOWS
+OPENSET {{VERSION}} - INSTALLAZIONE SU WINDOWS
 ==================================
+Guida completa con le novita': OpenSet-{{VERSION}}-Guida.pdf
 
-1. Estrai lo zip openset-win-x64.zip in una cartella, es. C:\OpenSet
+1. Estrai lo zip openset-{{VERSION}}-win-x64.zip in una cartella, es. C:\OpenSet
 
-2. Doppio click su openset.exe: il browser si apre da solo.
-   (oppure da Prompt dei comandi:  cd C:\OpenSet  poi  openset.exe;
-   senza aprire il browser:  openset.exe --no-open)
+2. Doppio click su openset-{{VERSION}}.exe: il browser si apre da solo.
+   (oppure da Prompt dei comandi:  cd C:\OpenSet  poi  openset-{{VERSION}}.exe;
+   senza aprire il browser:  openset-{{VERSION}}.exe --no-open)
    Se Windows Defender chiede conferma: "Ulteriori informazioni" -> "Esegui comunque".
    Consenti l'accesso alla rete privata quando richiesto dal firewall.
 
@@ -20,14 +21,14 @@ OPENSET - INSTALLAZIONE SU WINDOWS
    Sul PC: http://localhost . Dal telefono sulla stessa rete: http://<ip>
    oppure inquadra il QR code in Opzioni -> Connetti un dispositivo.
    Per forzare una porta (Prompt dei comandi):
-     set PORT=39080 && openset.exe
+     set PORT=39080 && openset-{{VERSION}}.exe
 
 Dati (scaletta, testi, custom.css): %APPDATA%\OpenSet
 Al primo avvio OpenSet copia li' i file che le versioni precedenti
 tenevano accanto al programma (gli originali restano dove sono).
 
 Progetto offline senza Live:
-     openset.exe "C:\percorso\Progetto Project\Progetto.als"
+     openset-{{VERSION}}.exe "C:\percorso\Progetto Project\Progetto.als"
 
 Se compare "OpenSet cannot start ... already running": OpenSet e' gia'
 aperto (o AbleSet, che usa la stessa porta 39051). Chiudi l'altra istanza.

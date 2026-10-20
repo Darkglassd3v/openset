@@ -1,13 +1,14 @@
-OPENSET - INSTALLAZIONE SU LINUX
+OPENSET {{VERSION}} - INSTALLAZIONE SU LINUX
 ================================
+Guida completa con le novita': OpenSet-{{VERSION}}-Guida.pdf
 
 1. Scarica ed estrai lo zip:
-     unzip openset-linux-x64.zip -d openset && cd openset
+     unzip openset-{{VERSION}}-linux-x64.zip -d openset && cd openset
 
 2. Rendi eseguibile e avvia il server (il browser si apre da solo):
-     chmod +x openset
-     ./openset
-   Senza aprire il browser:  ./openset --no-open
+     chmod +x openset-{{VERSION}}
+     ./openset-{{VERSION}}
+   Senza aprire il browser:  ./openset-{{VERSION}} --no-open
 
 3. Indirizzo: su Linux la porta 80 richiede root, quindi OpenSet usa la
    39080: http://localhost:39080 su questo PC, http://<ip>:39080 dal
@@ -16,7 +17,7 @@ OPENSET - INSTALLAZIONE SU LINUX
 
 NOTA: Ableton Live non esiste per Linux. Usa Linux come postazione di
 controllo/visualizzazione remota, oppure carica un progetto offline:
-     ./openset "/percorso/Progetto Project/Progetto.als"
+     ./openset-{{VERSION}} "/percorso/Progetto Project/Progetto.als"
 
 Per il Remote Script (sul computer Win/Mac con Live) vedi il README: su
 Windows e macOS OpenSet lo installa da solo.

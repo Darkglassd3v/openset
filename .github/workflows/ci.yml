@@ -13,13 +13,13 @@ jobs:
         include:
           - os: ubuntu-latest
             target: node18-linux-x64
-            bin: openset
+            ext: ""
           - os: windows-latest
             target: node18-win-x64
-            bin: openset.exe
+            ext: .exe
           - os: macos-latest # Apple Silicon
             target: node18-macos-arm64
-            bin: openset
+            ext: ""
     runs-on: ${{ matrix.os }}
     defaults:
       run:
@@ -44,23 +44,29 @@ jobs:
       - name: Remote Script tests
         run: python -m unittest discover -s remote-script/tests -v
 
+      - name: Program name with the version
+        run: echo "BIN=openset-$(node -p "require('./package.json').version")${{ matrix.ext }}" >> "$GITHUB_ENV"
+
       - name: Build standalone binary
-        run: npx pkg@5.8.1 . --targets ${{ matrix.target }} --output build/${{ matrix.bin }}
+        run: npx pkg@5.8.1 . --targets ${{ matrix.target }} --output "build/$BIN"
 
       - name: Ad-hoc sign (macOS arm64 refuses unsigned binaries)
         if: runner.os == 'macOS'
-        run: codesign --force --sign - build/openset
+        run: codesign --force --sign - "build/$BIN"
 
       - name: Smoke test the binary
         run: |
           cp -r public lyrics build/
-          PORT=39080 ./build/${{ matrix.bin }} --no-open > build/run.log 2>&1 &
+          VERSION=$(node -p "require('./package.json').version")
+          PORT=39080 "./build/$BIN" --no-open > build/run.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:39080/api/state > build/state.json; then break; fi
             sleep 1
           done
           cat build/run.log
           grep -q '"connected":false' build/state.json
+          grep -q "\"version\":\"$VERSION\"" build/state.json
+          head -1 build/run.log | tr -d '\r' | grep -qx "OpenSet $VERSION"
           grep -q "\[data\] copied lyrics" build/run.log
           curl -sf http://127.0.0.1:39080/ | grep -q Palco
           curl -sf http://127.0.0.1:39080/api/connect | grep -q "\"urls\""

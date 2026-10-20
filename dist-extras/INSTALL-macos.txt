@@ -1,15 +1,16 @@
-OPENSET - INSTALLAZIONE SU MACOS
+OPENSET {{VERSION}} - INSTALLAZIONE SU MACOS
 ================================
+Guida completa con le novita': OpenSet-{{VERSION}}-Guida.pdf
 
 1. Scarica ed estrai lo zip giusto per il tuo Mac:
-     Apple Silicon (M1-M4):  unzip openset-macos-arm64.zip -d openset && cd openset
-     Mac Intel:              unzip openset-macos-x64.zip -d openset && cd openset
+     Apple Silicon (M1-M4):  unzip openset-{{VERSION}}-macos-arm64.zip -d openset && cd openset
+     Mac Intel:              unzip openset-{{VERSION}}-macos-x64.zip -d openset && cd openset
 
 2. Rimuovi la quarantena e avvia (binario con firma ad-hoc, non notarizzato):
-     chmod +x openset
-     xattr -d com.apple.quarantine openset 2>/dev/null || true
-     ./openset
-   Il browser si apre da solo (senza: ./openset --no-open).
+     chmod +x openset-{{VERSION}}
+     xattr -d com.apple.quarantine openset-{{VERSION}} 2>/dev/null || true
+     ./openset-{{VERSION}}
+   Il browser si apre da solo (senza: ./openset-{{VERSION}} --no-open).
    Se macOS chiede di accettare connessioni in entrata, consenti: serve
    per telefono/tablet e per i controller OSC.
 
@@ -24,7 +25,7 @@ OPENSET - INSTALLAZIONE SU MACOS
    Sul Mac: http://localhost . Da telefono e tablet sulla stessa rete:
    http://<nome-mac>.local (resta valido anche se cambia l'IP), oppure
    inquadra il QR code in Opzioni -> Connetti un dispositivo.
-   Per forzare una porta:  PORT=39080 ./openset
+   Per forzare una porta:  PORT=39080 ./openset-{{VERSION}}
 
 5. iPad/iPhone come app: apri l'indirizzo in Safari, poi Condividi ->
    Aggiungi alla schermata Home. Per lo schermo sempre acceso:
@@ -37,7 +38,7 @@ Al primo avvio OpenSet copia li' i file che le versioni precedenti
 tenevano accanto al programma (gli originali restano dove sono).
 
 Progetto offline senza Live:
-     ./openset "/percorso/Progetto Project/Progetto.als"
+     ./openset-{{VERSION}} "/percorso/Progetto Project/Progetto.als"
 
 Se compare "OpenSet cannot start ... already running": OpenSet e' gia'
 aperto (o AbleSet, che usa la stessa porta 39051). Chiudi l'altra istanza.
