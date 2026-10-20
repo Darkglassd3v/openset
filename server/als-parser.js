@@ -14,7 +14,8 @@ function parseAls(filePath) {
 
   // --- Locators ---
   const locators = [];
-  const locatorBlocks = xml.match(/<Locator>[\s\S]*?<\/Locator>/g) || [];
+  // Live writes list items with an Id attribute: <Locator Id="0">
+  const locatorBlocks = xml.match(/<Locator(?:\s[^>]*)?>[\s\S]*?<\/Locator>/g) || [];
   for (const block of locatorBlocks) {
     const time = matchAttr(block, "Time");
     const name = matchAttr(block, "Name");
