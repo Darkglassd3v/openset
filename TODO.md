@@ -7,7 +7,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] K — installazione automatica del Remote Script (fase GREEN)
+- [ ] L — connetti un dispositivo e porta 80 (fase RED)
 
 ## Da fare
 
@@ -21,7 +21,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ### K — Installazione automatica del Remote Script
 - [x] RED `test/install.test.js`: User Library per macOS/Windows, copia solo se manca o è diverso, niente `__pycache__`, nessuna eccezione; stato in `/api/state`
-- [ ] GREEN `server/install.js`; UI: passi per collegare Live quando non è connesso
+- [x] GREEN `server/install.js`; UI: passi per collegare Live quando non è connesso
 
 ### L — Connetti un dispositivo e porta 80
 - [ ] RED: `deviceUrls` (`nome.local` su macOS, IP LAN, niente `:80`), `/api/connect` con QR SVG, `httpPort` come lista (porta occupata → successiva)

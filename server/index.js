@@ -23,6 +23,7 @@ const { createMeter } = require("./meter");
 const { cuesBetween } = require("./cues");
 const { dataDir, migrateData } = require("./datadir");
 const { parseArgs, openBrowser } = require("./launch");
+const { userLibraries, installRemoteScript } = require("./install");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
 // live next to the binary; from source they live in the project root.
@@ -111,6 +112,7 @@ function start(opts = {}) {
     log: true,
     now: Date.now, // injectable clock for tests
     peerPollMs: 1000,
+    scriptInstall: null, // Remote Script install result, shown by the UI
     ...opts,
   };
   const PREFS_FILE = path.join(cfg.baseDir, "setlist.json");
@@ -216,6 +218,7 @@ function start(opts = {}) {
       midi: prefs.midi,
       peers: prefs.peers.map((url) => peerStatus.get(url) || { url, online: false }),
       lyricsRev,
+      scriptInstall: cfg.scriptInstall,
     };
   }
 
@@ -826,7 +829,14 @@ if (require.main === module) {
   }
   console.log(`[data] ${dir}`);
   const args = parseArgs(process.argv.slice(2));
-  start({ baseDir: dir, alsFile: args.alsFile }).then((srv) => {
+  const libs = userLibraries(process.platform, process.env, os.homedir());
+  const install = installRemoteScript(path.join(BASE_DIR, "remote-script", "OpenSet"), libs);
+  if (install.status === "installed" || install.status === "updated")
+    console.log(`[live] Remote Script ${install.status} in ${install.path}: restart Live and pick OpenSet as Control Surface`);
+  else if (install.status === "error") console.error(`[live] cannot install the Remote Script in ${install.path}: ${install.error}`);
+  else if (install.status === "not-found" && libs.length)
+    console.log("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
+  start({ baseDir: dir, alsFile: args.alsFile, scriptInstall: install }).then((srv) => {
     if (args.open) openBrowser(`http://localhost:${srv.httpPort}`);
   }, (e) => {
     const hint = e.code === "EADDRINUSE" ? " (is OpenSet or AbleSet already running?)" : "";

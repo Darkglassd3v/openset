@@ -476,7 +476,7 @@ function render() {
 }
 
 function renderSetlist() {
-  const key = JSON.stringify([state.setlist, editing, state.saved, state.setlistName]);
+  const key = JSON.stringify([state.setlist, editing, state.saved, state.setlistName, state.connected, state.offline, state.scriptInstall]);
   if (key !== listKey) { listKey = key; buildSetlist(); }
   document.querySelectorAll("#setlist .song").forEach((el) => {
     const cur = +el.dataset.i === state.current;
@@ -488,9 +488,25 @@ function renderSetlist() {
   if (chip) chip.classList.add("playing");
 }
 
+function scriptNote(inst) {
+  const st = inst && inst.status;
+  if (st === "installed" || st === "updated") return `Remote Script installato in <span class="mono">${esc(inst.path)}</span>.`;
+  if (st === "current") return "Remote Script già installato.";
+  return "Copia la cartella <b>remote-script/OpenSet</b> (accanto al programma) nella cartella " +
+    "<b>Remote Scripts</b> della User Library di Live." + (st === "error" ? ` Installazione automatica fallita: ${esc(inst.error)}` : "");
+}
+
 function buildSetlist() {
   const el = $("setlist");
   const list = state.setlist;
+  if (!list.length && !state.connected && !state.offline) {
+    el.innerHTML = `<div class="empty"><b>Collega Ableton Live</b><br><br>
+      1. Apri Live (se era già aperto, chiudilo e riaprilo).<br>
+      2. Impostazioni → <b>Link, Tempo e MIDI</b> → Superficie di controllo: scegli <b>OpenSet</b>, Input e Output su Nessuno.<br><br>
+      ${scriptNote(state.scriptInstall)}<br><br>
+      Senza Live puoi caricare un progetto <b>.als</b> da Opzioni.</div>`;
+    return;
+  }
   if (!list.length) {
     el.innerHTML = `<div class="empty">Nessun brano trovato.<br><br>
       Aggiungi dei <b>locator</b> nella timeline di Ableton:<br>
