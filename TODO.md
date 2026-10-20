@@ -6,7 +6,9 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [ ] G — push, CI verde, tag `v0.3.0` (build di rilascio su GitHub Actions)
+- [x] Release v0.3.0 (run 39487410456): 4 zip, nessun `__pycache__`
+
+(nessun lavoro in corso: prossimi passi in "Rimandato")
 
 ## Da fare
 
