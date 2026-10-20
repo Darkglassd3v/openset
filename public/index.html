@@ -143,6 +143,25 @@
     flex: 1 1 220px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px;
     background: var(--ink); color: var(--text); font-size: 14px;
   }
+  .drag { padding: 8px 6px; color: var(--dim); cursor: grab; touch-action: none; font-size: 18px; line-height: 1; }
+  .song.dragging { opacity: .45; }
+  .song.drop { box-shadow: inset 0 3px 0 var(--amber); }
+  .panel {
+    position: fixed; z-index: 40; top: 70px; left: 50%; transform: translateX(-50%);
+    width: min(560px, calc(100% - 24px)); background: var(--panel); border: 1px solid var(--amber);
+    border-radius: 10px; padding: 12px; box-shadow: 0 10px 40px rgba(0, 0, 0, .6);
+  }
+  .panel input, .panel textarea {
+    width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--ink); color: var(--text); font-size: 16px; user-select: text;
+  }
+  .panel ul { list-style: none; margin-top: 8px; max-height: 50vh; overflow-y: auto; }
+  .panel li button {
+    width: 100%; text-align: left; padding: 10px; background: none; border: none; border-radius: 6px; cursor: pointer; font-size: 16px;
+  }
+  .panel li button:hover, .panel li:first-child button { background: var(--line); }
+  .panel .row { margin-top: 8px; }
+  .panel p { margin-top: 8px; font-size: 13px; color: var(--dim); }
   .on-dot { color: var(--green); }
   .off-dot { color: var(--red); }
 
@@ -396,6 +415,8 @@
       <tr><td><kbd>⇧</kbd> <kbd>L</kbd></td><td>Blocca / sblocca questo dispositivo</td></tr>
       <tr><td><kbd>J</kbd> / <kbd>⇧</kbd> <kbd>J</kbd></td><td>Salta al brano o alla sezione in coda / subito</td></tr>
       <tr><td><kbd>C</kbd></td><td>Annulla il salto in coda</td></tr>
+      <tr><td><kbd>Ctrl</kbd> <kbd>K</kbd></td><td>Aggiungi brani alla scaletta (cerca per titolo, iniziali o #tag)</td></tr>
+      <tr><td><kbd>Ctrl</kbd> <kbd>C</kbd> / <kbd>V</kbd></td><td>Nell'editor: copia / incolla la scaletta come testo</td></tr>
     </table>
 
     <h2>Controllo esterno</h2>
@@ -407,6 +428,17 @@
 
 <div class="lock-layer" id="lockLayer" hidden>
   <button class="btn" id="unlockBtn">🔒 Bloccato · tieni premuto per sbloccare</button>
+</div>
+
+<div class="panel" id="searchPanel" hidden role="dialog" aria-label="Aggiungi brani">
+  <input id="searchInput" placeholder="Cerca un brano: titolo, iniziali o #tag" aria-label="Cerca un brano" autocomplete="off">
+  <ul id="searchList"></ul>
+  <p>Invio aggiunge il primo risultato in fondo ai brani da suonare · Esc chiude</p>
+</div>
+<div class="panel" id="pastePanel" hidden role="dialog" aria-label="Incolla una scaletta">
+  <textarea id="pasteText" rows="9" aria-label="Scaletta come testo"></textarea>
+  <div class="row"><button class="btn primary" id="pasteApply">Applica</button><button class="btn" id="pasteCancel">Chiudi</button></div>
+  <p id="pasteStatus"></p>
 </div>
 
 <div class="queue-bar" id="queueBar" hidden>
@@ -565,7 +597,7 @@ function render() {
 }
 
 function renderSetlist() {
-  const key = JSON.stringify([state.setlist, editing, state.saved, state.setlistName, state.connected, state.offline, state.scriptInstall]);
+  const key = JSON.stringify([state.setlist, editing, state.saved, state.backups, state.setlistName, state.connected, state.offline, state.scriptInstall]);
   if (key !== listKey) { listKey = key; buildSetlist(); }
   document.querySelectorAll("#setlist .song").forEach((el) => {
     const cur = +el.dataset.i === state.current;
@@ -615,6 +647,11 @@ function buildSetlist() {
         <button class="btn primary" data-act="done">Fine</button>
         <button class="btn" data-act="print">Stampa</button>
         <button class="btn" data-act="clearMeasured" title="Le durate vengono misurate quando un brano suona dall'inizio alla fine">Azzera durate misurate</button>
+        <button class="btn" data-act="search" title="Ctrl+K">+ Aggiungi</button>
+        <button class="btn" data-act="skipAll">Togli tutti</button>
+        <button class="btn" data-act="unskipAll">Rimetti tutti</button>
+        <button class="btn" data-act="copy" title="Ctrl+C">Copia</button>
+        <button class="btn" data-act="paste" title="Ctrl+V">Incolla</button>
         <input id="saveName" placeholder="Nome scaletta" aria-label="Nome scaletta" value="${esc(state.setlistName || "")}">
         <button class="btn" data-act="save">Salva</button>
         ${state.saved.length ? `
@@ -622,10 +659,15 @@ function buildSetlist() {
             `<option ${n === state.setlistName ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
           <button class="btn" data-act="load">Carica</button>
           <button class="btn" data-act="delete">Elimina</button>` : ""}
+        ${state.backups.length ? `
+          <select id="backupPick" aria-label="Versioni precedenti">${state.backups.map((b, i) =>
+            `<option value="${i}">${esc(b.name)} · ${esc(new Date(b.at).toLocaleString())}</option>`).join("")}</select>
+          <button class="btn" data-act="restore">Ripristina</button>` : ""}
       </div>
       <ol class="songs">${list.map((s, i) => `
         <li class="song ${s.skip ? "skip" : ""} ${classes(s)}" data-i="${i}">
           <div class="edit-row">
+            <span class="drag" data-drag="${i}" aria-hidden="true" title="Trascina per spostare">⠿</span>
             <button class="btn" data-act="up" data-i="${i}" aria-label="Sposta su ${esc(s.name)}" ${i ? "" : "disabled"}>↑</button>
             <button class="btn" data-act="down" data-i="${i}" aria-label="Sposta giù ${esc(s.name)}" ${i < list.length - 1 ? "" : "disabled"}>↓</button>
             <span class="song-name">${esc(s.name)}</span>
@@ -636,6 +678,7 @@ function buildSetlist() {
         </li>`).join("")}
       </ol>
       <div class="list-foot">Totale ${fmt(t.setTotal)} · ${count} brani</div>`;
+    fetch("/api/setlist-text").then((r) => r.text()).then((txt) => { setlistTextCache = txt; }).catch(() => {});
     return;
   }
   el.innerHTML = `
@@ -696,12 +739,129 @@ $("setlist").addEventListener("click", (e) => {
   else if (act === "save") { const name = $("saveName").value.trim(); if (name) send({ cmd: "saveSetlist", name }); }
   else if (act === "load") send({ cmd: "loadSetlist", name: $("loadName").value });
   else if (act === "delete") send({ cmd: "deleteSetlist", name: $("loadName").value });
+  else if (act === "restore") {
+    const b = state.backups[+$("backupPick").value];
+    if (b) send({ cmd: "restoreBackup", name: b.name, at: b.at });
+  } else if (act === "search") openSearch();
+  else if (act === "skipAll" || act === "unskipAll") editSetlist((rows) => rows.forEach((r) => { r.skip = act === "skipAll"; }));
+  else if (act === "copy") copySetlist();
+  else if (act === "paste") openPaste("");
   if (e.detail > 0) b.blur(); // keep Space for play/stop after a tap
 });
 $("setlist").addEventListener("change", (e) => {
   if (!e.target.classList.contains("note")) return;
   const i = +e.target.dataset.i;
   editSetlist((rows) => { rows[i].notes = e.target.value.trim(); });
+});
+
+// ---------- editor: drag to reorder (mouse and touch) ----------
+let drag = null;
+$("setlist").addEventListener("pointerdown", (e) => {
+  const h = e.target.closest("[data-drag]");
+  if (!h || !editing) return;
+  e.preventDefault();
+  drag = { from: +h.dataset.drag, to: +h.dataset.drag };
+  try { h.setPointerCapture(e.pointerId); } catch {} // keeps the moves coming when the finger leaves the handle
+  h.closest(".song").classList.add("dragging");
+});
+$("setlist").addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const row = document.elementFromPoint(e.clientX, e.clientY)?.closest("#setlist .song");
+  document.querySelectorAll("#setlist .song.drop").forEach((r) => r.classList.remove("drop"));
+  if (row) { drag.to = +row.dataset.i; row.classList.add("drop"); }
+});
+function endDrag() {
+  if (!drag) return;
+  const { from, to } = drag;
+  drag = null;
+  document.querySelectorAll("#setlist .dragging, #setlist .drop").forEach((r) => r.classList.remove("dragging", "drop"));
+  if (to !== from) editSetlist((rows) => rows.splice(to, 0, rows.splice(from, 1)[0]));
+}
+$("setlist").addEventListener("pointerup", endDrag);
+$("setlist").addEventListener("pointercancel", () => { drag = null; listKey = ""; render(); });
+
+// ---------- editor: add songs (Ctrl+K), copy and paste as text ----------
+let setlistTextCache = "";
+let searchResults = [];
+function openSearch() {
+  if (!editing) { editing = true; render(); }
+  $("pastePanel").hidden = true;
+  $("searchPanel").hidden = false;
+  $("searchInput").value = "";
+  $("searchList").innerHTML = "";
+  $("searchInput").focus();
+}
+// picked songs are played again and move after the last played song
+function addSongs(indexes) {
+  const names = new Set(indexes.map((i) => state.setlist[i] && state.setlist[i].name));
+  editSetlist((rows) => {
+    const picked = rows.filter((r) => names.has(r.name));
+    const rest = rows.filter((r) => !names.has(r.name));
+    picked.forEach((r) => { r.skip = false; });
+    let at = 0;
+    rest.forEach((r, k) => { if (!r.skip) at = k + 1; });
+    rows.splice(0, rows.length, ...rest.slice(0, at), ...picked, ...rest.slice(at));
+  });
+}
+$("searchInput").addEventListener("input", async () => {
+  const q = $("searchInput").value;
+  try {
+    searchResults = q.trim() ? (await (await fetch("/api/search?q=" + encodeURIComponent(q))).json()).results : [];
+  } catch { searchResults = []; }
+  $("searchList").innerHTML = searchResults.map((r, i) => `<li><button data-pick="${i}">${r.kind === "tag"
+    ? `#${esc(r.tag)} <span class="dim">· tutti i ${r.indexes.length} brani</span>`
+    : esc(r.name) + (state.setlist[r.index] && state.setlist[r.index].skip ? ' <span class="dim">· tolto</span>' : "")}</button></li>`).join("") ||
+    (q.trim() ? '<li class="dim">Nessun brano trovato.</li>' : "");
+});
+function pick(r) {
+  if (!r) return;
+  addSongs(r.kind === "tag" ? r.indexes : [r.index]);
+  $("searchPanel").hidden = true;
+}
+$("searchList").addEventListener("click", (e) => { const b = e.target.closest("[data-pick]"); if (b) pick(searchResults[+b.dataset.pick]); });
+$("searchInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") pick(searchResults[0]);
+  if (e.key === "Escape") $("searchPanel").hidden = true;
+});
+async function copySetlist() {
+  const text = await (await fetch("/api/setlist-text")).text();
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {} // the clipboard API needs HTTPS or localhost
+  openPaste(text, "Copia il testo qui sopra (seleziona e Ctrl+C / Copia).");
+  $("pasteText").select();
+}
+function openPaste(text, note = "Un brano per riga. {nota} accanto al titolo aggiunge una nota, una riga «-- stop --» ferma dopo il brano sopra.") {
+  if (!editing) { editing = true; render(); }
+  $("searchPanel").hidden = true;
+  $("pastePanel").hidden = false;
+  $("pasteText").value = text;
+  $("pasteStatus").textContent = note;
+  if (!text) $("pasteText").focus();
+}
+async function applyPaste(text) {
+  try {
+    const r = await fetch("/api/setlist-text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const res = await r.json();
+    if (!r.ok) throw new Error(res.error);
+    if (res.unmatched.length) openPaste(text, "Non trovati (restano fuori): " + res.unmatched.join(", "));
+    else $("pastePanel").hidden = true;
+  } catch (err) {
+    $("pasteStatus").textContent = "Errore: " + (err.message || "rete");
+  }
+}
+$("pasteApply").onclick = () => applyPaste($("pasteText").value);
+$("pasteCancel").onclick = () => { $("pastePanel").hidden = true; };
+document.addEventListener("copy", (e) => {
+  if (!editing || e.target.closest("input, textarea") || String(getSelection())) return;
+  e.preventDefault();
+  e.clipboardData.setData("text/plain", setlistTextCache);
+});
+document.addEventListener("paste", (e) => {
+  if (!editing || e.target.closest("input, textarea")) return;
+  e.preventDefault();
+  applyPaste(e.clipboardData.getData("text/plain"));
 });
 
 function renderStrip() {
@@ -1024,6 +1184,7 @@ document.querySelectorAll("footer button").forEach((b) =>
   b.addEventListener("click", (e) => { if (e.detail > 0) b.blur(); }));
 
 document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && !device.locked) { e.preventDefault(); openSearch(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest("input, select, textarea")) return;
   if (e.key === "L" && e.shiftKey) { e.preventDefault(); setLocked(!device.locked); return; }
   if (device.locked) return;
