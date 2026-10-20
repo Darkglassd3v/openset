@@ -152,6 +152,8 @@
   .stage-next b { color: var(--text); }
   .stage-notes { font-size: 20px; color: var(--text); background: var(--panel); border-left: 3px solid var(--amber); padding: 10px 12px; white-space: pre-wrap; }
   .stage-quick { display: flex; flex-wrap: wrap; gap: 10px; }
+  .stage-lyrics { font-size: clamp(24px, 5.5vw, 40px); line-height: 1.35; }
+  .stage-lyrics .dim { font-size: .75em; margin-top: 4px; }
   .stage-quick .chip { font-size: 18px; padding: 14px 20px; }
 
   /* ---- lyrics ---- */
@@ -271,7 +273,11 @@
     <div class="stage-desc" id="stDesc"></div>
     <div class="stage-section"><span id="stSection"></span> <span class="dim" id="stNextSec"></span></div>
     <div class="bar" id="stBar"><div class="bar-fill" id="stFill"></div></div>
-    <div class="times">
+    <div class="stage-lyrics" id="stLyrics" hidden>
+      <div id="stLyrNow"></div>
+      <div class="dim" id="stLyrNext"></div>
+    </div>
+    <div class="times" id="stTimes">
       <div><b class="mono" id="stLeft">—</b><span>rimanente nel brano</span></div>
       <div><b class="mono" id="stSetLeft">—</b><span id="stSetLabel">alla fine dello show</span></div>
     </div>
@@ -292,6 +298,14 @@
     <label><input type="checkbox" data-dev="speakSections"> Annuncia la sezione successiva (due battute prima)</label>
     <label><input type="checkbox" data-dev="speakCount"> Count-in parlato sull'ultima battuta</label>
     <p id="speechStatus">La voce esce da questo dispositivo (cuffie, in-ear, mixer).</p>
+    <p>Vista Palco su questo dispositivo:</p>
+    <label><input type="checkbox" data-stage="desc"> Descrizione e tag</label>
+    <label><input type="checkbox" data-stage="beats"> Battiti</label>
+    <label><input type="checkbox" data-stage="times"> Tempi rimanenti</label>
+    <label><input type="checkbox" data-stage="next"> Prossimo brano</label>
+    <label><input type="checkbox" data-stage="notes"> Note</label>
+    <label><input type="checkbox" data-stage="quick"> Pulsanti delle sezioni</label>
+    <label><input type="checkbox" data-stage="lyrics"> Riga del testo corrente e successiva</label>
 
     <h2>MIDI</h2>
     <p id="midiStatus">Web MIDI funziona in Chrome o Edge aperti su questo computer (http://localhost:39080). Tieni aperta una sola scheda.</p>
@@ -358,6 +372,8 @@ let view = store.get("openset.view", "setlist");
 // per-device preferences (voice, stage layout), kept in this browser only
 const device = (() => { try { return JSON.parse(store.get("openset.device", "{}")) || {}; } catch { return {}; } })();
 const saveDevice = () => store.set("openset.device", JSON.stringify(device));
+const STAGE_DEFAULT = { desc: true, beats: true, times: true, next: true, notes: true, quick: true, lyrics: false };
+const stageShow = () => ({ ...STAGE_DEFAULT, ...(device.stage || {}) });
 let spokenSong = null;
 let editing = false;
 let listKey = "";
@@ -588,8 +604,25 @@ function renderStage() {
   $("stSetLeft").textContent = fmt(st.timing.setTotal - st.timing.setElapsed);
   $("stSetLabel").textContent = `alla fine dello show · ${st.timing.songsLeft} brani`;
   $("stNext").textContent = next ? next.name : "fine scaletta";
-  $("stNotes").hidden = !(s && s.notes);
+  const show = stageShow();
+  $("stDesc").hidden = !show.desc;
+  $("stBeats").hidden = !show.beats;
+  $("stTimes").hidden = !show.times;
+  $("stNextWrap").hidden = !show.next;
+  $("stQuick").hidden = !show.quick;
+  $("stNotes").hidden = !(show.notes && s && s.notes);
   $("stNotes").textContent = (s && s.notes) || "";
+  $("stLyrics").hidden = !show.lyrics;
+  if (show.lyrics) {
+    const data = s && lyricsFor(s.name);
+    const lines = data ? data.lines : [];
+    const rel = (st.beat || 0) - (s ? s.time : 0);
+    let now = -1;
+    lines.forEach((l, i) => { if (rel >= l.beat - 0.001) now = i; });
+    const text = (l) => (l ? l.segments.map((g) => g.text).join("").trim() : "");
+    $("stLyrNow").textContent = text(lines[now]);
+    $("stLyrNext").textContent = text(lines[now + 1]);
+  }
   $("stFill").style.width = (s && s.seconds ? Math.min(1, st.timing.songElapsed / s.seconds) * 100 : 0) + "%";
 
   // beat dots: one per beat of the bar
@@ -640,16 +673,22 @@ function lineHtml(l, i) {
     ${l.chords ? `<div class="lyr-chord mono">${esc(l.chords)}</div>` : ""}${segs}</div>`;
 }
 
+// cached lyrics of a song; undefined while loading (the fetch starts here)
+function lyricsFor(name) {
+  if (state.lyricsRev !== lyr.rev) { lyr.cache = {}; lyr.rev = state.lyricsRev; lyr.song = null; }
+  if (!(name in lyr.cache)) { fetchLyrics(name); return undefined; }
+  return lyr.cache[name];
+}
+
 function renderLyrics() {
   const el = $("lyrics");
-  if (state.lyricsRev !== lyr.rev) { lyr.cache = {}; lyr.rev = state.lyricsRev; lyr.song = null; }
   const s = curSong();
   if (!s) {
     if (lyr.song !== "") { el.innerHTML = '<div class="lyr-none">Nessun brano attivo</div>'; lyr.song = ""; }
     return;
   }
-  if (!(s.name in lyr.cache)) { fetchLyrics(s.name); return; }
-  const data = lyr.cache[s.name];
+  const data = lyricsFor(s.name);
+  if (data === undefined) return;
   if (lyr.song !== s.name) {
     lyr.song = s.name;
     lyr.line = -2;
@@ -699,6 +738,8 @@ function renderSettings() {
   settingsKey = key;
   document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });
   document.querySelectorAll("[data-dev]").forEach((c) => { c.checked = !!device[c.dataset.dev]; });
+  const show = stageShow();
+  document.querySelectorAll("[data-stage]").forEach((c) => { c.checked = !!show[c.dataset.stage]; });
   if (!("speechSynthesis" in window)) $("speechStatus").textContent = "Sintesi vocale non disponibile in questo browser.";
   $("quant").value = String(state.quant);
   $("midiStatus").textContent = midi.status;
@@ -712,7 +753,7 @@ function renderSettings() {
     <li><span class="${p.online ? "on-dot" : "off-dot"}" aria-hidden="true">●</span>
       <span class="mono">${esc(p.url)}</span>
       ${p.online
-        ? `· ${p.connected ? "Live connesso" : "Live non connesso"}${p.song ? " · " + esc(p.song) : ""} · scarto ${p.drift} beat`
+        ? (p.connected ? `· Live connesso${p.song ? " · " + esc(p.song) : ""} · scarto ${p.drift} beat` : "· Live non connesso")
         : "· non raggiungibile"}
       <button class="btn" data-peer-del="${i}" aria-label="Rimuovi ${esc(p.url)}">✕</button></li>`).join("") ||
     "<li>Nessun computer di riserva.</li>";
@@ -733,6 +774,10 @@ $("settings").addEventListener("change", (e) => {
     device[e.target.dataset.dev] = e.target.checked;
     saveDevice();
     if (e.target.checked && e.target.dataset.dev.startsWith("speak")) speak("ok", true); // unlocks audio on iOS
+  }
+  if (e.target.dataset.stage) {
+    device.stage = { ...stageShow(), [e.target.dataset.stage]: e.target.checked };
+    saveDevice();
   }
   if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
 });

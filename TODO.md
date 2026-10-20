@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [ ] F — vista Palco personalizzabile per dispositivo
+- [ ] G — rilascio v0.3.0
 
 ## Da fare
 
@@ -31,8 +31,8 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 - [x] GREEN: `peers` nelle opzioni, inoltro, controllo stato; UI: lista peer (README in G)
 
 ### F — Vista Palco personalizzabile per dispositivo
-- [ ] UI: scelta degli elementi (tempi, prossimo, note, sezioni rapide, testi nel Palco), salvata per dispositivo
-- [ ] Verifica nel browser con Live simulato
+- [x] UI: scelta degli elementi (tempi, prossimo, note, sezioni rapide, testi nel Palco), salvata per dispositivo
+- [x] Verifica nel browser con Live simulato: testi nel Palco, cue via WS (sezione + count 1-4), lista peer con stato
 
 ### G — Rilascio
 - [ ] `npm run coverage` ≥ 80% righe/rami su `server/`
