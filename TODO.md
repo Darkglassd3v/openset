@@ -7,7 +7,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] M — rilascio v0.4.0 (copertura, documentazione)
+- [ ] M — rilascio v0.4.0 (push, CI, tag)
 
 ## Da fare
 
@@ -29,7 +29,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ### M — Rilascio v0.4.0
 - [x] `npm run coverage`: righe 99.79%, rami 93.48%, funzioni 98.50%; Remote Script 17 OK
-- [ ] README, `dist-extras/INSTALL-*.txt`, report `docs/releases/0.4.0/`, versione 0.4.0
+- [x] README, `dist-extras/INSTALL-*.txt`, report `docs/releases/0.4.0/`, versione 0.4.0
 - [ ] Push, CI verde su Windows/macOS/Ubuntu, tag `v0.4.0`, 4 zip senza `__pycache__`
 
 ## Fatto
