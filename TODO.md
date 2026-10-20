@@ -45,6 +45,11 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 - [x] v0.2.0 rilasciata (notazione AbleSet, motore, editor, Palco, OSC/HTTP/MIDI, macOS arm64): vedi `docs/releases/0.2.0/v0.2.0.tdd.md`
 
+## Da decidere con l'utente
+
+- Brani aggiunti a mano dalla UI, senza progetto Live (solo scaletta e testi):
+  proposto il 2026-10-20, in attesa di risposta.
+
 ## Rimandato
 
 Canvas libero, Bonjour per OSC, colori, scambio automatico dell'audio tra i due
