@@ -41,17 +41,14 @@ il file `openset_<versione>`, `VERSION.txt` e la guida `INSTALL.txt`.
 
 ```powershell
 Expand-Archive openset-win-x64.zip -DestinationPath C:\OpenSet
-cd C:\OpenSet
-.\openset.exe
 ```
 
-1. Copia la cartella `remote-script\OpenSet` in
-   `C:\Users\<tu>\Documents\Ableton\User Library\Remote Scripts\`
-   (crea `Remote Scripts` se non esiste)
-2. Riavvia Live → Opzioni → Preferenze → **Link/Tempo/MIDI** →
-   Superficie di controllo → **OpenSet** (Input/Output: Nessuno)
-3. Apri `http://localhost:39080` sul PC o `http://<ip>:39080` dal telefono.
+1. Doppio clic su `C:\OpenSet\openset.exe`: il browser si apre da solo.
    Al primo avvio consenti l'accesso alla **rete privata** nel firewall.
+2. OpenSet copia da solo il Remote Script nella User Library di Live
+   (`Documents\Ableton\User Library\Remote Scripts\OpenSet`).
+3. Riavvia Live → Opzioni → Preferenze → **Link, Tempo e MIDI** →
+   Superficie di controllo → **OpenSet** (Input/Output: Nessuno).
 
 ### macOS
 
@@ -62,11 +59,15 @@ xattr -d com.apple.quarantine openset 2>/dev/null || true
 ./openset
 ```
 
-1. Copia `remote-script/OpenSet` in `~/Music/Ableton/User Library/Remote Scripts/`
-2. Riavvia Live → Impostazioni → **Link/Tempo/MIDI** →
-   Superficie di controllo → **OpenSet** (Input/Output: Nessuno)
-3. Apri `http://localhost:39080` sul Mac o `http://<ip>:39080` dal telefono.
-   Se macOS chiede di accettare connessioni in entrata, consenti.
+1. Il browser si apre da solo. Se macOS chiede di accettare connessioni in
+   entrata, consenti: servono a telefono, tablet e controller OSC.
+2. OpenSet copia da solo il Remote Script in
+   `~/Music/Ableton/User Library/Remote Scripts/OpenSet`.
+3. Riavvia Live → Impostazioni → **Link, Tempo e MIDI** →
+   Superficie di controllo → **OpenSet** (Input/Output: Nessuno).
+
+Se hai spostato la User Library di Live, la scaletta vuota mostra cosa copiare
+a mano: la cartella `remote-script/OpenSet` dello zip va in `Remote Scripts`.
 
 ### Linux
 
@@ -85,18 +86,48 @@ controllo remoto, oppure carica un progetto offline:
 
 Se all'avvio compare `OpenSet cannot start: ... (is OpenSet or AbleSet already running?)`,
 c'è già un'istanza aperta (o AbleSet, che usa la stessa porta 39051): chiudila.
+`--no-open` avvia OpenSet senza aprire il browser.
+
+### Indirizzo e altri dispositivi
+
+OpenSet usa la porta **80** se è libera, così l'indirizzo non ha numeri:
+`http://localhost` sul computer, `http://<ip>` o `http://<nome-mac>.local`
+da telefono e tablet sulla stessa rete. Se la porta 80 è occupata (o su Linux,
+dove serve root) usa la **39080**. `PORT=39080 ./openset` forza una porta.
+
+In **Opzioni → Connetti un dispositivo** ci sono gli indirizzi con il loro
+**QR code**: inquadralo con la fotocamera del telefono e si apre OpenSet.
 
 ### iPad e iPhone come app
 
 Il server gira sul computer con Live; iPad e iPhone si collegano dalla stessa rete.
 
-1. In Safari apri l'indirizzo stampato all'avvio. Su Mac usa
-   `http://<nome-mac>.local:39080`, che resta valido anche se cambia l'IP.
+1. Inquadra il QR code in Opzioni, o apri in Safari l'indirizzo stampato
+   all'avvio. Su Mac usa `http://<nome-mac>.local`, che resta valido anche se
+   cambia l'IP.
 2. Condividi → **Aggiungi alla schermata Home**: OpenSet si apre a schermo
    intero con la sua icona.
 3. Via Wi-Fi il browser non può tenere acceso lo schermo (serve HTTPS):
    imposta Impostazioni → Schermo e luminosità → **Blocco automatico → Mai**.
    Sul computer (`localhost`) lo schermo resta acceso da solo.
+
+Aggiornando dalla 0.3.x l'indirizzo perde `:39080`: aggiungi di nuovo l'icona
+alla schermata Home, oppure avvia OpenSet con `PORT=39080`.
+
+### Dove sono i dati
+
+Scaletta (`setlist.json`), testi (`lyrics/`) e `custom.css` stanno in una
+cartella dell'utente, che non si perde spostando o cancellando il programma:
+
+| Sistema | Cartella |
+|---|---|
+| macOS | `~/Library/Application Support/OpenSet` |
+| Windows | `%APPDATA%\OpenSet` |
+| Linux | `~/.config/openset` (o `$XDG_CONFIG_HOME/openset`) |
+
+Al primo avvio della 0.4.0 OpenSet copia lì i file che le versioni precedenti
+tenevano accanto al programma (gli originali restano dove sono). Il percorso è
+stampato all'avvio (`[data] ...`).
 
 ### Da sorgente (tutte le piattaforme, richiede Node.js ≥ 18)
 
@@ -148,7 +179,7 @@ Gli stop non si possono quantizzare: lascia un attimo di silenzio prima di `STOP
 **Da Live**: crea una traccia MIDI con `+LYRICS` nel nome (es. `Voce +LYRICS`)
 e una clip per riga; il nome della clip è il testo. `Voce +LYRICS [+2]` traspone.
 
-**Da file**: crea `lyrics/<Nome Brano>.json` (stesso nome del locator, accenti compresi):
+**Da file**: crea `lyrics/<Nome Brano>.json` nella [cartella dei dati](#dove-sono-i-dati) (stesso nome del locator, accenti compresi):
 
 ```json
 {
@@ -167,7 +198,7 @@ e una clip per riga; il nome della clip è il testo. `Voce +LYRICS [+2]` traspon
 - **Scaletta**: tocca un brano o una sezione per saltarci. **Modifica scaletta**
   permette di riordinare (↑ ↓), saltare brani, fermarsi dopo un brano, scrivere
   note per il palco, salvare e caricare scalette diverse e stamparle.
-  Tutto viene salvato in `setlist.json` accanto all'eseguibile.
+  Tutto viene salvato in `setlist.json` nella [cartella dei dati](#dove-sono-i-dati).
 - **Palco**: la vista da mettere sul leggio o sul monitor. In Opzioni → *Questo
   dispositivo* scegli cosa mostrare su ogni telefono o tablet (tempi, prossimo
   brano, note, pulsanti delle sezioni, riga del testo corrente e successiva).
@@ -199,7 +230,7 @@ telefono o il computer all'in-ear o al mixer.
 
 1. Su entrambi i computer apri lo stesso set, avvia OpenSet e attiva **Ableton Link**
    in Live (tiene insieme tempo e fase).
-2. Sul computer principale, Opzioni → *Ridondanza*: aggiungi `http://<ip-riserva>:39080`.
+2. Sul computer principale, Opzioni → *Ridondanza*: aggiungi l'indirizzo della riserva (`http://<ip-riserva>`, con `:39080` se la riserva non usa la porta 80).
 3. Ogni comando dato al principale (browser, tastiera, MIDI, OSC, HTTP) viene
    ripetuto sulla riserva; la lista mostra se la riserva è raggiungibile, se il
    suo Live è connesso e lo scarto in beat. Puoi collegarli anche in entrambe le
@@ -218,7 +249,7 @@ Il passaggio dell'audio da un computer all'altro resta all'interfaccia audio o a
 | `L` | Loop della sezione corrente |
 
 I pedali Bluetooth "volta pagina" inviano proprio questi tasti.
-Per il **MIDI** apri `http://localhost:39080` in Chrome o Edge sul computer con
+Per il **MIDI** apri OpenSet (`http://localhost`) in Chrome o Edge sul computer con
 il controller, vai in Opzioni → MIDI, scegli l'azione e premi *Impara da MIDI*.
 Le mappature (note, CC, program change) restano salvate.
 
@@ -239,20 +270,20 @@ Con `/subscribe [host] <porta>` OpenSet invia gli aggiornamenti
 `{"cmd":"song","index":2}`, `{"cmd":"section","name":"Ritornello"}`,
 `{"cmd":"loopToggle"}`. Lo stato completo è in `GET /api/state`.
 
-**Stile**: un file `custom.css` accanto all'eseguibile viene caricato dall'interfaccia.
+**Stile**: un file `custom.css` nella [cartella dei dati](#dove-sono-i-dati) viene caricato dall'interfaccia.
 
 ## Architettura
 
 ```
 Ableton Live 12
    └─ Remote Script "OpenSet" (Python)  ←UDP JSON→  Server (Node.js / binario)
-                                                        ├─ HTTP  :39080  (web UI, API)
+                                                        ├─ HTTP  :80 o :39080 (web UI, API)
                                                         ├─ WebSocket     (stato realtime)
                                                         └─ OSC   :39051  (TouchOSC, Companion)
-Telefono / Tablet  ──Wi-Fi──▶  http://<ip>:39080
+Telefono / Tablet  ──Wi-Fi──▶  http://<ip>  (QR in Opzioni)
 ```
 
-Porte: `39050` (comandi → Live), `39051` (stato ← Live e OSC), `39080` (web).
+Porte: `39050` (comandi → Live), `39051` (stato ← Live e OSC), `80` o `39080` (web).
 
 ## Sviluppo
 

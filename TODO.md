@@ -28,7 +28,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 - [x] GREEN `server/connect.js` + `qrcode-generator`; UI in Opzioni; CLI su `[80, 39080]`, `PORT` forza la porta
 
 ### M — Rilascio v0.4.0
-- [ ] `npm run coverage` ≥ 80% righe, test Python
+- [x] `npm run coverage`: righe 99.79%, rami 93.48%, funzioni 98.50%; Remote Script 17 OK
 - [ ] README, `dist-extras/INSTALL-*.txt`, report `docs/releases/0.4.0/`, versione 0.4.0
 - [ ] Push, CI verde su Windows/macOS/Ubuntu, tag `v0.4.0`, 4 zip senza `__pycache__`
 

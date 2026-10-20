@@ -9,23 +9,32 @@ OPENSET - INSTALLAZIONE SU MACOS
      chmod +x openset
      xattr -d com.apple.quarantine openset 2>/dev/null || true
      ./openset
+   Il browser si apre da solo (senza: ./openset --no-open).
    Se macOS chiede di accettare connessioni in entrata, consenti: serve
    per telefono/tablet e per i controller OSC.
 
-3. Installa il Remote Script in Ableton Live 12:
-   - Copia la cartella  remote-script/OpenSet  in:
-     ~/Music/Ableton/User Library/Remote Scripts/
-     (crea "Remote Scripts" se non esiste)
-   - Riavvia Live -> Live -> Impostazioni -> Link/Tempo/MIDI ->
-     Superficie di controllo -> OpenSet (Input/Output: Nessuno)
+3. Remote Script: OpenSet lo copia da solo in
+     ~/Music/Ableton/User Library/Remote Scripts/OpenSet
+   Poi riavvia Live -> Impostazioni -> Link, Tempo e MIDI ->
+   Superficie di controllo -> OpenSet (Input/Output: Nessuno).
+   Se hai spostato la User Library, copia a mano la cartella
+   remote-script/OpenSet nella sua cartella "Remote Scripts".
 
-4. Apri nel browser l'indirizzo mostrato nel terminale
-   (http://localhost:39080 sul Mac, http://<nome-mac>.local:39080 dal
-   telefono sulla stessa rete Wi-Fi).
+4. Indirizzo: OpenSet usa la porta 80 se e' libera, altrimenti la 39080.
+   Sul Mac: http://localhost . Da telefono e tablet sulla stessa rete:
+   http://<nome-mac>.local (resta valido anche se cambia l'IP), oppure
+   inquadra il QR code in Opzioni -> Connetti un dispositivo.
+   Per forzare una porta:  PORT=39080 ./openset
 
-5. iPad/iPhone come app: in Safari apri http://<nome-mac>.local:39080,
-   poi Condividi -> Aggiungi alla schermata Home. Per lo schermo sempre
-   acceso: Impostazioni -> Schermo e luminosita' -> Blocco automatico -> Mai.
+5. iPad/iPhone come app: apri l'indirizzo in Safari, poi Condividi ->
+   Aggiungi alla schermata Home. Per lo schermo sempre acceso:
+   Impostazioni -> Schermo e luminosita' -> Blocco automatico -> Mai.
+   Se avevi aggiunto l'icona con la 0.3.x (indirizzo con :39080),
+   aggiungila di nuovo.
+
+Dati (scaletta, testi, custom.css): ~/Library/Application Support/OpenSet
+Al primo avvio OpenSet copia li' i file che le versioni precedenti
+tenevano accanto al programma (gli originali restano dove sono).
 
 Progetto offline senza Live:
      ./openset "/percorso/Progetto Project/Progetto.als"
