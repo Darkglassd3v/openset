@@ -7,7 +7,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] J — apertura automatica del browser (fase RED)
+- [ ] J — apertura automatica del browser (fase GREEN)
 
 ## Da fare
 
@@ -16,7 +16,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 - [x] GREEN `server/datadir.js`; il CLI usa la cartella dati come `baseDir`, `public/` resta nella cartella del programma
 
 ### J — Apertura automatica del browser
-- [ ] RED `test/launch.test.js`: `openCommand(platform, url)`, `parseArgs(argv)` (`--no-open`, `.als` primo argomento non-flag), errori dello spawn ignorati
+- [x] RED `test/launch.test.js`: `openCommand(platform, url)`, `parseArgs(argv)` (`--no-open`, `.als` primo argomento non-flag), errori dello spawn ignorati
 - [ ] GREEN `server/launch.js`; smoke test della CI con `--no-open`
 
 ### K — Installazione automatica del Remote Script
