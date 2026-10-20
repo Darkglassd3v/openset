@@ -26,6 +26,7 @@ const { dataDir, migrateData } = require("./datadir");
 const { parseArgs, openBrowser } = require("./launch");
 const { userLibraries, installRemoteScript } = require("./install");
 const { deviceUrls, bonjourName, qrSvg } = require("./connect");
+const { matchDevices, pageView, VIEWS } = require("./devices");
 const { version: VERSION } = require("../package.json");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
@@ -147,6 +148,7 @@ function start(opts = {}) {
   const meter = createMeter();
   const chunks = { id: null, parts: [] };
   const subscribers = new Map(); // OSC clients: "host:port" -> { host, port }
+  const devices = new Map(); // browser WebSocket -> { name, ip, view, locked, latencyMs }
   const lastOsc = new Map(); // address -> last args sent, to push only changes
 
   function loadPrefs() {
@@ -225,6 +227,7 @@ function start(opts = {}) {
       peers: prefs.peers.map((url) => peerStatus.get(url) || { url, online: false }),
       lyricsRev,
       scriptInstall: cfg.scriptInstall,
+      devices: [...devices.values()],
     };
   }
 
@@ -351,7 +354,7 @@ function start(opts = {}) {
   // which is not repeated again). Engine commands are not: each computer runs
   // its own engine on the same set, and Ableton Link keeps the clocks together.
 
-  const LOCAL_ONLY = new Set(["peers", "midi"]);
+  const LOCAL_ONLY = new Set(["peers", "midi", "devices"]);
   const peerStatus = new Map(); // url -> { url, online, connected, playing, song, drift }
 
   function runCommand(msg) {
@@ -527,8 +530,29 @@ function start(opts = {}) {
         const peers = cleanPeers(msg.urls);
         return !!peers && setPrefs({ peers });
       }
+      case "devices":
+        return deviceCommand(msg);
     }
     return false;
+  }
+
+  // AbleSet's /devices commands: showPage, reload, lock, unlock, toggleLock
+  function deviceCommand({ action, devices: spec, page }) {
+    const view = pageView(page);
+    if (!["showPage", "reload", "lock", "unlock", "toggleLock"].includes(action) || (action === "showPage" && !view))
+      return false;
+    const targets = new Set(matchDevices([...devices.values()], spec));
+    for (const [ws, d] of devices) {
+      if (!targets.has(d)) continue;
+      if (action === "showPage") ws.send(JSON.stringify({ type: "device", action, view }));
+      else if (action === "reload") ws.send(JSON.stringify({ type: "device", action }));
+      else {
+        d.locked = action === "toggleLock" ? !d.locked : action === "lock";
+        ws.send(JSON.stringify({ type: "device", action: "lock", locked: d.locked }));
+      }
+    }
+    if (action !== "showPage" && action !== "reload") changed();
+    return true;
   }
 
   // AbleSet-compatible OSC: https://ableset.com/docs/osc (subset)
@@ -598,6 +622,12 @@ function start(opts = {}) {
         const target = quick[pick(quick, a)];
         return !!target && runCommand({ cmd: "section", index: song.sections.indexOf(target) });
       }
+      case "/devices/showPage":
+      case "/devices/reload":
+      case "/devices/lock":
+      case "/devices/unlock":
+      case "/devices/toggleLock":
+        return runCommand({ cmd: "devices", action: address.slice(9), devices: String(a ?? ""), page: b });
       case "/loop/enable":
         return runCommand({ cmd: "loopOn" });
       case "/loop/escape":
@@ -661,6 +691,7 @@ function start(opts = {}) {
       "/setlist/activeSectionIndex": [st.section],
       "/setlist/nextSongName": [next ? next.name : ""],
       "/setlist/nextSongIndex": [st.next],
+      "/devices/names": st.devices.map((d) => d.name).filter(Boolean),
     };
   }
 
@@ -753,18 +784,45 @@ function start(opts = {}) {
     }
   }
 
-  wss.on("connection", (ws) => {
+  wss.on("connection", (ws, req) => {
+    const ip = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+    devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null });
+    ws.on("pong", () => {
+      const d = devices.get(ws);
+      if (d && ws.pingAt) d.latencyMs = Date.now() - ws.pingAt; // shown with the next state update
+    });
+    ws.on("close", () => {
+      devices.delete(ws);
+      if (!closed) changed();
+    });
     ws.send(JSON.stringify({ type: "state", state: publicState() }));
     ws.on("message", (buf) => {
       let msg;
       try { msg = JSON.parse(buf.toString()); } catch { return; }
       try {
-        runCommand(msg);
+        if (msg && msg.type === "device") deviceInfo(devices.get(ws), msg);
+        else runCommand(msg);
       } catch (e) {
         console.error("[ws]", e.message);
       }
     });
   });
+
+  // what a browser tells about itself: its name, the view it shows, its lock
+  function deviceInfo(d, { name, view, locked }) {
+    if (!d) return;
+    if (typeof name === "string" && name.length <= 64) d.name = name.trim();
+    if (Object.values(VIEWS).includes(view)) d.view = view;
+    if (typeof locked === "boolean") d.locked = locked;
+    changed();
+  }
+
+  const pingTimer = setInterval(() => {
+    for (const ws of wss.clients) {
+      ws.pingAt = Date.now();
+      ws.ping();
+    }
+  }, 2000);
 
   // ---------------- startup ----------------
 
@@ -784,6 +842,7 @@ function start(opts = {}) {
     closed = true;
     clearInterval(timer);
     clearInterval(peerTimer);
+    clearInterval(pingTimer);
     for (const c of wss.clients) c.terminate();
     wss.close();
     udp.close();
@@ -795,6 +854,7 @@ function start(opts = {}) {
     const fail = (e) => {
       clearInterval(timer);
       clearInterval(peerTimer);
+      clearInterval(pingTimer);
       wss.close();
       try { udp.close(); } catch {}
       reject(e);

@@ -194,6 +194,11 @@
   .settings td { padding: 4px 16px 4px 0; }
   .settings kbd { font-family: ui-monospace, Consolas, monospace; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .lock-layer {
+    position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: calc(110px + env(safe-area-inset-bottom)); background: rgba(13, 13, 17, .15);
+  }
+  .lock-layer .btn { font-size: 16px; padding: 14px 20px; border-color: var(--amber); color: var(--amber); touch-action: none; }
 
   /* ---- signature: song progress strip ---- */
   .strip {
@@ -326,6 +331,12 @@
     <label><input type="checkbox" data-dev="speakCount"> Count-in parlato sull'ultima battuta</label>
     <p id="speechStatus">La voce esce da questo dispositivo (cuffie, in-ear, mixer).</p>
     <p id="awakeStatus"></p>
+    <label>Nome di questo dispositivo <input class="field" id="devName" maxlength="64" placeholder="es. ipad-1, palco" aria-label="Nome di questo dispositivo"></label>
+    <label>Vista all'apertura <select id="devView" aria-label="Vista all'apertura">
+      <option value="">L'ultima usata</option><option value="setlist">Scaletta</option>
+      <option value="stage">Palco</option><option value="lyrics">Testi</option></select></label>
+    <div class="row"><button class="btn" id="lockBtn">Blocca questo dispositivo</button>
+      <span class="dim">Bloccato, ignora tocchi e tasti; si sblocca tenendo premuto il lucchetto o con <kbd>⇧</kbd> <kbd>L</kbd>.</span></div>
     <p id="installHint">Su iPad/iPhone: Safari → Condividi → Aggiungi alla schermata Home, per aprire OpenSet a schermo intero come un'app.</p>
     <p>Vista Palco su questo dispositivo:</p>
     <label><input type="checkbox" data-stage="desc"> Descrizione e tag</label>
@@ -335,6 +346,13 @@
     <label><input type="checkbox" data-stage="notes"> Note</label>
     <label><input type="checkbox" data-stage="quick"> Pulsanti delle sezioni</label>
     <label><input type="checkbox" data-stage="lyrics"> Riga del testo corrente e successiva</label>
+
+    <h2>Dispositivi collegati</h2>
+    <p>Telefoni, tablet e computer con OpenSet aperto. Via OSC (come AbleSet):
+      <span class="mono">/devices/showPage all performance</span>, <span class="mono">/devices/reload</span>,
+      <span class="mono">/devices/lock</span>, <span class="mono">/devices/unlock</span>, <span class="mono">/devices/toggleLock</span>
+      con <span class="mono">all</span>, un nome (o tag) o un indirizzo IP.</p>
+    <ul id="deviceList"></ul>
 
     <h2>MIDI</h2>
     <p id="midiStatus">Web MIDI funziona in Chrome o Edge aperti su questo computer (http://localhost:39080). Tieni aperta una sola scheda.</p>
@@ -360,6 +378,7 @@
       <tr><td><kbd>←</kbd> <kbd>PagSu</kbd></td><td>Inizio brano / brano precedente</td></tr>
       <tr><td><kbd>↓</kbd> <kbd>↑</kbd></td><td>Sezione successiva / precedente</td></tr>
       <tr><td><kbd>L</kbd></td><td>Loop della sezione corrente</td></tr>
+      <tr><td><kbd>⇧</kbd> <kbd>L</kbd></td><td>Blocca / sblocca questo dispositivo</td></tr>
     </table>
 
     <h2>Controllo esterno</h2>
@@ -368,6 +387,10 @@
       Stile personalizzato: <span class="mono">custom.css</span> accanto all'eseguibile.</p>
   </div>
 </main>
+
+<div class="lock-layer" id="lockLayer" hidden>
+  <button class="btn" id="unlockBtn">🔒 Bloccato · tieni premuto per sbloccare</button>
+</div>
 
 <div class="strip" id="strip"><div class="playhead" id="playhead"></div></div>
 
@@ -393,8 +416,9 @@ const ACTIONS = {
 };
 const KEYS = {
   " ": "playStop", ArrowRight: "next", PageDown: "next", ArrowLeft: "prev", PageUp: "prev",
-  ArrowDown: "nextSection", ArrowUp: "prevSection", l: "loopToggle", L: "loopToggle",
+  ArrowDown: "nextSection", ArrowUp: "prevSection", l: "loopToggle",
 };
+const VIEW_NAMES = { setlist: "Scaletta", stage: "Palco", lyrics: "Testi", settings: "Opzioni" };
 
 let state = null;
 let view = store.get("openset.view", "setlist");
@@ -415,10 +439,12 @@ const lyr = { cache: {}, rev: -1, song: null, line: -2 };
 let ws;
 function connect() {
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host);
+  ws.onopen = sendDevice;
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === "state") { state = msg.state; render(); }
     if (msg.type === "cue") onCue(msg.cue);
+    if (msg.type === "device") onDeviceCommand(msg);
   };
   ws.onclose = () => setTimeout(connect, 1500);
 }
@@ -441,6 +467,26 @@ $("awakeStatus").textContent = navigator.wakeLock
 $("installHint").hidden = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
 
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+// ---------- this device: name, view and lock, as seen by the server ----------
+function sendDevice() { send({ type: "device", name: device.name || "", view, locked: !!device.locked }); }
+function onDeviceCommand(msg) {
+  if (msg.action === "showPage" && VIEW_NAMES[msg.view]) showView(msg.view);
+  if (msg.action === "reload") location.reload();
+  if (msg.action === "lock") setLocked(msg.locked);
+}
+function setLocked(on) {
+  device.locked = !!on;
+  saveDevice();
+  $("lockLayer").hidden = !device.locked;
+  sendDevice();
+}
+let unlockTimer = null;
+$("unlockBtn").addEventListener("pointerdown", () => { unlockTimer = setTimeout(() => setLocked(false), 1000); });
+for (const ev of ["pointerup", "pointerleave", "pointercancel"])
+  $("unlockBtn").addEventListener(ev, () => clearTimeout(unlockTimer));
+$("lockBtn").onclick = () => setLocked(true);
+$("lockLayer").hidden = !device.locked;
 
 // ---------- helpers ----------
 function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -796,7 +842,7 @@ $("quant").innerHTML = QUANT.map((q, i) => `<option value="${i}">${q}</option>`)
 $("midiAction").innerHTML = Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
 
 function renderSettings() {
-  const key = JSON.stringify([state.settings, state.quant, state.midi, state.peers, midi.status, midi.learning]);
+  const key = JSON.stringify([state.settings, state.quant, state.midi, state.peers, state.devices, midi.status, midi.learning]);
   if (key === settingsKey) return;
   settingsKey = key;
   document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });
@@ -812,6 +858,14 @@ function renderSettings() {
       → ${esc(ACTIONS[m.action] || m.action)}
       <button class="btn" data-del="${i}" aria-label="Elimina mappatura">✕</button></li>`).join("") ||
     "<li>Nessuna mappatura.</li>";
+  if (document.activeElement !== $("devName")) $("devName").value = device.name || "";
+  $("devView").value = device.view || "";
+  $("deviceList").innerHTML = state.devices.map((d) => `
+    <li><span class="on-dot" aria-hidden="true">●</span>
+      <span class="mono">${esc(d.name || "senza nome")}</span> · ${esc(d.ip)}
+      ${d.view ? " · " + esc(VIEW_NAMES[d.view] || d.view) : ""}${d.locked ? " · 🔒 bloccato" : ""}
+      ${d.latencyMs != null ? ` · ${d.latencyMs} ms` : ""}</li>`).join("") ||
+    "<li>Nessun dispositivo collegato.</li>";
   $("peerList").innerHTML = state.peers.map((p, i) => `
     <li><span class="${p.online ? "on-dot" : "off-dot"}" aria-hidden="true">●</span>
       <span class="mono">${esc(p.url)}</span>
@@ -856,6 +910,8 @@ $("settings").addEventListener("change", (e) => {
     saveDevice();
   }
   if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
+  if (e.target.id === "devName") { device.name = e.target.value.trim(); saveDevice(); sendDevice(); }
+  if (e.target.id === "devView") { device.view = e.target.value; saveDevice(); }
 });
 $("midiList").addEventListener("click", (e) => {
   const b = e.target.closest("[data-del]");
@@ -927,6 +983,8 @@ document.querySelectorAll("footer button").forEach((b) =>
 
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest("input, select, textarea")) return;
+  if (e.key === "L" && e.shiftKey) { e.preventDefault(); setLocked(!device.locked); return; }
+  if (device.locked) return;
   // a focused button keeps Space/Enter for itself (keyboard navigation)
   if ((e.key === " " || e.key === "Enter") && e.target.closest("button")) return;
   const cmd = KEYS[e.key];
@@ -951,10 +1009,11 @@ function showView(v) {
   stageKey = settingsKey = "";
   lyr.song = null;
   if (v === "settings") loadConnect();
+  sendDevice();
   render();
 }
 document.querySelectorAll("nav button").forEach((b) => { b.onclick = () => showView(b.dataset.view); });
-showView(["setlist", "stage", "lyrics", "settings"].includes(view) ? view : "setlist");
+showView(VIEW_NAMES[device.view] ? device.view : VIEW_NAMES[view] ? view : "setlist");
 
 // MIDI mappings saved on the server keep working after a reload
 const startMidi = setInterval(() => {

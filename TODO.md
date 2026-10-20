@@ -8,7 +8,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — Q: dispositivi
+- [ ] v0.5.0 — R: modalità di salto e coda
 
 ## Da fare
 
@@ -29,7 +29,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ### Q — Dispositivi
 - [x] RED: nome per dispositivo, lista dei connessi (nome, IP, pagina, latenza), OSC `/devices/showPage|reload|lock|unlock|toggleLock` con `all`, nome/tag o IP
-- [ ] GREEN: server + UI (nome, vista predefinita, blocco ⇧L, lista in Opzioni)
+- [x] GREEN: `server/devices.js`, server (lista, ping/latenza, comando `devices`, OSC `/devices/*`, valore `/devices/names`) + UI (nome, vista all'apertura, blocco ⇧L con sblocco a pressione lunga, lista in Opzioni)
 
 ### R — Modalità di salto e coda
 - [ ] RED: modalità Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale; coda; J, ⇧J, C; OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`
