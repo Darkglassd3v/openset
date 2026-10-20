@@ -5,6 +5,7 @@
 
 import json
 import socket
+import time
 
 try:
     # Live 11/12 modern framework
@@ -16,6 +17,18 @@ except ImportError:
 SERVER_ADDR = ("127.0.0.1", 39051)   # where the Node server listens
 LISTEN_PORT = 39050                  # where this script listens for commands
 TICK_MS = 100                        # state broadcast interval
+MAX_DATAGRAM = 8000                  # macOS caps loopback UDP datagrams at 9216 bytes
+CHUNK_CHARS = 1000                   # bigger messages go in chunks; room for JSON escaping
+CLIPS_EVERY = 20                     # ticks between scans of Sections/+LYRICS clips (~2 s)
+
+
+def _quantization(value):
+    # Live wants its own enum; plain ints are kept outside Live (tests)
+    try:
+        import Live
+        return Live.Song.Quantization.values[value]
+    except Exception:
+        return value
 
 
 class OpenSet(ControlSurface):
@@ -23,12 +36,22 @@ class OpenSet(ControlSurface):
         super(OpenSet, self).__init__(c_instance)
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setblocking(False)
+        if hasattr(socket, "SIO_UDP_CONNRESET"):
+            # Windows: otherwise recvfrom fails after sending while the server is down
+            try:
+                self._sock.ioctl(socket.SIO_UDP_CONNRESET, False)
+            except Exception:
+                pass
         try:
             self._sock.bind(("127.0.0.1", LISTEN_PORT))
         except OSError:
             self.log_message("OpenSet: port %d busy" % LISTEN_PORT)
         self._song = self.song if not callable(self.song) else self.song()
         self._alive = True
+        self._ticks = 0
+        self._chunk_id = int(time.time() * 1000) % 1000000000
+        self._cues_sent = None    # last cues sent, resent only when they change
+        self._clips_sent = None
         self._add_listeners()
         self._tick()
         self.log_message("OpenSet connected")
@@ -48,6 +71,9 @@ class OpenSet(ControlSurface):
             return
         self._poll_commands()
         self._send_state()
+        if self._ticks % CLIPS_EVERY == 0:
+            self._send_clips()
+        self._ticks += 1
         # schedule_message(delay_in_ticks, callback) — ~10 Hz
         self.schedule_message(1, self._tick)
 
@@ -63,8 +89,16 @@ class OpenSet(ControlSurface):
             self.log_message("OpenSet listener error: %s" % e)
 
     def _send(self, obj):
+        data = json.dumps(obj)  # ASCII only, so len() is the byte size
         try:
-            self._sock.sendto(json.dumps(obj).encode("utf-8"), SERVER_ADDR)
+            if len(data) <= MAX_DATAGRAM:
+                self._sock.sendto(data.encode("utf-8"), SERVER_ADDR)
+                return
+            self._chunk_id += 1
+            parts = [data[i:i + CHUNK_CHARS] for i in range(0, len(data), CHUNK_CHARS)]
+            for i, part in enumerate(parts):
+                chunk = {"type": "chunk", "id": self._chunk_id, "i": i, "n": len(parts), "data": part}
+                self._sock.sendto(json.dumps(chunk).encode("utf-8"), SERVER_ADDR)
         except Exception:
             pass
 
@@ -73,7 +107,7 @@ class OpenSet(ControlSurface):
         try:
             cues = [{"name": c.name, "time": c.time} for c in s.cue_points]
             cues.sort(key=lambda c: c["time"])
-            self._send({
+            state = {
                 "type": "state",
                 "is_playing": s.is_playing,
                 "tempo": s.tempo,
@@ -83,10 +117,37 @@ class OpenSet(ControlSurface):
                 "loop": s.loop,
                 "loop_start": s.loop_start,
                 "loop_length": s.loop_length,
-                "cues": cues,
-            })
+                "quant": int(s.clip_trigger_quantization),
+            }
+            key = json.dumps(cues)
+            if key != self._cues_sent:
+                state["cues"] = cues
+                self._cues_sent = key
+            self._send(state)
         except Exception as e:
             self.log_message("OpenSet state error: %s" % e)
+
+    def _send_clips(self):
+        # clips of the "Sections" track and of "+LYRICS" tracks (Live 11+ API)
+        tracks = []
+        for t in self._song.tracks:
+            try:
+                name = t.name
+                if not (name.strip().lower().startswith("sections") or "+LYRICS" in name):
+                    continue
+                clips = getattr(t, "arrangement_clips", None)
+                if clips is None:
+                    continue
+                tracks.append({
+                    "name": name,
+                    "clips": [{"name": c.name, "start": c.start_time, "end": c.end_time} for c in clips],
+                })
+            except Exception as e:
+                self.log_message("OpenSet clips error: %s" % e)
+        key = json.dumps(tracks)
+        if key != self._clips_sent:
+            self._clips_sent = key
+            self._send({"type": "clips", "tracks": tracks})
 
     # ---------- server -> Live ----------
 
@@ -128,6 +189,11 @@ class OpenSet(ControlSurface):
             s.loop = on
         elif cmd == "tempo":
             s.tempo = float(msg.get("bpm", s.tempo))
+        elif cmd == "quant":
+            s.clip_trigger_quantization = _quantization(int(msg.get("value", 4)))
+        elif cmd == "resync":
+            self._cues_sent = None
+            self._clips_sent = None
         elif cmd == "ping":
             self._send({"type": "pong"})
 

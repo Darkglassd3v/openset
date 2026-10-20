@@ -27,7 +27,7 @@ macOS obbligatori, Linux se costa poco.
 - [x] `server/osc.js`
 - [x] fix `server/als-parser.js`
 - [ ] `server/index.js`: start(opts), comandi condivisi WS/HTTP/OSC, prefs `setlist.json`, motore, stato pubblico
-- [ ] Remote Script: cue/clip solo se cambiano, invio a pezzi, quantizzazione, fix UDP Windows (`SIO_UDP_CONNRESET`)
+- [x] Remote Script: cue/clip solo se cambiano, invio a pezzi, quantizzazione, fix UDP Windows (`SIO_UDP_CONNRESET`)
 - [ ] Test verdi, commit `feat:`
 
 ### Fase 3 — UI (`public/index.html`)
