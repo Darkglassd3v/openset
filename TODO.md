@@ -6,7 +6,9 @@ macOS obbligatori, Linux se costa poco.
 
 ## In corso
 
-- [ ] Verificare la release v0.2.0 (4 zip) generata dal tag
+- [x] Release v0.2.0 verificata: 4 zip (run 39483893592); rimossi i `__pycache__` dagli asset
+
+(nessun lavoro in corso: prossimi passi in "Rimandato")
 
 ## Da fare
 

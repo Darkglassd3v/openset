@@ -75,6 +75,7 @@ jobs:
             # app assets (the Remote Script without its tests)
             cp -r public lyrics remote-script README.md "$DIR/"
             rm -rf "$DIR/remote-script/tests"
+            find "$DIR/remote-script" -name __pycache__ -prune -exec rm -rf {} +  # left by the test step
             # required files: openset_<version>, version file, install guide
             echo "$VERSION" > "$DIR/openset_$VERSION"
             echo "$VERSION" > "$DIR/VERSION.txt"
