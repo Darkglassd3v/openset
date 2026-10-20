@@ -9,7 +9,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — T: Safe Mode e password
+- [ ] v0.5.0 — U: copertura, documentazione, rilascio
 
 ## Da fare
 
@@ -45,7 +45,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 ### T — Safe Mode e password
 - [x] RED: Safe Mode (niente salti di brano dalla UI mentre suona, conferma prima della pausa; MIDI/OSC esclusi); password facoltativa (hash scrypt) per modificare e comandare dalla web app, `localhost` sempre ammesso
 - [x] GREEN server: `server/auth.js` (scrypt con salt, confronto a tempo costante, 5 tentativi poi 30 s di attesa), `safeMode` nelle impostazioni, accesso per WebSocket (`auth` con password o token) e HTTP (`X-OpenSet-Password`, `Authorization: Bearer`), `setPassword` mai ripetuto ai computer di riserva, OSC `/settings/safeMode`
-- [ ] GREEN UI: Safe Mode e conferma dello stop, password in Opzioni, sola lettura con «Sblocca»
+- [x] GREEN UI: Safe Mode e conferma dello stop, password in Opzioni, sola lettura con «Sblocca» (token salvato nel browser)
 
 ### U — Rilascio v0.5.0
 - [ ] Copertura, README, report TDD, guida PDF, CI verde, tag `v0.5.0`, asset verificati

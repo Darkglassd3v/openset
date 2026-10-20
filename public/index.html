@@ -294,6 +294,7 @@
     <div class="set-name" id="setName"></div>
   </div>
   <span class="ver mono" id="version" title="Versione di OpenSet"></span>
+  <button class="btn" id="unlockApp" hidden>🔒 Sola lettura · Sblocca</button>
   <div class="clock-box">
     <div class="clock mono" id="clock">1.1.1</div>
     <div class="bpm mono" id="bpm">— BPM</div>
@@ -349,6 +350,16 @@
       <option value="dynamic">Dinamico: sezioni a fine sezione, brani a fine brano</option>
       <option value="manual">Manuale: allo stop</option></select></label>
     <p>Fuori da «Subito», il brano o la sezione scelti vanno in coda: <kbd>J</kbd> salta, <kbd>⇧</kbd> <kbd>J</kbd> salta subito, <kbd>C</kbd> annulla.</p>
+
+    <h2>Sicurezza</h2>
+    <label><input type="checkbox" data-set="safeMode"> Safe Mode: mentre suona, niente cambi di brano dalla web app e conferma prima dello stop</label>
+    <p>MIDI e OSC non sono limitati dal Safe Mode.</p>
+    <p id="pwStatus"></p>
+    <div class="row">
+      <input class="field" type="password" id="pwNew" autocomplete="new-password" placeholder="Nuova password (almeno 4 caratteri)" aria-label="Nuova password">
+      <button class="btn" id="pwSet">Imposta password</button>
+      <button class="btn" id="pwClear">Rimuovi</button>
+    </div>
 
     <h2>Progetto .als</h2>
     <p>Per la modalità offline e per durate esatte con l'automazione del tempo.
@@ -441,6 +452,12 @@
   <p id="pasteStatus"></p>
 </div>
 
+<div class="panel" id="authPanel" hidden role="dialog" aria-label="Sblocca i comandi">
+  <input type="password" id="authPw" placeholder="Password di OpenSet" aria-label="Password di OpenSet" autocomplete="current-password">
+  <div class="row"><button class="btn primary" id="authGo">Sblocca</button><button class="btn" id="authCancel">Chiudi</button></div>
+  <p id="authStatus">Questo OpenSet è protetto: senza password puoi solo guardare.</p>
+</div>
+
 <div class="queue-bar" id="queueBar" hidden>
   <span>In coda: <b id="queueName"></b></span>
   <button class="btn" data-q="jump">Salta <kbd>J</kbd></button>
@@ -496,12 +513,17 @@ const lyr = { cache: {}, rev: -1, song: null, line: -2 };
 let ws;
 function connect() {
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host);
-  ws.onopen = sendDevice;
+  ws.onopen = () => {
+    sendDevice();
+    const token = store.get("openset.token", "");
+    if (token) send({ type: "auth", token });
+  };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === "state") { state = msg.state; render(); }
     if (msg.type === "cue") onCue(msg.cue);
     if (msg.type === "device") onDeviceCommand(msg);
+    if (msg.type === "access") onAccess(msg);
   };
   ws.onclose = () => setTimeout(connect, 1500);
 }
@@ -523,7 +545,51 @@ $("awakeStatus").textContent = navigator.wakeLock
   : "Questo browser non può tenere acceso lo schermo da qui: su iPad/iPhone imposta Impostazioni → Schermo e luminosità → Blocco automatico → Mai.";
 $("installHint").hidden = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
 
-function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+let lastCommand = 0;
+function send(obj) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+  if (obj.cmd) lastCommand = Date.now();
+}
+
+// ---------- password: read-only until unlocked ----------
+let access = { control: true, passwordSet: false };
+let authTried = false;
+function onAccess(msg) {
+  access = msg;
+  if (msg.token) store.set("openset.token", msg.token);
+  $("unlockApp").hidden = msg.control;
+  if (msg.control) { $("authPanel").hidden = true; authTried = false; }
+  else if (authTried) { $("authStatus").textContent = "Password errata, o troppi tentativi: riprova tra poco."; authTried = false; }
+  else if (Date.now() - lastCommand < 2000) openAuth(); // a command was refused
+  settingsKey = "";
+  if (state) render();
+}
+function openAuth() {
+  $("authPanel").hidden = false;
+  $("authPw").value = "";
+  $("authPw").focus();
+}
+function tryAuth() {
+  authTried = true;
+  send({ type: "auth", password: $("authPw").value });
+}
+$("unlockApp").onclick = openAuth;
+$("authGo").onclick = tryAuth;
+$("authPw").addEventListener("keydown", (e) => { if (e.key === "Enter") tryAuth(); });
+$("authCancel").onclick = () => { $("authPanel").hidden = true; };
+
+// Safe Mode: a stop while playing needs a second press within 3 s
+let stopArmed = 0;
+function stopGuarded(cmd) {
+  if (!(state && state.settings.safeMode && state.is_playing) || Date.now() - stopArmed < 3000) {
+    stopArmed = 0;
+    $("btnStop").textContent = "Stop";
+    return send({ cmd });
+  }
+  stopArmed = Date.now();
+  $("btnStop").textContent = "Conferma stop";
+  setTimeout(() => { if (Date.now() - stopArmed >= 3000) $("btnStop").textContent = "Stop"; }, 3100);
+}
 
 // ---------- this device: name, view and lock, as seen by the server ----------
 function sendDevice() { send({ type: "device", name: device.name || "", view, locked: !!device.locked }); }
@@ -1036,13 +1102,17 @@ $("quant").innerHTML = QUANT.map((q, i) => `<option value="${i}">${q}</option>`)
 $("midiAction").innerHTML = Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
 
 function renderSettings() {
-  const key = JSON.stringify([state.settings, state.quant, state.midi, state.peers, state.devices, midi.status, midi.learning]);
+  const key = JSON.stringify([state.settings, state.quant, state.midi, state.peers, state.devices, state.passwordSet, midi.status, midi.learning]);
   if (key === settingsKey) return;
   settingsKey = key;
   document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });
   document.querySelectorAll("[data-dev]").forEach((c) => { c.checked = !!device[c.dataset.dev]; });
   const show = stageShow();
   document.querySelectorAll("[data-stage]").forEach((c) => { c.checked = !!show[c.dataset.stage]; });
+  $("pwStatus").textContent = state.passwordSet
+    ? "Password attiva: gli altri dispositivi la chiedono per comandare (questo computer no). Non vale per OSC."
+    : "Nessuna password: chiunque sulla rete può comandare OpenSet dal browser.";
+  $("pwClear").hidden = !state.passwordSet;
   if (!("speechSynthesis" in window)) $("speechStatus").textContent = "Sintesi vocale non disponibile in questo browser.";
   $("quant").value = String(state.quant);
   $("jumpMode").value = state.settings.jumpMode;
@@ -1083,6 +1153,13 @@ $("alsLoad").onclick = async () => {
     $("alsStatus").textContent = "Errore di rete.";
   }
 };
+$("pwSet").onclick = () => {
+  const password = $("pwNew").value;
+  if (password.length < 4) { $("pwStatus").textContent = "La password deve avere almeno 4 caratteri."; return; }
+  send({ cmd: "setPassword", password });
+  $("pwNew").value = "";
+};
+$("pwClear").onclick = () => send({ cmd: "setPassword", password: "" });
 $("peerAdd").onclick = () => {
   const url = $("peerUrl").value.trim();
   if (!url || !state) return;
@@ -1159,7 +1236,7 @@ function onMidi(e) {
     return;
   }
   const hit = state.midi.find((x) => sameControl(x, m));
-  if (hit) send({ cmd: hit.action });
+  if (hit) send({ cmd: hit.action, midi: true }); // MIDI is not limited by Safe Mode
 }
 $("midiLearn").onclick = async () => {
   if (midi.learning) midi.learning = null;
@@ -1176,7 +1253,7 @@ $("queueBar").addEventListener("click", (e) => {
   if (e.detail > 0) b.blur();
 });
 $("btnPlay").onclick = () => { if (!state || !state.is_playing) send({ cmd: "play" }); };
-$("btnStop").onclick = () => send({ cmd: "stop" });
+$("btnStop").onclick = () => stopGuarded("stop");
 $("btnLoop").onclick = () => send({ cmd: "loopToggle" });
 $("btnPrev").onclick = () => send({ cmd: "prev" });
 $("btnNext").onclick = () => send({ cmd: "next" });
@@ -1194,7 +1271,8 @@ document.addEventListener("keydown", (e) => {
   const cmd = KEYS[e.key];
   if (!cmd) return;
   e.preventDefault();
-  send({ cmd });
+  if (cmd === "playStop" && state && state.is_playing) stopGuarded(cmd);
+  else send({ cmd });
 });
 
 async function loadConnect() {
