@@ -612,6 +612,8 @@ function start(opts = {}) {
 
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server });
+  // ws re-emits the HTTP server's errors (e.g. EADDRINUSE); start() handles them
+  wss.on("error", () => {});
 
   function broadcast(obj) {
     const data = JSON.stringify(obj);
@@ -660,6 +662,7 @@ function start(opts = {}) {
   return new Promise((resolve, reject) => {
     const fail = (e) => {
       clearInterval(timer);
+      wss.close();
       try { udp.close(); } catch {}
       reject(e);
     };

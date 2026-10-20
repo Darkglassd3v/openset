@@ -52,6 +52,7 @@ macOS obbligatori, Linux se costa poco.
 
 - [x] Analisi gap vs AbleSet e piano v0.2.0
 - [x] `CLAUDE.md` + `TODO.md`
+- [x] Bug segnalato (v0.1.0, Linux): secondo avvio con porta occupata → crash "Unhandled 'error' event" su WebSocketServer; ora messaggio chiaro ed exit 1
 
 ## Rimandato (fuori da v0.2.0)
 

@@ -447,6 +447,13 @@ test("lyrics: JSON files with accented names and Live +LYRICS tracks", async (t)
   assert.deepEqual((await res.json()).lines[0].segments, [{ chord: "Bm", text: "Ciao" }]);
 });
 
+test("a busy port rejects start() instead of crashing", async (t) => {
+  const c = await setup(t);
+  const base = { baseDir: c.baseDir, log: false, udpPort: 0 };
+  await assert.rejects(start({ ...base, httpPort: c.srv.httpPort }), { code: "EADDRINUSE" });
+  await assert.rejects(start({ ...base, httpPort: 0, udpPort: c.srv.udpPort }), { code: "EADDRINUSE" });
+});
+
 test("custom.css is optional", async (t) => {
   const c = await setup(t);
   let res = await fetch(c.url("/custom.css"));
