@@ -594,6 +594,13 @@ test("a busy port rejects start() instead of crashing", async (t) => {
   await assert.rejects(start({ ...base, httpPort: 0, udpPort: c.srv.udpPort }), { code: "EADDRINUSE" });
 });
 
+test("the Remote Script install status is published for the UI", async (t) => {
+  assert.equal((await (await setup(t)).state()).scriptInstall, null);
+  const status = { status: "installed", path: "/Users/ana/Music/Ableton/User Library/Remote Scripts/OpenSet" };
+  const c = await setup(t, { scriptInstall: status });
+  assert.deepEqual((await c.state()).scriptInstall, status);
+});
+
 test("PWA: manifest, icons and iOS home-screen tags are served", async (t) => {
   const c = await setup(t, { publicDir: path.join(__dirname, "..", "public") });
   const res = await fetch(c.url("/manifest.webmanifest"));

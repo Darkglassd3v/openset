@@ -7,7 +7,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] K — installazione automatica del Remote Script (fase RED)
+- [ ] K — installazione automatica del Remote Script (fase GREEN)
 
 ## Da fare
 
@@ -20,7 +20,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 - [x] GREEN `server/launch.js`; smoke test della CI con `--no-open`
 
 ### K — Installazione automatica del Remote Script
-- [ ] RED `test/install.test.js`: User Library per macOS/Windows, copia solo se manca o è diverso, niente `__pycache__`, nessuna eccezione; stato in `/api/state`
+- [x] RED `test/install.test.js`: User Library per macOS/Windows, copia solo se manca o è diverso, niente `__pycache__`, nessuna eccezione; stato in `/api/state`
 - [ ] GREEN `server/install.js`; UI: passi per collegare Live quando non è connesso
 
 ### L — Connetti un dispositivo e porta 80
