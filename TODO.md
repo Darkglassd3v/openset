@@ -7,7 +7,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] J — apertura automatica del browser (fase GREEN)
+- [ ] K — installazione automatica del Remote Script (fase RED)
 
 ## Da fare
 
@@ -17,7 +17,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ### J — Apertura automatica del browser
 - [x] RED `test/launch.test.js`: `openCommand(platform, url)`, `parseArgs(argv)` (`--no-open`, `.als` primo argomento non-flag), errori dello spawn ignorati
-- [ ] GREEN `server/launch.js`; smoke test della CI con `--no-open`
+- [x] GREEN `server/launch.js`; smoke test della CI con `--no-open`
 
 ### K — Installazione automatica del Remote Script
 - [ ] RED `test/install.test.js`: User Library per macOS/Windows, copia solo se manca o è diverso, niente `__pycache__`, nessuna eccezione; stato in `/api/state`

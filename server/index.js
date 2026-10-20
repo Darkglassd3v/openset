@@ -22,6 +22,7 @@ const { createEngine } = require("./engine");
 const { createMeter } = require("./meter");
 const { cuesBetween } = require("./cues");
 const { dataDir, migrateData } = require("./datadir");
+const { parseArgs, openBrowser } = require("./launch");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
 // live next to the binary; from source they live in the project root.
@@ -824,7 +825,10 @@ if (require.main === module) {
     dir = BASE_DIR;
   }
   console.log(`[data] ${dir}`);
-  start({ baseDir: dir, alsFile: process.argv[2] }).catch((e) => {
+  const args = parseArgs(process.argv.slice(2));
+  start({ baseDir: dir, alsFile: args.alsFile }).then((srv) => {
+    if (args.open) openBrowser(`http://localhost:${srv.httpPort}`);
+  }, (e) => {
     const hint = e.code === "EADDRINUSE" ? " (is OpenSet or AbleSet already running?)" : "";
     console.error(`OpenSet cannot start: ${e.message}${hint}`);
     process.exit(1);
