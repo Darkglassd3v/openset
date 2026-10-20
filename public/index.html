@@ -2,8 +2,10 @@
 <html lang="it">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0d0d11">
 <title>OpenSet</title>
+<link rel="icon" href="data:,">
 <style>
   /* ---- tokens: stage console. Everything must be readable at 2 m in the dark. ---- */
   :root {
@@ -18,6 +20,7 @@
     --green: #57d97a;        /* play */
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
   html, body { height: 100%; }
   body {
     background: var(--ink);
@@ -27,20 +30,25 @@
     overflow: hidden;
     user-select: none;
   }
+  input, select { user-select: text; font: inherit; }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
   .mono { font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace; }
+  .dim { color: var(--dim); }
 
   /* ---- header: connection + beat clock ---- */
   header {
     display: flex; align-items: center; gap: 12px;
-    padding: 10px 14px;
+    padding: 10px 14px; padding-top: max(10px, env(safe-area-inset-top));
     border-bottom: 1px solid var(--line);
     flex-shrink: 0;
   }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
   .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
   .conn { font-size: 12px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+  .set-name { font-size: 12px; color: var(--amber); letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clock-box { margin-left: auto; }
   .clock {
-    margin-left: auto;
     font-size: 26px; font-weight: 600; letter-spacing: .04em;
     color: var(--amber);
     font-variant-numeric: tabular-nums;
@@ -54,36 +62,91 @@
     color: var(--dim); font-size: 13px; letter-spacing: .12em; text-transform: uppercase;
     border-bottom: 2px solid transparent; cursor: pointer;
   }
-  nav button.active { color: var(--amber); border-bottom-color: var(--amber); }
+  nav button[aria-selected="true"] { color: var(--amber); border-bottom-color: var(--amber); }
 
   main { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
 
   /* ---- setlist ---- */
-  .song {
-    border-bottom: 1px solid var(--line);
-  }
+  .songs { list-style: none; }
+  .song { border-bottom: 1px solid var(--line); }
   .song-head {
-    display: flex; align-items: center; gap: 14px;
-    padding: 16px 14px; cursor: pointer;
+    display: flex; align-items: center; gap: 14px; width: 100%;
+    padding: 16px 14px; cursor: pointer; background: none; border: none; text-align: left;
   }
-  .song-time { font-size: 12px; color: var(--dim); width: 52px; flex-shrink: 0; }
-  .song-name { font-size: 19px; font-weight: 600; flex: 1; }
+  .num { color: var(--dim); font-size: 14px; width: 22px; flex-shrink: 0; text-align: right; font-variant-numeric: tabular-nums; }
+  .song-main { flex: 1; min-width: 0; }
+  .song-name { font-size: 19px; font-weight: 600; display: block; }
+  .song-desc { font-size: 13px; color: var(--dim); display: block; margin-top: 2px; }
+  .song-time { font-size: 13px; color: var(--dim); flex-shrink: 0; }
   .song.current { background: var(--panel); }
-  .song.current .song-name { color: var(--amber); }
-  .song.current .marker { color: var(--amber); }
-  .marker { color: var(--line); font-size: 18px; width: 14px; }
-  .sections { padding: 0 14px 10px 80px; display: flex; flex-wrap: wrap; gap: 8px; }
+  .song.current .song-name, .song.current .num { color: var(--amber); }
+  .song.skip .song-head, .song.skip .sections, .song.skip .edit-row .song-name, .song.skip .note { opacity: .45; }
+  .song.skip .song-name { text-decoration: line-through; }
+  .stop-tag { font-size: 11px; color: var(--red); letter-spacing: .08em; text-transform: uppercase; margin-left: 8px; }
+  .sections { padding: 0 14px 12px 50px; display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
     padding: 8px 14px; border: 1px solid var(--line); border-radius: 999px;
     background: none; color: var(--text); font-size: 14px; cursor: pointer;
   }
+  .chip.quick { border-color: var(--amber-dim); }
   .chip.playing { border-color: var(--amber); color: var(--amber); }
   .chip:active { background: var(--amber-dim); }
   .loop-chip { border-style: dashed; color: var(--dim); }
+  .list-foot {
+    display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 16px 14px 24px; color: var(--dim); font-size: 13px;
+  }
+  .btn {
+    padding: 10px 16px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--panel); cursor: pointer; font-size: 14px;
+  }
+  .btn.primary { border-color: var(--amber); color: var(--amber); }
+  .btn[aria-pressed="true"] { border-color: var(--amber); color: var(--amber); background: var(--amber-dim); }
+  .list-foot .btn { margin-left: auto; }
   .empty {
     padding: 48px 24px; text-align: center; color: var(--dim); line-height: 1.6; font-size: 14px;
   }
   .empty b { color: var(--text); }
+
+  /* ---- setlist editor ---- */
+  .edit-row { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; }
+  .edit-row .song-name { flex: 1; min-width: 0; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .edit-row .btn { padding: 8px 10px; font-size: 13px; }
+  .note {
+    display: block; width: calc(100% - 28px); margin: 0 14px 10px;
+    padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
+    background: var(--ink); color: var(--text); font-size: 14px;
+  }
+  .edit-bar { display: flex; flex-wrap: wrap; gap: 8px; padding: 14px; border-bottom: 1px solid var(--line); }
+  .edit-bar input, .edit-bar select, .settings select {
+    padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--ink); color: var(--text); font-size: 14px; min-width: 0;
+  }
+  .edit-bar input { flex: 1 1 140px; }
+
+  /* ---- stage ---- */
+  .stage { padding: 18px 16px 28px; display: flex; flex-direction: column; gap: 14px; }
+  .stage-top { display: flex; align-items: center; gap: 14px; color: var(--dim); font-size: 14px; letter-spacing: .08em; }
+  .beats { margin-left: auto; display: flex; gap: 6px; }
+  .beats i { width: 12px; height: 12px; border-radius: 50%; background: var(--line); }
+  .beats i.on { background: var(--amber); }
+  .beats i.on:first-child { background: var(--green); }
+  .loop-tag { color: var(--amber); font-weight: 600; }
+  .stage-song { font-size: clamp(34px, 9vw, 72px); font-weight: 700; line-height: 1.05; color: var(--amber); overflow-wrap: anywhere; }
+  .stage-desc { color: var(--dim); font-size: 17px; }
+  .stage-section { font-size: clamp(24px, 6vw, 44px); font-weight: 600; }
+  .stage-section .dim { font-weight: 400; font-size: .6em; }
+  .bar { position: relative; height: 10px; background: var(--panel); border-radius: 5px; overflow: hidden; }
+  .bar-fill { position: absolute; inset: 0 auto 0 0; background: var(--amber); width: 0; }
+  .bar-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); }
+  .times { display: flex; gap: 24px; flex-wrap: wrap; }
+  .times b { display: block; font-size: clamp(30px, 8vw, 56px); font-variant-numeric: tabular-nums; }
+  .times span { color: var(--dim); font-size: 13px; letter-spacing: .08em; text-transform: uppercase; }
+  .stage-next { font-size: 20px; color: var(--dim); }
+  .stage-next b { color: var(--text); }
+  .stage-notes { font-size: 20px; color: var(--text); background: var(--panel); border-left: 3px solid var(--amber); padding: 10px 12px; white-space: pre-wrap; }
+  .stage-quick { display: flex; flex-wrap: wrap; gap: 10px; }
+  .stage-quick .chip { font-size: 18px; padding: 14px 20px; }
 
   /* ---- lyrics ---- */
   #lyrics { padding: 24px 18px 40vh; }
@@ -93,8 +156,24 @@
   }
   .lyr-line.now { color: var(--text); }
   .lyr-line.now::before { content: "▸ "; color: var(--amber); }
-  .lyr-chord { font-size: 15px; color: var(--amber); font-weight: 600; }
-  .lyr-none { color: var(--dim); text-align: center; padding-top: 60px; font-size: 15px; }
+  .lyr-line.has-ch { padding-top: 1.1em; }
+  .lyr-chord { font-size: 15px; color: var(--amber); font-weight: 600; white-space: pre; }
+  .seg { position: relative; }
+  .seg .ch { position: absolute; left: 0; top: -1.05em; font-size: .6em; color: var(--amber); font-weight: 700; white-space: nowrap; }
+  .lyr-none { color: var(--dim); text-align: center; padding-top: 60px; font-size: 15px; line-height: 1.6; }
+
+  /* ---- settings ---- */
+  .settings { padding: 8px 16px 32px; max-width: 760px; }
+  .settings h2 { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; color: var(--amber); margin: 22px 0 10px; }
+  .settings label { display: flex; align-items: center; gap: 12px; padding: 10px 0; font-size: 16px; cursor: pointer; }
+  .settings input[type="checkbox"] { width: 22px; height: 22px; accent-color: var(--amber); flex-shrink: 0; }
+  .settings p, .settings li, .settings td { font-size: 14px; color: var(--dim); line-height: 1.6; }
+  .settings ul { list-style: none; }
+  .settings li { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+  .settings table { border-collapse: collapse; }
+  .settings td { padding: 4px 16px 4px 0; }
+  .settings kbd { font-family: ui-monospace, Consolas, monospace; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 
   /* ---- signature: song progress strip ---- */
   .strip {
@@ -104,7 +183,7 @@
   }
   .strip-seg {
     height: 100%; border-right: 1px solid var(--ink);
-    position: relative; overflow: hidden; min-width: 2px;
+    position: relative; overflow: hidden; min-width: 2px; cursor: pointer;
   }
   .strip-seg span {
     position: absolute; left: 6px; top: 50%; transform: translateY(-50%);
@@ -140,45 +219,127 @@
   @media (prefers-reduced-motion: reduce) {
     .playhead, .lyr-line { transition: none; }
   }
+  @media print {
+    body { background: #fff; color: #000; overflow: visible; display: block; height: auto; }
+    header, nav, footer, .strip, .list-foot, .edit-bar, .sections, .note, .edit-row .btn { display: none !important; }
+    main { overflow: visible; }
+    .song { border-color: #ccc; break-inside: avoid; }
+    .song.current { background: none; }
+    .song-name, .song.current .song-name, .num, .song.current .num { color: #000 !important; }
+    .song.skip { display: none; }
+    .song-head { padding: 8px 0; }
+  }
 </style>
+<link rel="stylesheet" href="/custom.css">
 </head>
 <body>
 
 <header>
-  <div class="dot" id="dot"></div>
-  <div class="conn" id="connLabel">In attesa di Live…</div>
+  <div class="dot" id="dot" aria-hidden="true"></div>
   <div>
+    <div class="conn" id="connLabel" role="status">In attesa di Live…</div>
+    <div class="set-name" id="setName"></div>
+  </div>
+  <div class="clock-box">
     <div class="clock mono" id="clock">1.1.1</div>
     <div class="bpm mono" id="bpm">— BPM</div>
   </div>
 </header>
 
-<nav>
-  <button class="active" data-view="setlist">Scaletta</button>
-  <button data-view="lyrics">Testi</button>
+<nav role="tablist" aria-label="Viste">
+  <button role="tab" data-view="setlist">Scaletta</button>
+  <button role="tab" data-view="stage">Palco</button>
+  <button role="tab" data-view="lyrics">Testi</button>
+  <button role="tab" data-view="settings">Opzioni</button>
 </nav>
 
 <main>
   <div id="setlist"></div>
+  <div id="stage" class="stage" hidden>
+    <div class="stage-top">
+      <span id="stNum"></span>
+      <span id="stLoop" class="loop-tag" hidden>LOOP</span>
+      <span class="beats" id="stBeats" aria-hidden="true"></span>
+    </div>
+    <div class="stage-song" id="stSong">—</div>
+    <div class="stage-desc" id="stDesc"></div>
+    <div class="stage-section"><span id="stSection"></span> <span class="dim" id="stNextSec"></span></div>
+    <div class="bar" id="stBar"><div class="bar-fill" id="stFill"></div></div>
+    <div class="times">
+      <div><b class="mono" id="stLeft">—</b><span>rimanente nel brano</span></div>
+      <div><b class="mono" id="stSetLeft">—</b><span id="stSetLabel">alla fine dello show</span></div>
+    </div>
+    <div class="stage-next" id="stNextWrap">Prossimo: <b id="stNext">—</b></div>
+    <div class="stage-notes" id="stNotes" hidden></div>
+    <div class="stage-quick" id="stQuick"></div>
+  </div>
   <div id="lyrics" hidden></div>
+  <div id="settings" class="settings" hidden>
+    <h2>Riproduzione</h2>
+    <label><input type="checkbox" data-set="alwaysStop"> Ferma sempre a fine brano</label>
+    <label><input type="checkbox" data-set="autoJump"> Dopo uno stop, porta il cursore al brano successivo</label>
+    <label><input type="checkbox" data-set="autoplay"> Avvia la riproduzione quando salti a un brano o a una sezione</label>
+    <label>Quantizzazione dei salti in Live <select id="quant"></select></label>
+
+    <h2>MIDI</h2>
+    <p id="midiStatus">Web MIDI funziona in Chrome o Edge aperti su questo computer (http://localhost:39080). Tieni aperta una sola scheda.</p>
+    <ul id="midiList"></ul>
+    <div class="row">
+      <select id="midiAction" aria-label="Azione da assegnare"></select>
+      <button class="btn" id="midiLearn">Impara da MIDI</button>
+    </div>
+
+    <h2>Scorciatoie (tastiera e pedali Bluetooth)</h2>
+    <table>
+      <tr><td><kbd>Spazio</kbd></td><td>Play / Stop</td></tr>
+      <tr><td><kbd>→</kbd> <kbd>PagGiù</kbd></td><td>Brano successivo</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>PagSu</kbd></td><td>Inizio brano / brano precedente</td></tr>
+      <tr><td><kbd>↓</kbd> <kbd>↑</kbd></td><td>Sezione successiva / precedente</td></tr>
+      <tr><td><kbd>L</kbd></td><td>Loop della sezione corrente</td></tr>
+    </table>
+
+    <h2>Controllo esterno</h2>
+    <p>OSC compatibile con AbleSet sulla porta UDP <b>39051</b> (TouchOSC, Bitfocus Companion).
+      HTTP: <span class="mono">POST /api/cmd</span> con <span class="mono">{"cmd":"next"}</span>.
+      Stile personalizzato: <span class="mono">custom.css</span> accanto all'eseguibile.</p>
+  </div>
 </main>
 
 <div class="strip" id="strip"><div class="playhead" id="playhead"></div></div>
 
 <footer>
-  <button id="btnPrev">‹ Prec</button>
+  <button id="btnPrev" aria-label="Brano precedente">‹ Prec</button>
   <button id="btnPlay">Play</button>
   <button id="btnStop">Stop</button>
-  <button id="btnLoop">Loop</button>
-  <button id="btnNext">Succ ›</button>
+  <button id="btnLoop" aria-pressed="false">Loop</button>
+  <button id="btnNext" aria-label="Brano successivo">Succ ›</button>
 </footer>
 
 <script>
 "use strict";
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k, d) { try { return localStorage.getItem(k) || d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+};
+const QUANT = ["Nessuna", "8 battute", "4 battute", "2 battute", "1 battuta", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"];
+const ACTIONS = {
+  playStop: "Play / Stop", play: "Play", stop: "Stop", next: "Brano successivo", prev: "Brano precedente",
+  nextSection: "Sezione successiva", prevSection: "Sezione precedente", loopToggle: "Loop sezione",
+};
+const KEYS = {
+  " ": "playStop", ArrowRight: "next", PageDown: "next", ArrowLeft: "prev", PageUp: "prev",
+  ArrowDown: "nextSection", ArrowUp: "prevSection", l: "loopToggle", L: "loopToggle",
+};
+
 let state = null;
-let lyricsCache = {};   // songName -> lyrics json or null
-let currentSongIdx = -1;
-let view = "setlist";
+let view = store.get("openset.view", "setlist");
+let editing = false;
+let listKey = "";
+let stripKey = "";
+let stageKey = "";
+let settingsKey = "";
+const lyr = { cache: {}, rev: -1, song: null, line: -2 };
 
 // ---------- websocket ----------
 let ws;
@@ -194,169 +355,412 @@ connect();
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
 // ---------- helpers ----------
-const $ = (id) => document.getElementById(id);
-function beatToBBT(beat, num) {
-  const bar = Math.floor(beat / num) + 1;
-  const b = Math.floor(beat % num) + 1;
+function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+function fmt(sec) {
+  if (!(sec > 0)) return "0:00";
+  sec = Math.round(sec);
+  const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = String(sec % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+}
+function beatToBBT(beat, num, den) {
+  const perBar = (num * 4) / den;
+  const bar = Math.floor(beat / perBar) + 1;
+  const b = Math.floor(beat % perBar) + 1;
   const t = Math.floor((beat % 1) * 4) + 1;
   return bar + "." + b + "." + t;
 }
-function songIndexAt(beat) {
-  if (!state) return -1;
-  const s = state.setlist;
-  for (let i = s.length - 1; i >= 0; i--) if (beat >= s[i].time - 0.001) return i;
-  return -1;
-}
+const classes = (s) => (s.classes || []).filter((c) => /^[\w-]+$/.test(c)).join(" ");
+const curSong = () => state && state.setlist[state.current];
 
 // ---------- render ----------
 function render() {
   if (!state) return;
-  const connected = state.connected;
-  $("dot").className = "dot" + (connected ? " on" : "");
-  $("connLabel").textContent = connected
+  const st = state;
+  $("dot").className = "dot" + (st.connected ? " on" : "");
+  $("connLabel").textContent = st.connected
     ? "Live connesso"
-    : state.offline ? "Offline · progetto .als" : "In attesa di Live…";
-  $("clock").textContent = beatToBBT(state.beat || 0, state.sig_num || 4);
-  $("bpm").textContent = Math.round(state.tempo || 0) + " BPM";
-  $("btnPlay").textContent = state.is_playing ? "Playing" : "Play";
-  $("btnPlay").classList.toggle("playing", !!state.is_playing);
-  $("btnLoop").classList.toggle("on", !!state.loop);
+    : st.offline ? "Offline · progetto .als" : "In attesa di Live…";
+  $("setName").textContent = st.setlistName || "";
+  $("clock").textContent = beatToBBT(st.beat || 0, st.sig_num || 4, st.sig_den || 4);
+  $("bpm").textContent = Math.round(st.tempo || 0) + " BPM";
+  $("btnPlay").textContent = st.is_playing ? "Playing" : "Play";
+  $("btnPlay").classList.toggle("playing", !!st.is_playing);
+  $("btnLoop").classList.toggle("on", !!st.loop);
+  $("btnLoop").setAttribute("aria-pressed", String(!!st.loop));
 
-  const idx = songIndexAt(state.beat || 0);
-  if (idx !== currentSongIdx) { currentSongIdx = idx; renderSetlist(); loadLyrics(); }
-  else updateHighlights();
+  renderSetlist();
   renderStrip();
+  if (view === "stage") renderStage();
   if (view === "lyrics") renderLyrics();
+  if (view === "settings") renderSettings();
 }
 
 function renderSetlist() {
+  const key = JSON.stringify([state.setlist, editing, state.saved, state.setlistName]);
+  if (key !== listKey) { listKey = key; buildSetlist(); }
+  document.querySelectorAll("#setlist .song").forEach((el) => {
+    const cur = +el.dataset.i === state.current;
+    el.classList.toggle("current", cur);
+    el.setAttribute("aria-current", cur ? "true" : "false");
+  });
+  document.querySelectorAll("#setlist .chip.playing").forEach((c) => c.classList.remove("playing"));
+  const chip = document.querySelector(`#setlist .chip[data-song="${state.current}"][data-sec="${state.section}"]`);
+  if (chip) chip.classList.add("playing");
+}
+
+function buildSetlist() {
   const el = $("setlist");
-  if (!state.setlist.length) {
+  const list = state.setlist;
+  if (!list.length) {
     el.innerHTML = `<div class="empty">Nessun brano trovato.<br><br>
       Aggiungi dei <b>locator</b> nella timeline di Ableton:<br>
       "<b>Nome brano</b>" inizia un brano · "<b>&gt;Sezione</b>" segna una sezione ·
-      "<b>=END</b>" chiude il brano.</div>`;
+      "<b>SONG END</b>" chiude il brano · "<b>STOP</b>" ferma la riproduzione.</div>`;
     return;
   }
-  el.innerHTML = state.setlist.map((song, i) => `
-    <div class="song ${i === currentSongIdx ? "current" : ""}" data-i="${i}">
-      <div class="song-head" onclick="jumpSong(${i})">
-        <div class="marker">${i === currentSongIdx ? "▶" : "•"}</div>
-        <div class="song-name">${esc(song.name)}</div>
-        <div class="song-time mono">${beatToBBT(song.time, state.sig_num)}</div>
+  const t = state.timing;
+  const count = list.filter((s) => !s.skip && !s.nosong).length;
+  if (editing) {
+    el.innerHTML = `
+      <div class="edit-bar">
+        <button class="btn primary" data-act="done">Fine</button>
+        <button class="btn" data-act="print">Stampa</button>
+        <input id="saveName" placeholder="Nome scaletta" aria-label="Nome scaletta" value="${esc(state.setlistName || "")}">
+        <button class="btn" data-act="save">Salva</button>
+        ${state.saved.length ? `
+          <select id="loadName" aria-label="Scalette salvate">${state.saved.map((n) =>
+            `<option ${n === state.setlistName ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
+          <button class="btn" data-act="load">Carica</button>
+          <button class="btn" data-act="delete">Elimina</button>` : ""}
       </div>
-      ${song.sections.length ? `<div class="sections">
-        ${song.sections.map((sec, j) => `
-          <button class="chip" data-song="${i}" data-sec="${j}"
-                  onclick="jumpTo(${sec.time})">${esc(sec.name)}</button>`).join("")}
-        <button class="chip loop-chip" onclick="loopSong(${i})">⟲ loop brano</button>
-      </div>` : ""}
-    </div>`).join("");
+      <ol class="songs">${list.map((s, i) => `
+        <li class="song ${s.skip ? "skip" : ""} ${classes(s)}" data-i="${i}">
+          <div class="edit-row">
+            <button class="btn" data-act="up" data-i="${i}" aria-label="Sposta su ${esc(s.name)}" ${i ? "" : "disabled"}>↑</button>
+            <button class="btn" data-act="down" data-i="${i}" aria-label="Sposta giù ${esc(s.name)}" ${i < list.length - 1 ? "" : "disabled"}>↓</button>
+            <span class="song-name">${esc(s.name)}</span>
+            <button class="btn" data-act="skip" data-i="${i}" aria-pressed="${s.skip}">Salta</button>
+            <button class="btn" data-act="stopAfter" data-i="${i}" aria-pressed="${s.stopAfter}">Stop dopo</button>
+          </div>
+          <input class="note" data-i="${i}" placeholder="Note per il palco…" aria-label="Note per ${esc(s.name)}" value="${esc(s.notes || "")}">
+        </li>`).join("")}
+      </ol>
+      <div class="list-foot">Totale ${fmt(t.setTotal)} · ${count} brani</div>`;
+    return;
+  }
+  el.innerHTML = `
+    <ol class="songs">${list.map((s, i) => `
+      <li class="song ${s.skip ? "skip" : ""} ${classes(s)}" data-i="${i}">
+        <button class="song-head" data-act="song" data-i="${i}">
+          <span class="num">${s.number ?? "·"}</span>
+          <span class="song-main">
+            <span class="song-name">${esc(s.name)}${s.stopAfter || s.endMarker === "STOP" ? '<span class="stop-tag">stop</span>' : ""}</span>
+            ${s.description || s.tags.length || s.notes ? `<span class="song-desc">${esc([s.description, s.tags.map((x) => "#" + x).join(" "), s.notes].filter(Boolean).join(" · "))}</span>` : ""}
+          </span>
+          <span class="song-time mono">${s.seconds ? fmt(s.seconds) : "—"}</span>
+        </button>
+        ${s.sections.length ? `<div class="sections">
+          ${s.sections.map((sec, j) => `
+            <button class="chip ${sec.quick ? "quick" : ""}" data-act="jump" data-time="${sec.time}"
+                    data-song="${i}" data-sec="${j}">${esc(sec.name)}</button>`).join("")}
+          ${s.end != null ? `<button class="chip loop-chip" data-act="loopSong" data-i="${i}">⟲ loop brano</button>` : ""}
+        </div>` : ""}
+      </li>`).join("")}
+    </ol>
+    <div class="list-foot">Totale ${fmt(t.setTotal)} · ${count} brani
+      <button class="btn" data-act="edit">Modifica scaletta</button></div>`;
 }
 
-function updateHighlights() {
-  document.querySelectorAll(".song").forEach((el) => {
-    const i = +el.dataset.i;
-    el.classList.toggle("current", i === currentSongIdx);
-    el.querySelector(".marker").textContent = i === currentSongIdx ? "▶" : "•";
+// setlist edits: send the whole order/skip/stop/notes picture
+function editSetlist(change) {
+  const rows = state.setlist.map((s) => ({ name: s.name, skip: s.skip, stopAfter: s.stopAfter, notes: s.notes || "" }));
+  change(rows);
+  const notes = {};
+  rows.forEach((r) => { if (r.notes) notes[r.name] = r.notes; });
+  send({
+    cmd: "setlist",
+    order: rows.map((r) => r.name),
+    skip: rows.filter((r) => r.skip).map((r) => r.name),
+    stopAfter: rows.filter((r) => r.stopAfter).map((r) => r.name),
+    notes,
   });
-  // highlight current section chip
-  document.querySelectorAll(".chip[data-sec]").forEach((c) => c.classList.remove("playing"));
-  const song = state.setlist[currentSongIdx];
-  if (song) {
-    let cur = -1;
-    song.sections.forEach((sec, j) => { if (state.beat >= sec.time - 0.001) cur = j; });
-    if (cur >= 0) {
-      const chip = document.querySelector(`.chip[data-song="${currentSongIdx}"][data-sec="${cur}"]`);
-      if (chip) chip.classList.add("playing");
-    }
-  }
 }
+
+$("setlist").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]");
+  if (!b || !state) return;
+  const i = +b.dataset.i;
+  const act = b.dataset.act;
+  if (act === "song") send({ cmd: "song", index: i });
+  else if (act === "jump") send({ cmd: "jump", time: +b.dataset.time });
+  else if (act === "loopSong") {
+    const s = state.setlist[i];
+    send({ cmd: "loopSection", start: s.time, length: s.end - s.time });
+  } else if (act === "edit" || act === "done") { editing = act === "edit"; render(); }
+  else if (act === "print") window.print();
+  else if (act === "up" || act === "down") {
+    const j = act === "up" ? i - 1 : i + 1;
+    editSetlist((rows) => { [rows[i], rows[j]] = [rows[j], rows[i]]; });
+  } else if (act === "skip" || act === "stopAfter") editSetlist((rows) => { rows[i][act] = !rows[i][act]; });
+  else if (act === "save") { const name = $("saveName").value.trim(); if (name) send({ cmd: "saveSetlist", name }); }
+  else if (act === "load") send({ cmd: "loadSetlist", name: $("loadName").value });
+  else if (act === "delete") send({ cmd: "deleteSetlist", name: $("loadName").value });
+  if (e.detail > 0) b.blur(); // keep Space for play/stop after a tap
+});
+$("setlist").addEventListener("change", (e) => {
+  if (!e.target.classList.contains("note")) return;
+  const i = +e.target.dataset.i;
+  editSetlist((rows) => { rows[i].notes = e.target.value.trim(); });
+});
 
 function renderStrip() {
   const strip = $("strip");
-  const list = state.setlist;
-  strip.querySelectorAll(".strip-seg").forEach((n) => n.remove());
-  if (!list.length) return;
-  const total = (list[list.length - 1].end ?? list[list.length - 1].time + 32) - list[0].time;
-  const t0 = list[0].time;
-  list.forEach((song, i) => {
-    const end = song.end ?? (i + 1 < list.length ? list[i + 1].time : song.time + 32);
-    const seg = document.createElement("div");
-    seg.className = "strip-seg" + (i === currentSongIdx ? " cur" : "");
-    seg.style.width = ((end - song.time) / total * 100) + "%";
-    seg.innerHTML = "<span>" + esc(song.name) + "</span>";
-    seg.onclick = () => jumpSong(i);
-    strip.insertBefore(seg, $("playhead"));
-  });
-  const pos = Math.min(1, Math.max(0, ((state.beat || 0) - t0) / total));
-  $("playhead").style.left = (pos * 100) + "%";
+  const list = state.setlist.map((s, i) => ({ s, i })).filter((x) => !x.s.skip);
+  const key = JSON.stringify(list.map((x) => [x.s.name, x.s.seconds]));
+  if (key !== stripKey) {
+    stripKey = key;
+    strip.querySelectorAll(".strip-seg").forEach((n) => n.remove());
+    const total = list.reduce((a, x) => a + x.s.seconds, 0);
+    for (const { s, i } of list) {
+      const seg = document.createElement("div");
+      seg.className = "strip-seg";
+      seg.dataset.i = i;
+      seg.style.width = (total ? (s.seconds / total) * 100 : 100 / list.length) + "%";
+      seg.innerHTML = "<span>" + esc(s.name) + "</span>";
+      seg.title = s.name;
+      seg.onclick = () => send({ cmd: "song", index: i });
+      strip.insertBefore(seg, $("playhead"));
+    }
+  }
+  strip.querySelectorAll(".strip-seg").forEach((n) => n.classList.toggle("cur", +n.dataset.i === state.current));
+  const t = state.timing;
+  $("playhead").hidden = !t.setTotal;
+  $("playhead").style.left = (t.setTotal ? Math.min(1, t.setElapsed / t.setTotal) * 100 : 0) + "%";
 }
 
-// ---------- lyrics ----------
-async function loadLyrics() {
-  const song = state.setlist[currentSongIdx];
-  if (!song) return;
-  if (!(song.name in lyricsCache)) {
-    try {
-      const r = await fetch("/api/lyrics/" + encodeURIComponent(song.name));
-      lyricsCache[song.name] = r.ok ? await r.json() : null;
-    } catch { lyricsCache[song.name] = null; }
+// ---------- stage ----------
+function renderStage() {
+  const st = state;
+  const s = curSong();
+  const sec = s && s.sections[st.section];
+  const nextSec = s && s.sections[st.section + 1];
+  const next = st.setlist[st.next];
+  const count = st.setlist.filter((x) => !x.skip && !x.nosong).length;
+  $("stNum").textContent = s && s.number ? `${s.number} / ${count}` : "";
+  $("stLoop").hidden = !st.loop;
+  $("stSong").textContent = s ? s.name : "—";
+  $("stDesc").textContent = s ? [s.description, s.tags.map((x) => "#" + x).join(" ")].filter(Boolean).join(" · ") : "";
+  $("stSection").textContent = sec ? sec.name : "";
+  $("stNextSec").textContent = nextSec ? "› " + nextSec.name : "";
+  $("stLeft").textContent = s && s.seconds ? fmt(st.timing.songLeft) : "—";
+  $("stSetLeft").textContent = fmt(st.timing.setTotal - st.timing.setElapsed);
+  $("stSetLabel").textContent = `alla fine dello show · ${st.timing.songsLeft} brani`;
+  $("stNext").textContent = next ? next.name : "fine scaletta";
+  $("stNotes").hidden = !(s && s.notes);
+  $("stNotes").textContent = (s && s.notes) || "";
+  $("stFill").style.width = (s && s.seconds ? Math.min(1, st.timing.songElapsed / s.seconds) * 100 : 0) + "%";
+
+  // beat dots: one per beat of the bar
+  const num = Math.min(12, st.sig_num || 4);
+  const beatInBar = Math.floor(((st.beat || 0) * (st.sig_den || 4)) / 4) % num;
+  const dots = $("stBeats");
+  if (dots.children.length !== num) dots.innerHTML = "<i></i>".repeat(num);
+  [...dots.children].forEach((d, k) => d.classList.toggle("on", st.is_playing && k === beatInBar));
+
+  const key = JSON.stringify([st.current, s && s.sections, s && s.seconds]);
+  if (key === stageKey) return;
+  stageKey = key;
+  const bar = $("stBar");
+  bar.querySelectorAll(".bar-tick").forEach((n) => n.remove());
+  const len = s && s.end != null ? s.end - s.time : 0;
+  if (len > 0) for (const x of s.sections) {
+    const tick = document.createElement("div");
+    tick.className = "bar-tick";
+    tick.style.left = ((x.time - s.time) / len) * 100 + "%";
+    bar.appendChild(tick);
   }
-  renderLyrics();
+  const quick = s ? (s.sections.some((x) => x.quick) ? s.sections.filter((x) => x.quick) : s.sections) : [];
+  $("stQuick").innerHTML = quick.map((x) =>
+    `<button class="chip" data-time="${x.time}">${esc(x.name)}</button>`).join("");
+}
+$("stQuick").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-time]");
+  if (b) { send({ cmd: "jump", time: +b.dataset.time }); if (e.detail > 0) b.blur(); }
+});
+
+// ---------- lyrics ----------
+async function fetchLyrics(name) {
+  lyr.cache[name] = null; // loading or missing
+  try {
+    const r = await fetch("/api/lyrics/" + encodeURIComponent(name));
+    lyr.cache[name] = r.ok ? await r.json() : null;
+  } catch {}
+  lyr.song = null; // force a rebuild
+  if (view === "lyrics") renderLyrics();
+}
+
+function lineHtml(l, i) {
+  const segs = l.segments.map((g) => g.chord
+    ? `<span class="seg"><span class="ch">${esc(g.chord)}</span>${esc(g.text) || "&nbsp;&nbsp;"}</span>`
+    : esc(g.text)).join("");
+  const inline = l.segments.some((g) => g.chord);
+  return `<div class="lyr-line ${inline ? "has-ch" : ""}" id="lyr-${i}">
+    ${l.chords ? `<div class="lyr-chord mono">${esc(l.chords)}</div>` : ""}${segs}</div>`;
 }
 
 function renderLyrics() {
   const el = $("lyrics");
-  const song = state.setlist[currentSongIdx];
-  if (!song) { el.innerHTML = '<div class="lyr-none">Nessun brano attivo</div>'; return; }
-  const lyr = lyricsCache[song.name];
-  if (!lyr) {
-    el.innerHTML = `<div class="lyr-none">Nessun testo per «${esc(song.name)}».<br>
-      Crea <span class="mono">lyrics/${esc(song.name)}.json</span></div>`;
+  if (state.lyricsRev !== lyr.rev) { lyr.cache = {}; lyr.rev = state.lyricsRev; lyr.song = null; }
+  const s = curSong();
+  if (!s) {
+    if (lyr.song !== "") { el.innerHTML = '<div class="lyr-none">Nessun brano attivo</div>'; lyr.song = ""; }
     return;
   }
-  const rel = (state.beat || 0) - song.time; // beats from song start
-  let nowIdx = -1;
-  lyr.lines.forEach((l, i) => { if (rel >= l.beat - 0.001) nowIdx = i; });
-  el.innerHTML = lyr.lines.map((l, i) => `
-    <div class="lyr-line ${i === nowIdx ? "now" : ""}" id="lyr-${i}">
-      ${l.chords ? `<div class="lyr-chord mono">${esc(l.chords)}</div>` : ""}
-      ${esc(l.text)}
-    </div>`).join("");
-  const now = $("lyr-" + nowIdx);
-  if (now) now.scrollIntoView({ block: "center", behavior: "smooth" });
+  if (!(s.name in lyr.cache)) { fetchLyrics(s.name); return; }
+  const data = lyr.cache[s.name];
+  if (lyr.song !== s.name) {
+    lyr.song = s.name;
+    lyr.line = -2;
+    el.innerHTML = data
+      ? data.lines.map(lineHtml).join("")
+      : `<div class="lyr-none">Nessun testo per «${esc(s.name)}».<br>
+          Crea <span class="mono">lyrics/${esc(s.name)}.json</span>
+          o una traccia MIDI <span class="mono">Voce +LYRICS</span> con una clip per riga.</div>`;
+  }
+  if (!data) return;
+  const rel = (state.beat || 0) - s.time; // beats from song start
+  let now = -1;
+  data.lines.forEach((l, i) => { if (rel >= l.beat - 0.001) now = i; });
+  if (now === lyr.line) return;
+  const old = $("lyr-" + lyr.line);
+  if (old) old.classList.remove("now");
+  lyr.line = now;
+  const cur = $("lyr-" + now);
+  if (cur) {
+    cur.classList.add("now");
+    const smooth = !matchMedia("(prefers-reduced-motion: reduce)").matches;
+    cur.scrollIntoView({ block: "center", behavior: smooth ? "smooth" : "auto" });
+  }
 }
 
-// ---------- actions ----------
-function jumpTo(time) { send({ cmd: "jump", time }); }
-function jumpSong(i) { const s = state.setlist[i]; if (s) jumpTo(s.time); }
-function loopSong(i) {
-  const s = state.setlist[i];
-  if (!s || s.end == null) return;
-  send({ cmd: "loopSection", start: s.time, length: s.end - s.time });
+// ---------- settings ----------
+$("quant").innerHTML = QUANT.map((q, i) => `<option value="${i}">${q}</option>`).join("");
+$("midiAction").innerHTML = Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
+
+function renderSettings() {
+  const key = JSON.stringify([state.settings, state.quant, state.midi, midi.status, midi.learning]);
+  if (key === settingsKey) return;
+  settingsKey = key;
+  document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });
+  $("quant").value = String(state.quant);
+  $("midiStatus").textContent = midi.status;
+  $("midiLearn").textContent = midi.learning ? "Premi un tasto MIDI… (annulla)" : "Impara da MIDI";
+  $("midiList").innerHTML = state.midi.map((m, i) => `
+    <li><span class="mono">${m.type.toUpperCase()} ${m.number} · canale ${m.channel + 1}</span>
+      → ${esc(ACTIONS[m.action] || m.action)}
+      <button class="btn" data-del="${i}" aria-label="Elimina mappatura">✕</button></li>`).join("") ||
+    "<li>Nessuna mappatura.</li>";
 }
-function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
-
-$("btnPlay").onclick = () => send({ cmd: state && state.is_playing ? "continue" : "play" });
-$("btnStop").onclick = () => send({ cmd: "stop" });
-$("btnLoop").onclick = () => {
-  if (state && state.loop) send({ cmd: "loopOff" });
-  else loopSong(currentSongIdx);
-};
-$("btnPrev").onclick = () => jumpSong(Math.max(0, currentSongIdx - 1));
-$("btnNext").onclick = () => jumpSong(Math.min((state?.setlist.length || 1) - 1, currentSongIdx + 1));
-
-document.querySelectorAll("nav button").forEach((b) => {
-  b.onclick = () => {
-    document.querySelectorAll("nav button").forEach((x) => x.classList.remove("active"));
-    b.classList.add("active");
-    view = b.dataset.view;
-    $("setlist").hidden = view !== "setlist";
-    $("lyrics").hidden = view !== "lyrics";
-    if (view === "lyrics") renderLyrics();
-  };
+$("settings").addEventListener("change", (e) => {
+  if (e.target.dataset.set) send({ cmd: "settings", [e.target.dataset.set]: e.target.checked });
+  if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
 });
+$("midiList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-del]");
+  if (b) send({ cmd: "midi", mappings: state.midi.filter((_, i) => i !== +b.dataset.del) });
+});
+
+// ---------- MIDI (Web MIDI: Chrome/Edge on localhost or HTTPS) ----------
+const midi = { access: null, learning: null, status: $("midiStatus").textContent };
+async function initMidi() {
+  if (midi.access) return true;
+  if (!navigator.requestMIDIAccess) {
+    midi.status = "Web MIDI non disponibile qui: apri http://localhost:39080 in Chrome o Edge sul computer con il controller.";
+    return false;
+  }
+  try {
+    midi.access = await navigator.requestMIDIAccess();
+  } catch {
+    midi.status = "Accesso MIDI negato dal browser.";
+    return false;
+  }
+  const bind = () => {
+    const inputs = [...midi.access.inputs.values()];
+    inputs.forEach((input) => { input.onmidimessage = onMidi; });
+    midi.status = inputs.length
+      ? "MIDI attivo: " + inputs.map((x) => x.name).join(", ") + ". Tieni aperta una sola scheda."
+      : "Nessun dispositivo MIDI collegato.";
+    settingsKey = "";
+    if (state) render();
+  };
+  midi.access.onstatechange = bind;
+  bind();
+  return true;
+}
+function parseMidi([status, d1, d2]) {
+  const type = status & 0xf0, channel = status & 0x0f;
+  if (type === 0x90 && d2 > 0) return { type: "note", channel, number: d1 };
+  if (type === 0xb0 && d2 >= 64) return { type: "cc", channel, number: d1 }; // buttons send 127 on press
+  if (type === 0xc0) return { type: "pc", channel, number: d1 };
+  return null;
+}
+const sameControl = (a, b) => a.type === b.type && a.channel === b.channel && a.number === b.number;
+function onMidi(e) {
+  const m = parseMidi(e.data);
+  if (!m || !state) return;
+  if (midi.learning) {
+    const mappings = state.midi.filter((x) => !sameControl(x, m)).concat({ ...m, action: midi.learning });
+    midi.learning = null;
+    send({ cmd: "midi", mappings });
+    return;
+  }
+  const hit = state.midi.find((x) => sameControl(x, m));
+  if (hit) send({ cmd: hit.action });
+}
+$("midiLearn").onclick = async () => {
+  if (midi.learning) midi.learning = null;
+  else if (await initMidi()) midi.learning = $("midiAction").value;
+  settingsKey = "";
+  render();
+};
+
+// ---------- transport, keyboard, tabs ----------
+$("btnPlay").onclick = () => { if (!state || !state.is_playing) send({ cmd: "play" }); };
+$("btnStop").onclick = () => send({ cmd: "stop" });
+$("btnLoop").onclick = () => send({ cmd: "loopToggle" });
+$("btnPrev").onclick = () => send({ cmd: "prev" });
+$("btnNext").onclick = () => send({ cmd: "next" });
+document.querySelectorAll("footer button").forEach((b) =>
+  b.addEventListener("click", (e) => { if (e.detail > 0) b.blur(); }));
+
+document.addEventListener("keydown", (e) => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest("input, select, textarea")) return;
+  // a focused button keeps Space/Enter for itself (keyboard navigation)
+  if ((e.key === " " || e.key === "Enter") && e.target.closest("button")) return;
+  const cmd = KEYS[e.key];
+  if (!cmd) return;
+  e.preventDefault();
+  send({ cmd });
+});
+
+function showView(v) {
+  view = v;
+  store.set("openset.view", v);
+  document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === v)));
+  for (const id of ["setlist", "stage", "lyrics", "settings"]) $(id).hidden = id !== v;
+  stageKey = settingsKey = "";
+  lyr.song = null;
+  render();
+}
+document.querySelectorAll("nav button").forEach((b) => { b.onclick = () => showView(b.dataset.view); });
+showView(["setlist", "stage", "lyrics", "settings"].includes(view) ? view : "setlist");
+
+// MIDI mappings saved on the server keep working after a reload
+const startMidi = setInterval(() => {
+  if (!state) return;
+  clearInterval(startMidi);
+  if (state.midi.length) initMidi();
+}, 300);
 </script>
 </body>
 </html>

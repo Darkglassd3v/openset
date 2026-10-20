@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco.
 
 ## In corso
 
-- [ ] Fase 3 — UI (`public/index.html`)
+- [ ] Fase 4 — `ecc:test-coverage`
 
 ## Da fare
 
@@ -31,12 +31,12 @@ macOS obbligatori, Linux se costa poco.
 - [x] Test verdi (88 Node + 14 Python), commit `feat:` per modulo
 
 ### Fase 3 — UI (`public/index.html`)
-- [ ] Vista "Palco" (brano/sezione, prossimo, tempi, descrizione, note, tag, sezioni rapide `>>`)
-- [ ] Editor scaletta: su/giù, salta, stop dopo brano, note, salva/carica, stampa, durata totale
-- [ ] Impostazioni: stop sempre, autojump, autoplay, quantizzazione, MIDI learn (Web MIDI)
-- [ ] Scorciatoie tastiera/pedale; testi ChordPro trasposti; render testi solo al cambio riga
-- [ ] `custom.css` opzionale; classi `[.classe]`
-- [ ] Verifica nel browser con Live finto, commit `feat:`
+- [x] Vista "Palco" (brano/sezione, prossimo, tempi, descrizione, note, tag, sezioni rapide `>>`)
+- [x] Editor scaletta: su/giù, salta, stop dopo brano, note, salva/carica, stampa, durata totale
+- [x] Impostazioni: stop sempre, autojump, autoplay, quantizzazione, MIDI learn (Web MIDI)
+- [x] Scorciatoie tastiera/pedale; testi ChordPro trasposti; render testi solo al cambio riga
+- [x] `custom.css` opzionale; classi `[.classe]`
+- [x] Verifica nel browser con Live finto, commit `feat:`
 
 ### Fase 4 — `ecc:test-coverage`
 - [ ] `npm run coverage` ≥ 80% righe su `server/`, colmare i buchi, commit
