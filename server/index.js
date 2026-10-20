@@ -26,6 +26,7 @@ const { dataDir, migrateData } = require("./datadir");
 const { parseArgs, openBrowser } = require("./launch");
 const { userLibraries, installRemoteScript } = require("./install");
 const { deviceUrls, bonjourName, qrSvg } = require("./connect");
+const { version: VERSION } = require("../package.json");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
 // live next to the binary; from source they live in the project root.
@@ -208,6 +209,7 @@ function start(opts = {}) {
     const current = S.songAt(list, liveState.beat);
     return {
       ...liveState,
+      version: VERSION,
       tempo,
       offline: !liveState.connected && !!offlineProject,
       setlist: list.map((s) => ({ ...s, seconds: S.songSeconds(s, tempo, map) })),
@@ -829,13 +831,14 @@ function netInfo() {
 }
 
 function printAddresses(info, port) {
-  console.log(`\nOpenSet running:`);
+  console.log(`\nOpenSet ${VERSION} running:`);
   console.log(`  This computer : http://localhost${port === 80 ? "" : ":" + port}`);
   for (const url of deviceUrls(info, port)) console.log(`  Phone/tablet  : ${url}  (same Wi-Fi network)`);
   console.log("");
 }
 
 if (require.main === module) {
+  console.log(`OpenSet ${VERSION}`);
   let dir = dataDir(process.platform, process.env, os.homedir());
   try {
     for (const name of migrateData(BASE_DIR, dir)) console.log(`[data] copied ${name} to ${dir}`);

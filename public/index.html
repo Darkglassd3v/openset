@@ -49,6 +49,8 @@
     border-bottom: 1px solid var(--line);
     flex-shrink: 0;
   }
+  .logo { width: 30px; height: 30px; border-radius: 7px; flex-shrink: 0; }
+  .ver { font-size: 11px; color: var(--dim); }
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
   .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
   .conn { font-size: 12px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
@@ -253,11 +255,13 @@
 <body>
 
 <header>
+  <img class="logo" src="logo.svg" alt="OpenSet">
   <div class="dot" id="dot" aria-hidden="true"></div>
   <div>
     <div class="conn" id="connLabel" role="status">In attesa di Live…</div>
     <div class="set-name" id="setName"></div>
   </div>
+  <span class="ver mono" id="version" title="Versione di OpenSet"></span>
   <div class="clock-box">
     <div class="clock mono" id="clock">1.1.1</div>
     <div class="bpm mono" id="bpm">— BPM</div>
@@ -465,6 +469,7 @@ function render() {
     ? "Live connesso"
     : st.offline ? "Offline · progetto .als" : "In attesa di Live…";
   $("setName").textContent = st.setlistName || "";
+  $("version").textContent = st.version ? "v" + st.version : "";
   $("clock").textContent = beatToBBT(st.beat || 0, st.sig_num || 4, st.sig_den || 4);
   $("bpm").textContent = Math.round(st.tempo || 0) + " BPM";
   $("btnPlay").textContent = st.is_playing ? "Playing" : "Play";

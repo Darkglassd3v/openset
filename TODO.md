@@ -8,17 +8,17 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — N (versione visibile e nomi con versione), fase GREEN
+- [ ] v0.5.0 — N: nomi degli artefatti con la versione (release CI)
 
 ## Da fare
 
 ### N — Versione visibile e nomi con la versione
 - [x] RED: `/api/state` espone `version`; il CLI stampa `OpenSet <versione>` all'avvio
-- [ ] GREEN: banner nel terminale, versione e logo nell'intestazione della UI
+- [x] GREEN: banner nel terminale, versione e logo nell'intestazione della UI
 - [ ] Release CI: zip `openset-<versione>-<piattaforma>.zip`, programma `openset-<versione>[.exe]`; smoke test CI aggiornato
 
 ### O — Icona ovunque
-- [ ] Logo nell'intestazione della UI (favicon e PWA già fatti)
+- [x] Logo nell'intestazione della UI (favicon e PWA già fatti), fatto in N
 - [ ] Icona del `.exe` Windows (risorsa PE, verificata dallo smoke test su Windows)
 - [ ] macOS: `OpenSet <versione>.app` con icona `.icns` che apre il Terminale con il server (dove possibile)
 
