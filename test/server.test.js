@@ -124,6 +124,7 @@ test("Live state builds the setlist with current, next and timing", async (t) =>
   assert.equal(s.section, 0);
   assert.equal(s.next, 1);
   assert.equal(s.timing.songLeft, 12);
+  assert.deepEqual(s.setlist.map((x) => x.seconds), [16, 16, 0]);
   assert.equal(s.quantBeats, 4);
   assert.equal(s.cues, undefined); // raw cues stay on the server
   assert.equal(s.settings.autoJump, true);

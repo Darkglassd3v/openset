@@ -169,7 +169,7 @@ function start(opts = {}) {
       ...liveState,
       tempo,
       offline: !liveState.connected && !!offlineProject,
-      setlist: list,
+      setlist: list.map((s) => ({ ...s, seconds: S.songSeconds(s, tempo) })),
       current,
       next: S.nextSong(list, current),
       section: S.sectionAt(list[current], liveState.beat),
@@ -509,7 +509,6 @@ function start(opts = {}) {
     const section = secs[st.section];
     const next = st.setlist[st.next];
     const bar = (st.sig_num * 4) / st.sig_den;
-    const spb = 60 / (st.tempo > 0 ? st.tempo : 120);
     return {
       "/global/isPlaying": [st.is_playing ? 1 : 0],
       "/global/tempo": [st.tempo],
@@ -519,7 +518,7 @@ function start(opts = {}) {
       "/setlist/name": [st.setlistName || ""],
       "/setlist/songs": st.setlist.map((s) => s.name),
       "/setlist/songCount": [st.setlist.length],
-      "/setlist/songDurations": st.setlist.map((s) => (s.duration != null ? s.duration : S.songLength(s) * spb)),
+      "/setlist/songDurations": st.setlist.map((s) => s.seconds),
       "/setlist/songDescriptions": st.setlist.map((s) => s.description || ""),
       "/setlist/files": st.saved,
       "/setlist/sections": secs.map((x) => x.name),

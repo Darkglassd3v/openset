@@ -213,10 +213,14 @@ function songLength(s) {
   return Math.max(0, len);
 }
 
+// shortcut: constant tempo; tempo automation is ignored, use [m:ss] overrides when it matters
+function songSeconds(s, tempo) {
+  return s.duration != null ? s.duration : (songLength(s) * 60) / (tempo > 0 ? tempo : 120);
+}
+
 function timing(songs, cur, beat, tempo) {
-  // shortcut: constant tempo; tempo automation is ignored, use [m:ss] overrides when it matters
   const spb = 60 / (tempo > 0 ? tempo : 120);
-  const secs = (s) => (s.duration != null ? s.duration : songLength(s) * spb);
+  const secs = (s) => songSeconds(s, tempo);
   let setTotal = 0;
   let setElapsed = 0;
   let songsLeft = 0;
@@ -256,6 +260,7 @@ module.exports = {
   nextSong,
   prevSong,
   songLength,
+  songSeconds,
   timing,
   quantBeats,
 };

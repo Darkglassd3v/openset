@@ -10,6 +10,7 @@ const {
   nextSong,
   prevSong,
   songLength,
+  songSeconds,
   timing,
   quantBeats,
 } = require("../server/setlist");
@@ -290,6 +291,18 @@ test("songLength: excludes skipped sections and stops at +END", () => {
   ]);
   assert.equal(songLength(a), 16);
   assert.equal(songLength(b), 16);
+});
+
+test("songSeconds: override or length at the tempo", () => {
+  const [a, b, c] = buildSetlist([
+    { name: "A [1:30]", time: 0 },
+    { name: "B", time: 16 },
+    { name: "C", time: 48 },
+  ]);
+  assert.equal(songSeconds(a, 120), 90);
+  assert.equal(songSeconds(b, 120), 16);
+  assert.equal(songSeconds(b, 0), 16); // bad tempo falls back to 120
+  assert.equal(songSeconds(c, 120), 0);
 });
 
 test("timing: song and set times in seconds", () => {
