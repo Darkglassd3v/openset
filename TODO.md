@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco.
 
 ## In corso
 
-- [ ] Fase 2 — GREEN: implementazione (RED fatto, commit test:)
+- [ ] Fase 3 — UI (`public/index.html`)
 
 ## Da fare
 
@@ -26,9 +26,9 @@ macOS obbligatori, Linux se costa poco.
 - [x] `server/lyrics.js`
 - [x] `server/osc.js`
 - [x] fix `server/als-parser.js`
-- [ ] `server/index.js`: start(opts), comandi condivisi WS/HTTP/OSC, prefs `setlist.json`, motore, stato pubblico
+- [x] `server/index.js`: start(opts), comandi condivisi WS/HTTP/OSC, prefs `setlist.json`, motore, stato pubblico
 - [x] Remote Script: cue/clip solo se cambiano, invio a pezzi, quantizzazione, fix UDP Windows (`SIO_UDP_CONNRESET`)
-- [ ] Test verdi, commit `feat:`
+- [x] Test verdi (88 Node + 14 Python), commit `feat:` per modulo
 
 ### Fase 3 — UI (`public/index.html`)
 - [ ] Vista "Palco" (brano/sezione, prossimo, tempi, descrizione, note, tag, sezioni rapide `>>`)

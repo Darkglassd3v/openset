@@ -63,7 +63,7 @@ async function setup(t, opts = {}) {
     httpPort: 0,
     udpPort: 0,
     livePort: live.address().port,
-    liveTimeoutMs: 300,
+    log: false,
     ...opts,
   });
   const ctx = {
@@ -150,7 +150,7 @@ test("chunked messages from the Remote Script are reassembled", async (t) => {
 });
 
 test("Live is marked offline after a silence", async (t) => {
-  const c = await setup(t);
+  const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();
   await waitFor(async () => !(await c.state()).connected, "disconnect", 3000);
 });
