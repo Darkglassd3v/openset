@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco.
 
 ## In corso
 
-- [ ] Fase 4 — `ecc:test-coverage`
+- [ ] Fase 5 — Build e rilascio
 
 ## Da fare
 
@@ -39,7 +39,7 @@ macOS obbligatori, Linux se costa poco.
 - [x] Verifica nel browser con Live finto, commit `feat:`
 
 ### Fase 4 — `ecc:test-coverage`
-- [ ] `npm run coverage` ≥ 80% righe su `server/`, colmare i buchi, commit
+- [x] `npm run coverage`: righe 95.18% → 99.53%, rami 85.45% → 89.92% (`index.js` rami 76.74% → 86.25%); Python 88% → 94%
 
 ### Fase 5 — Build e rilascio
 - [ ] CI matrice Windows/macOS/Ubuntu: test Node + Python + build pkg + avvio binario

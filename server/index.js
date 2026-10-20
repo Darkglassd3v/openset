@@ -461,7 +461,8 @@ function start(opts = {}) {
         return i !== cur && handleCommand({ cmd: "song", index: i });
       }
       case "/setlist/jumpToSection":
-        return !!song && handleCommand({ cmd: "section", index: pick(song.sections, a, b === true) });
+        // clients send booleans as T, 1 or "true"
+        return !!song && handleCommand({ cmd: "section", index: pick(song.sections, a, [true, 1, "true"].includes(b)) });
       case "/setlist/jumpBySections": {
         if (!song) return false;
         const j = S.sectionAt(song, liveState.beat) + Math.trunc(Number(a) || 0);

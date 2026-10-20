@@ -464,3 +464,155 @@ test("custom.css is optional", async (t) => {
   res = await fetch(c.url("/custom.css"));
   assert.equal(await res.text(), ".song{color:red}");
 });
+
+test("MIDI mappings are validated, stored and published", async (t) => {
+  const c = await setup(t);
+  const mappings = [{ type: "note", channel: 0, number: 60, action: "next" }];
+  assert.equal((await c.cmd({ cmd: "midi", mappings })).status, 200);
+  assert.deepEqual((await c.state()).midi, mappings);
+  const bad = [
+    [{ type: "sysex", channel: 0, number: 1, action: "next" }],
+    [{ type: "cc", channel: 16, number: 1, action: "next" }],
+    [{ type: "cc", channel: 0, number: 128, action: "next" }],
+    [{ type: "pc", channel: 0, number: 1, action: 5 }],
+    "nope",
+  ];
+  for (const m of bad) assert.equal((await c.cmd({ cmd: "midi", mappings: m })).status, 400);
+  assert.deepEqual((await c.state()).midi, mappings);
+});
+
+test("seek, explicit loop ranges and loop enable", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  let sent = c.expectCmd({ cmd: "seek", time: 3.5 });
+  await c.cmd({ cmd: "seek", time: 3.5 });
+  await sent;
+  assert.equal((await c.cmd({ cmd: "seek" })).status, 400);
+  sent = c.expectCmd({ cmd: "loop", on: true, start: 0, length: 32 });
+  await c.cmd({ cmd: "loopSection", start: 0, length: 32 });
+  await sent;
+  sent = c.expectCmd({ cmd: "loop", on: true });
+  await c.cmd({ cmd: "loopOn" });
+  await sent;
+});
+
+test("prev on the first song restarts it", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.at(0.5);
+  const sent = c.expectCmd({ cmd: "jump", time: 0 });
+  await c.cmd({ cmd: "prev" });
+  await sent;
+});
+
+test("OSC: more AbleSet commands and addressing forms", async (t) => {
+  const c = await setup(t);
+  await c.connect({
+    ...LIVE,
+    cues: [...LIVE.cues.slice(0, 3), { name: ">>Bridge", time: 24 }, ...LIVE.cues.slice(3)],
+  });
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const cases = [
+    ["/global/continuePlaying", [], { cmd: "continue" }],
+    ["/global/playStop", [], { cmd: "play" }],
+    ["/global/tempo/adjust", [-20], { cmd: "tempo", bpm: 100 }],
+    ["/setlist/jumpToSong", ["3"], { cmd: "jump", time: 72 }], // numeric string, no song named "3"
+    ["/setlist/jumpToSection", ["Chor", true], { cmd: "jump", time: 16 }], // partial match
+    ["/setlist/jumpToQuickPlaySection", [1], { cmd: "jump", time: 24 }],
+    ["/setlist/jumpBySongs", [-1, "force=true"], { cmd: "jump", time: 0 }],
+    ["/loop/enable", [], { cmd: "loop", on: true }],
+  ];
+  for (const [address, args, want] of cases) {
+    const sent = c.expectCmd(want);
+    sendOsc(c, osc, address, args);
+    await sent;
+  }
+  const random = c.expectCmd({ cmd: "jump" });
+  sendOsc(c, osc, "/setlist/jumpToSong", ["RANDOM"]);
+  assert.ok([0, 40, 72].includes((await random).time));
+  // unknown addresses and bad arguments do nothing
+  const before = c.cmds.length;
+  sendOsc(c, osc, "/nope", []);
+  sendOsc(c, osc, "/global/quantization", ["3/7"]);
+  sendOsc(c, osc, "/subscribe", ["not-an-ip", 9000]);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(c.cmds.length, before);
+});
+
+test("OSC: subscribe with an explicit host, then unsubscribe", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const client = await udpSocket();
+  t.after(() => client.close());
+  let count = 0;
+  client.on("message", () => count++);
+  const port = client.address().port;
+  sendOsc(c, client, "/subscribe", ["127.0.0.1", port, "desk"]);
+  await waitFor(() => count > 0, "values for explicit host");
+  sendOsc(c, client, "/unsubscribe", ["127.0.0.1", port]);
+  await new Promise((r) => setTimeout(r, 100));
+  count = 0;
+  await c.at(50);
+  await new Promise((r) => setTimeout(r, 100));
+  assert.equal(count, 0);
+});
+
+test("an .als passed at startup gives an offline setlist", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-als-start-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "show.als");
+  fs.writeFileSync(file, zlib.gzipSync('<Locator Id="0"><Time Value="0" /><Name Value="Uno" /></Locator>'));
+  const errors = [];
+  t.mock.method(console, "log", () => {});
+  t.mock.method(console, "error", (...a) => errors.push(a.join(" ")));
+  const c = await setup(t, { alsFile: file });
+  assert.deepEqual((await c.state()).setlist.map((s) => s.name), ["Uno"]);
+  const broken = await setup(t, { alsFile: path.join(dir, "missing.als") });
+  assert.deepEqual((await broken.state()).setlist, []);
+  assert.ok(errors.some((e) => e.includes("[als] parse failed")));
+});
+
+test("prefs: a corrupt setlist.json falls back to defaults, an unwritable one is reported", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-bad-prefs-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  fs.writeFileSync(
+    path.join(baseDir, "setlist.json"),
+    JSON.stringify({ order: "x", settings: { autoplay: "yes", alwaysStop: true }, saved: [1], midi: [{}] })
+  );
+  const c = await setup(t, { baseDir });
+  const s = await c.state();
+  assert.deepEqual(s.settings, { alwaysStop: true, autoJump: true, autoplay: false });
+  assert.deepEqual(s.saved, []);
+  assert.deepEqual(s.midi, []);
+
+  const errors = [];
+  t.mock.method(console, "error", (...a) => errors.push(a.join(" ")));
+  const ro = await setup(t, { baseDir: path.join(baseDir, "does", "not", "exist") });
+  assert.equal((await ro.cmd({ cmd: "settings", autoJump: false })).status, 200);
+  assert.equal((await ro.state()).settings.autoJump, false); // still applied in memory
+  assert.ok(errors.some((e) => e.includes("[prefs] cannot save")));
+});
+
+test("startup log lists the addresses to open", async (t) => {
+  const lines = [];
+  t.mock.method(console, "log", (...a) => lines.push(a.join(" ")));
+  await setup(t, { log: true });
+  assert.ok(lines.some((l) => l.includes("This computer : http://localhost:")));
+});
+
+test("CLI: a busy port prints a hint and exits with 1", async (t) => {
+  const { spawn } = require("child_process");
+  const http = require("http");
+  const blocker = http.createServer();
+  await new Promise((r) => blocker.listen(0, r));
+  t.after(() => blocker.close());
+  const child = spawn(process.execPath, [path.join(__dirname, "..", "server", "index.js")], {
+    env: { ...process.env, PORT: String(blocker.address().port) },
+  });
+  let stderr = "";
+  child.stderr.on("data", (d) => (stderr += d));
+  const code = await new Promise((r) => child.on("exit", r));
+  assert.equal(code, 1);
+  assert.match(stderr, /OpenSet cannot start: .*EADDRINUSE.*already running/);
+});
