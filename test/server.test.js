@@ -338,6 +338,99 @@ test("editor: overwriting a saved setlist keeps a backup that can be restored", 
   assert.equal((await c.cmd({ cmd: "restoreBackup", name: "Tour", at: "never" })).status, 400);
 });
 
+test("Safe Mode: while playing, no song changes from the web app; OSC and MIDI still work", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  assert.equal((await c.state()).settings.safeMode, false);
+  await c.cmd({ cmd: "settings", safeMode: true });
+  await c.at(10, { is_playing: true });
+  for (const cmd of [{ cmd: "song", name: "Finale" }, { cmd: "next" }, { cmd: "prev", force: true }, { cmd: "jump", time: 40 }])
+    assert.equal((await c.cmd(cmd)).status, 400, JSON.stringify(cmd));
+  let sent = c.expectCmd({ cmd: "jump", time: 16 }); // a section of the song being played is fine
+  assert.equal((await c.cmd({ cmd: "section", name: "Chorus" })).status, 200);
+  await sent;
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  sent = c.expectCmd({ cmd: "jump", time: 72 });
+  sendOsc(c, osc, "/setlist/jumpToSong", ["Finale"]);
+  await sent;
+  const tab = await browser(c, t);
+  sent = c.expectCmd({ cmd: "jump", time: 40 });
+  tab.ws.send(JSON.stringify({ cmd: "next", midi: true })); // a mapped MIDI pedal
+  await sent;
+  await c.at(12, { is_playing: false });
+  sent = c.expectCmd({ cmd: "jump", time: 72 });
+  assert.equal((await c.cmd({ cmd: "song", name: "Finale" })).status, 200); // stopped: allowed
+  await sent;
+});
+
+test("password: stored as a salted hash, never published, set only from this computer", async (t) => {
+  const c = await setup(t);
+  assert.equal((await c.state()).passwordSet, false);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "abc" })).status, 400); // too short
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "palco-2026" })).status, 200);
+  const s = await c.state();
+  assert.equal(s.passwordSet, true);
+  assert.ok(!JSON.stringify(s).includes("palco-2026") && !("auth" in s));
+  const saved = JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8"));
+  assert.match(saved.auth.salt, /^[0-9a-f]{32}$/);
+  assert.match(saved.auth.hash, /^[0-9a-f]{64}$/);
+  assert.ok(!fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8").includes("palco-2026"));
+  // this computer keeps full control without the password
+  assert.equal((await c.cmd({ cmd: "stop" })).status, 200);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "" })).status, 200);
+  assert.equal((await c.state()).passwordSet, false);
+});
+
+test("password: other devices need it to give commands; wrong guesses are slowed down", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const lan = (p) => `http://${LAN_IP}:${c.srv.httpPort}${p}`;
+  const post = (p, body, headers = {}) =>
+    fetch(lan(p), { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  assert.equal((await post("/api/cmd", { cmd: "next" })).status, 401);
+  assert.equal((await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "nope" })).status, 401);
+  assert.equal((await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "palco-2026" })).status, 200);
+  assert.equal((await post("/api/setlist-text", { text: "Finale" })).status, 401);
+  assert.equal((await post("/api/cmd", { cmd: "setPassword", password: "" })).status, 401);
+  assert.equal((await fetch(lan("/api/state"))).status, 200); // reading is always allowed
+
+  // a browser on another device: read-only until it unlocks
+  const ws = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
+  const msgs = [];
+  ws.on("message", (b) => msgs.push(JSON.parse(b)));
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  const access = (n) => waitFor(() => msgs.filter((m) => m.type === "access")[n], "access message " + n);
+  assert.equal((await access(0)).control, false);
+  const before = c.cmds.length;
+  ws.send(JSON.stringify({ cmd: "next" }));
+  ws.send(JSON.stringify({ type: "auth", password: "wrong" }));
+  assert.equal((await access(1)).control, false);
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "ignored without the password");
+  ws.send(JSON.stringify({ type: "auth", password: "palco-2026" }));
+  const ok = await access(2);
+  assert.equal(ok.control, true);
+  assert.match(ok.token, /^[0-9a-f]{64}$/);
+  const jumped = c.expectCmd({ cmd: "jump", time: 40 });
+  ws.send(JSON.stringify({ cmd: "next" }));
+  await jumped;
+
+  // a reload unlocks with the token instead of the password
+  const ws2 = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
+  const msgs2 = [];
+  ws2.on("message", (b) => msgs2.push(JSON.parse(b)));
+  await new Promise((r) => ws2.once("open", r));
+  t.after(() => ws2.close());
+  ws2.send(JSON.stringify({ type: "auth", token: ok.token }));
+  await waitFor(() => msgs2.some((m) => m.type === "access" && m.control), "token accepted");
+
+  // five wrong passwords lock this address out for a while, even with the right one
+  for (let i = 0; i < 5; i++) await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "guess" + i });
+  assert.equal((await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "palco-2026" })).status, 429);
+});
+
 test("HTTP /api/cmd: valid, invalid and unknown commands", async (t) => {
   const c = await setup(t);
   await c.connect();

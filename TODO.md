@@ -43,7 +43,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 - [x] GREEN UI: trascinamento anche touch, Ctrl+K, copia/incolla, togli/rimetti tutti, ripristino backup
 
 ### T — Safe Mode e password
-- [ ] RED: Safe Mode (niente salti di brano dalla UI mentre suona, conferma prima della pausa; MIDI/OSC esclusi); password facoltativa (hash scrypt) per modificare e comandare dalla web app, `localhost` sempre ammesso
+- [x] RED: Safe Mode (niente salti di brano dalla UI mentre suona, conferma prima della pausa; MIDI/OSC esclusi); password facoltativa (hash scrypt) per modificare e comandare dalla web app, `localhost` sempre ammesso
 - [ ] GREEN: server + UI
 
 ### U — Rilascio v0.5.0
