@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [ ] G — rilascio v0.3.0
+- [ ] G — push, CI verde, tag `v0.3.0` (build di rilascio su GitHub Actions)
 
 ## Da fare
 
@@ -35,8 +35,8 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 - [x] Verifica nel browser con Live simulato: testi nel Palco, cue via WS (sezione + count 1-4), lista peer con stato
 
 ### G — Rilascio
-- [ ] `npm run coverage` ≥ 80% righe/rami su `server/`
-- [ ] README/INSTALL, versione 0.3.0, report TDD `docs/releases/0.3.0/`
+- [x] `npm run coverage`: righe 99.75%, rami 91.39%
+- [x] README, versione 0.3.0, report TDD `docs/releases/0.3.0/`
 - [ ] Push, CI verde (Windows/macOS/Ubuntu), tag `v0.3.0`, verifica asset
 
 ## Fatto
