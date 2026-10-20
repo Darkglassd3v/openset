@@ -37,7 +37,7 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 ### G — Rilascio
 - [x] `npm run coverage`: righe 99.75%, rami 91.39%
 - [x] README, versione 0.3.0, report TDD `docs/releases/0.3.0/`
-- [ ] Push, CI verde (Windows/macOS/Ubuntu), tag `v0.3.0`, verifica asset
+- [x] Push, CI verde (run 39487118022: 123/123 + 17 OK su Windows/macOS/Ubuntu), tag `v0.3.0`
 
 ## Fatto
 
