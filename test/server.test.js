@@ -594,6 +594,28 @@ test("a busy port rejects start() instead of crashing", async (t) => {
   await assert.rejects(start({ ...base, httpPort: 0, udpPort: c.srv.udpPort }), { code: "EADDRINUSE" });
 });
 
+test("PWA: manifest, icons and iOS home-screen tags are served", async (t) => {
+  const c = await setup(t, { publicDir: path.join(__dirname, "..", "public") });
+  const res = await fetch(c.url("/manifest.webmanifest"));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-type"), /application\/manifest\+json/);
+  const m = await res.json();
+  assert.equal(m.display, "standalone");
+  assert.equal(m.start_url, "/");
+  assert.ok(m.icons.some((i) => i.sizes === "512x512"));
+  for (const icon of m.icons) {
+    const r = await fetch(c.url("/" + icon.src));
+    assert.equal(r.status, 200, icon.src);
+    assert.match(r.headers.get("content-type"), /image\/png/);
+  }
+  const html = await (await fetch(c.url("/"))).text();
+  assert.match(html, /<link rel="manifest" href="manifest.webmanifest">/);
+  assert.match(html, /<meta name="apple-mobile-web-app-capable" content="yes">/);
+  const touch = html.match(/<link rel="apple-touch-icon" href="([^"]+)">/);
+  assert.ok(touch, "apple-touch-icon link");
+  assert.equal((await fetch(c.url("/" + touch[1]))).status, 200);
+});
+
 test("custom.css is optional", async (t) => {
   const c = await setup(t);
   let res = await fetch(c.url("/custom.css"));

@@ -6,11 +6,14 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [x] Release v0.3.0 (run 39487410456): 4 zip, nessun `__pycache__`
-
-(nessun lavoro in corso: prossimi passi in "Rimandato")
+- [ ] v0.3.1 — PWA per iPad/iPhone (chiesta dall'utente il 2026-10-20)
 
 ## Da fare
+
+### H — PWA (v0.3.1)
+- [x] RED `test/server.test.js`: `/manifest.webmanifest` (standalone, icone PNG servite), meta iOS in `index.html`
+- [ ] GREEN: manifest, icone 180/192/512, meta `apple-mobile-web-app-*`, Wake Lock dove il browser lo permette, avviso per il Blocco automatico di iOS
+- [ ] Verifica in Chrome (manifest letto, Wake Lock su localhost), rilascio v0.3.1
 
 ### A — Sections e testi dal `.als` (offline)
 - [x] RED `test/als-parser.test.js`: clip arrangement di `Sections` e `+LYRICS`, clip di sessione escluse, nomi tracce
