@@ -293,6 +293,15 @@
     <label><input type="checkbox" data-set="autoplay"> Avvia la riproduzione quando salti a un brano o a una sezione</label>
     <label>Quantizzazione dei salti in Live <select id="quant"></select></label>
 
+    <h2>Progetto .als</h2>
+    <p>Per la modalità offline e per durate esatte con l'automazione del tempo.
+      Solo dal computer su cui gira OpenSet.</p>
+    <div class="row">
+      <input class="field" id="alsPath" placeholder="/percorso/Progetto Project/Progetto.als" aria-label="Percorso del file .als">
+      <button class="btn" id="alsLoad">Carica</button>
+    </div>
+    <p id="alsStatus" role="status"></p>
+
     <h2>Questo dispositivo</h2>
     <label><input type="checkbox" data-dev="speakSongs"> Annuncia a voce il brano corrente</label>
     <label><input type="checkbox" data-dev="speakSections"> Annuncia la sezione successiva (due battute prima)</label>
@@ -758,6 +767,19 @@ function renderSettings() {
       <button class="btn" data-peer-del="${i}" aria-label="Rimuovi ${esc(p.url)}">✕</button></li>`).join("") ||
     "<li>Nessun computer di riserva.</li>";
 }
+$("alsLoad").onclick = async () => {
+  const file = $("alsPath").value.trim().replace(/^"(.*)"$/, "$1"); // Windows "Copy as path" adds quotes
+  if (!file) return;
+  try {
+    const r = await fetch("/api/load-als", {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file }),
+    });
+    const res = await r.json();
+    $("alsStatus").textContent = r.ok ? `Caricato: ${res.locators} locator.` : "Errore: " + res.error;
+  } catch {
+    $("alsStatus").textContent = "Errore di rete.";
+  }
+};
 $("peerAdd").onclick = () => {
   const url = $("peerUrl").value.trim();
   if (!url || !state) return;
