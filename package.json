@@ -1,6 +1,6 @@
 {
   "name": "openset",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Open-source live setlist controller for Ableton Live (AbleSet-style)",
   "main": "server/index.js",
   "bin": "server/index.js",

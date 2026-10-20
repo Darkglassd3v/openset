@@ -9,7 +9,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — U: copertura, documentazione, rilascio
+- [ ] v0.5.0 — U: PR #1 verso main, CI verde, merge, tag
 
 ## Da fare
 
@@ -49,7 +49,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ### U — Rilascio v0.5.0
 - [x] Copertura: righe 99.21%, rami 93.58%, funzioni 97.78% (168 test Node, 17 Python)
-- [ ] CHANGELOG 0.5.0, guida (scorciatoie nuove), README, report TDD, versione 0.5.0
+- [x] CHANGELOG 0.5.0, guida (scorciatoie nuove), README, report TDD `docs/releases/0.5.0/`, versione 0.5.0
 - [ ] PR #1 pronta, CI verde, merge, tag `v0.5.0` su main, asset verificati
 
 
