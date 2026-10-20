@@ -48,7 +48,9 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 - [x] GREEN UI: Safe Mode e conferma dello stop, password in Opzioni, sola lettura con «Sblocca» (token salvato nel browser)
 
 ### U — Rilascio v0.5.0
-- [ ] Copertura, README, report TDD, guida PDF, CI verde, tag `v0.5.0`, asset verificati
+- [x] Copertura: righe 99.21%, rami 93.58%, funzioni 97.78% (168 test Node, 17 Python)
+- [ ] CHANGELOG 0.5.0, guida (scorciatoie nuove), README, report TDD, versione 0.5.0
+- [ ] PR #1 pronta, CI verde, merge, tag `v0.5.0` su main, asset verificati
 
 
 ### I — Cartella dati utente stabile

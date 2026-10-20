@@ -192,6 +192,13 @@ test("devices: connected browsers are listed with name, address, view and lock",
   await waitFor(async () => (await c.state()).devices.length === 0, "device gone");
 });
 
+test("devices: the latency to each browser is measured with WebSocket pings", async (t) => {
+  const c = await setup(t, { pingMs: 30 });
+  await browser(c, t, { name: "ipad" });
+  const d = await waitFor(async () => (await c.state()).devices.find((x) => x.latencyMs !== null), "latency");
+  assert.ok(d.latencyMs >= 0 && d.latencyMs < 1000);
+});
+
 test("devices: OSC and HTTP commands reach the matching browsers only", async (t) => {
   const c = await setup(t);
   const ipad = await browser(c, t, { name: "ipad-1, stage" });

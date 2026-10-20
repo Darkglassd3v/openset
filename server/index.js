@@ -125,6 +125,7 @@ function start(opts = {}) {
     log: true,
     now: Date.now, // injectable clock for tests
     peerPollMs: 1000,
+    pingMs: 2000, // browser latency check
     scriptInstall: null, // Remote Script install result, shown by the UI
     netInfo, // platform, host name and interfaces, for /api/connect
     ...opts,
@@ -993,7 +994,7 @@ function start(opts = {}) {
       ws.pingAt = Date.now();
       ws.ping();
     }
-  }, 2000);
+  }, cfg.pingMs);
 
   // ---------------- startup ----------------
 
