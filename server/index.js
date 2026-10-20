@@ -27,6 +27,7 @@ const { parseArgs, openBrowser } = require("./launch");
 const { userLibraries, installRemoteScript } = require("./install");
 const { deviceUrls, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
+const { searchSongs, setlistText, parseSetlistText } = require("./editor");
 const { version: VERSION } = require("../package.json");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
@@ -63,6 +64,7 @@ function defaultPrefs() {
     measured: {}, // song name -> seconds measured during real playback
     settings: { alwaysStop: false, autoJump: true, autoplay: false, jumpMode: "quantized" },
     saved: {},
+    backups: [], // saved setlists replaced by a newer save: { name, at, data }, newest first
     setlistName: null,
     midi: [],
     peers: [],
@@ -175,6 +177,9 @@ function start(opts = {}) {
           ? saved.measured
           : {},
       setlistName: typeof saved.setlistName === "string" ? saved.setlistName : null,
+      backups: Array.isArray(saved.backups)
+        ? saved.backups.filter((b) => b && validName(b.name) && typeof b.at === "string" && b.data && typeof b.data === "object")
+        : [],
       midi: cleanMidi(saved.midi) || [],
       peers: cleanPeers(saved.peers) || [],
     };
@@ -226,6 +231,7 @@ function start(opts = {}) {
       quantBeats: S.quantBeats(liveState.quant, liveState.sig_num, liveState.sig_den),
       settings: prefs.settings,
       saved: Object.keys(prefs.saved),
+      backups: prefs.backups.map(({ name, at }) => ({ name, at })),
       setlistName: prefs.setlistName,
       midi: prefs.midi,
       peers: prefs.peers.map((url) => peerStatus.get(url) || { url, online: false }),
@@ -548,7 +554,16 @@ function start(opts = {}) {
       case "saveSetlist": {
         if (!validName(msg.name)) return false;
         const { order, skip, stopAfter, notes } = prefs;
-        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes } }, setlistName: msg.name });
+        // overwriting keeps the previous version, like AbleSet's Backup folder
+        const backups = Object.hasOwn(prefs.saved, msg.name)
+          ? [{ name: msg.name, at: new Date(cfg.now()).toISOString(), data: prefs.saved[msg.name] }, ...prefs.backups].slice(0, 20)
+          : prefs.backups;
+        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes } }, setlistName: msg.name, backups });
+      }
+      case "restoreBackup": {
+        const b = prefs.backups.find((x) => x.name === msg.name && x.at === msg.at);
+        const loaded = b && cleanSetlist(b.data, defaultPrefs());
+        return !!loaded && setPrefs({ ...loaded, setlistName: b.name });
       }
       case "loadSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;
@@ -798,6 +813,24 @@ function start(opts = {}) {
     const out = L.normalizeLyrics(lyr, transpose);
     if (!out) return res.status(404).json({ error: "No lyrics for this song" });
     res.json(out);
+  });
+
+  // setlist editor: song search (Ctrl+K) and the setlist as text to copy or paste
+  app.get("/api/search", (req, res) => {
+    const list = setlist();
+    const results = searchSongs(list, String(req.query.q || "").slice(0, 100)).slice(0, 20);
+    res.json({ results: results.map((r) => (r.kind === "song" ? { ...r, name: list[r.index].name } : r)) });
+  });
+
+  app.get("/api/setlist-text", (_req, res) => res.type("text/plain").send(setlistText(setlist())));
+
+  app.post("/api/setlist-text", (req, res) => {
+    const { text } = req.body || {};
+    if (typeof text !== "string" || text.length > 100000) return res.status(400).json({ error: "Missing 'text'" });
+    const { order, skip, stopAfter, notes, unmatched } = parseSetlistText(text, setlist());
+    if (!runCommand({ cmd: "setlist", order, skip, stopAfter, notes: { ...prefs.notes, ...notes } }))
+      return res.status(400).json({ error: "Invalid setlist" });
+    res.json({ ok: true, unmatched });
   });
 
   app.post("/api/cmd", (req, res) => {

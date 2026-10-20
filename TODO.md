@@ -39,7 +39,8 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ### S — Editor della scaletta
 - [x] RED: ricerca approssimata (iniziali, parti del titolo, tag), scaletta come testo (`{nota}`, `-- stop --`) e incolla con match approssimato, backup a ogni sovrascrittura
-- [ ] GREEN: trascinamento anche touch, Ctrl+K, copia/incolla, backup
+- [x] GREEN server: `server/editor.js` (ricerca, testo, incolla approssimato), `GET /api/search`, `GET|POST /api/setlist-text`, backup a ogni sovrascrittura e `restoreBackup`
+- [ ] GREEN UI: trascinamento anche touch, Ctrl+K, copia/incolla, togli/rimetti tutti, ripristino backup
 
 ### T — Safe Mode e password
 - [ ] RED: Safe Mode (niente salti di brano dalla UI mentre suona, conferma prima della pausa; MIDI/OSC esclusi); password facoltativa (hash scrypt) per modificare e comandare dalla web app, `localhost` sempre ammesso
