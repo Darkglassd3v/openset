@@ -43,6 +43,8 @@ const UDP_LIVE = { host: "127.0.0.1", port: 39050 }; // commands to Live
 
 // AbleSet's OSC names for Live's global quantization values
 const QUANT_NAMES = ["none", "8", "4", "2", "1", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"];
+// when a jump chosen while playing happens (AbleSet's jump modes)
+const JUMP_MODES = ["quantized", "section", "song", "dynamic", "manual"];
 
 const num = (v) => typeof v === "number" && Number.isFinite(v);
 const strs = (a) => Array.isArray(a) && a.length <= 1000 && a.every((x) => typeof x === "string");
@@ -50,6 +52,7 @@ const strMap = (o) =>
   !!o && typeof o === "object" && !Array.isArray(o) && Object.values(o).every((x) => typeof x === "string");
 const isLoopback = (a) => typeof a === "string" && (a === "::1" || /^(::ffff:)?127\./.test(a));
 const validName = (n) => typeof n === "string" && n.trim().length > 0 && n.length <= 64;
+const validSetting = (k, v) => (k === "jumpMode" ? JUMP_MODES.includes(v) : typeof v === "boolean");
 
 function defaultPrefs() {
   return {
@@ -58,7 +61,7 @@ function defaultPrefs() {
     stopAfter: [],
     notes: {},
     measured: {}, // song name -> seconds measured during real playback
-    settings: { alwaysStop: false, autoJump: true, autoplay: false },
+    settings: { alwaysStop: false, autoJump: true, autoplay: false, jumpMode: "quantized" },
     saved: {},
     setlistName: null,
     midi: [],
@@ -143,6 +146,7 @@ function start(opts = {}) {
   let lyricsRev = 0;
   let lastLiveMsg = 0;
   let offlineProject = null; // from .als parsing
+  let queued = null; // { time, type: "song"|"section" }: a jump waiting for its moment
   let prefs = loadPrefs();
   const engine = createEngine();
   const meter = createMeter();
@@ -159,7 +163,7 @@ function start(opts = {}) {
     } catch {}
     const settings = { ...base.settings };
     for (const k of Object.keys(settings))
-      if (saved.settings && typeof saved.settings[k] === "boolean") settings[k] = saved.settings[k];
+      if (saved.settings && validSetting(k, saved.settings[k])) settings[k] = saved.settings[k];
     return {
       ...base,
       ...(cleanSetlist(saved, base) || {}),
@@ -225,10 +229,18 @@ function start(opts = {}) {
       setlistName: prefs.setlistName,
       midi: prefs.midi,
       peers: prefs.peers.map((url) => peerStatus.get(url) || { url, online: false }),
+      queued: queued && queuedInfo(list),
       lyricsRev,
       scriptInstall: cfg.scriptInstall,
       devices: [...devices.values()],
     };
+  }
+
+  // where the queued jump lands: song and section index
+  function queuedInfo(list) {
+    const song = S.songAt(list, queued.time);
+    const sections = list[song] ? list[song].sections : [];
+    return { ...queued, song, section: sections.findIndex((x) => Math.abs(x.time - queued.time) < S.EPS) };
   }
 
   function changed(list) {
@@ -255,6 +267,7 @@ function start(opts = {}) {
     }
     if (msg.type !== "state") return;
     const wasConnected = liveState.connected;
+    const wasPlaying = liveState.is_playing;
     const prevBeat = liveState.beat;
     const { type, cues: newCues, ...rest } = msg;
     liveState = { ...liveState, ...rest, connected: true };
@@ -270,8 +283,15 @@ function start(opts = {}) {
         loop: liveState.loop,
         quantBeats: S.quantBeats(liveState.quant, liveState.sig_num, liveState.sig_den),
         settings: prefs.settings,
+        queued,
       });
       cmds.forEach(sendToLive);
+      if (queued && cmds.some((c) => c.cmd === "jump" && Math.abs(c.time - queued.time) < S.EPS)) queued = null;
+      // playback stopped with a jump waiting (Manual mode waits for this): jump now
+      if (queued && wasPlaying && !liveState.is_playing) {
+        sendToLive({ cmd: "jump", time: queued.time });
+        queued = null;
+      }
       const measured = meter.update({
         songs: list,
         prevBeat,
@@ -402,7 +422,14 @@ function start(opts = {}) {
 
   // ---------------- commands (WebSocket, HTTP, OSC) ----------------
 
-  function jumpTo(time) {
+  // A jump from the user. In the queued jump modes, while playing, it waits
+  // for the engine (end of section/song) or for J / Shift+J / a stop.
+  function jumpTo(time, type = "section") {
+    if (prefs.settings.jumpMode !== "quantized" && liveState.is_playing) {
+      queued = { time, type };
+      changed();
+      return true;
+    }
     sendToLive({ cmd: "jump", time });
     if (prefs.settings.autoplay && !liveState.is_playing) sendToLive({ cmd: "play" });
     return true;
@@ -431,26 +458,26 @@ function start(opts = {}) {
         sendToLive({ cmd: liveState.is_playing ? "stop" : "play" });
         return true;
       case "jump":
-        return num(msg.time) && jumpTo(msg.time);
+        return num(msg.time) && jumpTo(msg.time, list.some((s) => Math.abs(s.playStart - msg.time) < S.EPS) ? "song" : "section");
       case "seek":
         if (!num(msg.time)) return false;
         sendToLive({ cmd: "seek", time: msg.time });
         return true;
       case "song": {
         const i = typeof msg.name === "string" ? list.findIndex((s) => s.name === msg.name) : msg.index;
-        return Number.isInteger(i) && !!list[i] && jumpTo(list[i].playStart);
+        return Number.isInteger(i) && !!list[i] && jumpTo(list[i].playStart, "song");
       }
       case "next": {
         const n = S.nextSong(list, cur);
-        if (n >= 0) jumpTo(list[n].playStart);
+        if (n >= 0) jumpTo(list[n].playStart, "song");
         return true;
       }
       case "prev": {
         // like AbleSet: back to the start of the song first, unless forced
-        if (song && !msg.force && liveState.beat - song.playStart > 1) return jumpTo(song.playStart);
+        if (song && !msg.force && liveState.beat - song.playStart > 1) return jumpTo(song.playStart, "song");
         const p = S.prevSong(list, cur);
-        if (p >= 0) jumpTo(list[p].playStart);
-        else if (song) jumpTo(song.playStart);
+        if (p >= 0) jumpTo(list[p].playStart, "song");
+        else if (song) jumpTo(song.playStart, "song");
         return true;
       }
       case "section": {
@@ -500,11 +527,24 @@ function start(opts = {}) {
         const settings = { ...prefs.settings };
         for (const k of Object.keys(settings)) {
           if (msg[k] === undefined) continue;
-          if (typeof msg[k] !== "boolean") return false;
+          if (!validSetting(k, msg[k])) return false;
           settings[k] = msg[k];
         }
+        if (settings.jumpMode === "quantized") queued = null;
         return setPrefs({ settings });
       }
+      case "jumpToQueued": {
+        if (!queued) return false;
+        // J: quantized by Live; Shift+J: right now
+        sendToLive({ cmd: msg.now ? "seek" : "jump", time: queued.time });
+        queued = null;
+        changed();
+        return true;
+      }
+      case "clearQueue":
+        queued = null;
+        changed();
+        return true;
       case "saveSetlist": {
         if (!validName(msg.name)) return false;
         const { order, skip, stopAfter, notes } = prefs;
@@ -628,6 +668,10 @@ function start(opts = {}) {
       case "/devices/unlock":
       case "/devices/toggleLock":
         return runCommand({ cmd: "devices", action: address.slice(9), devices: String(a ?? ""), page: b });
+      case "/setlist/jumpToQueued":
+        return runCommand({ cmd: "jumpToQueued", now: [true, 1, "true"].includes(a) });
+      case "/setlist/clearQueuedJump":
+        return runCommand({ cmd: "clearQueue" });
       case "/loop/enable":
         return runCommand({ cmd: "loopOn" });
       case "/loop/escape":
@@ -692,7 +736,15 @@ function start(opts = {}) {
       "/setlist/nextSongName": [next ? next.name : ""],
       "/setlist/nextSongIndex": [st.next],
       "/devices/names": st.devices.map((d) => d.name).filter(Boolean),
+      "/setlist/queuedName": queuedNames(st),
+      "/setlist/queuedIndex": st.queued ? [st.queued.song, st.queued.section] : [-1, -1],
     };
+  }
+
+  function queuedNames(st) {
+    const song = st.queued && st.setlist[st.queued.song];
+    const sec = song && song.sections[st.queued.section];
+    return [song ? song.name : "", sec ? sec.name : ""];
   }
 
   // Sends changed values to all subscribers, or everything to one target.

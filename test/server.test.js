@@ -908,11 +908,11 @@ test("prefs: a corrupt setlist.json falls back to defaults, an unwritable one is
   t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
   fs.writeFileSync(
     path.join(baseDir, "setlist.json"),
-    JSON.stringify({ order: "x", settings: { autoplay: "yes", alwaysStop: true }, saved: [1], midi: [{}] })
+    JSON.stringify({ order: "x", settings: { autoplay: "yes", alwaysStop: true, jumpMode: "x" }, saved: [1], midi: [{}] })
   );
   const c = await setup(t, { baseDir });
   const s = await c.state();
-  assert.deepEqual(s.settings, { alwaysStop: true, autoJump: true, autoplay: false });
+  assert.deepEqual(s.settings, { alwaysStop: true, autoJump: true, autoplay: false, jumpMode: "quantized" });
   assert.deepEqual(s.saved, []);
   assert.deepEqual(s.midi, []);
 

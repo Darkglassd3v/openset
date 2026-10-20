@@ -33,7 +33,8 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ### R — Modalità di salto e coda
 - [x] RED: modalità Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale; coda; J, ⇧J, C; OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`
-- [ ] GREEN: motore + UI (brano/sezione in coda evidenziati, pulsanti salta / salta subito)
+- [x] GREEN motore + server: `jumpMode` nelle impostazioni, coda nello stato, `jumpToQueued`/`clearQueue`, salto in coda allo stop, OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`, valori `queuedName`/`queuedIndex`
+- [ ] GREEN UI: brano/sezione in coda evidenziati, pulsanti salta / salta subito / annulla, tasti J, ⇧J, C, scelta della modalità
 
 ### S — Editor della scaletta
 - [ ] RED: ricerca approssimata (iniziali, parti del titolo, tag), scaletta come testo (`{nota}`, `-- stop --`) e incolla con match approssimato, backup a ogni sovrascrittura
