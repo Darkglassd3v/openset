@@ -1,6 +1,7 @@
 # TODO — OpenSet v0.5.0
 
 Stato aggiornato a ogni passo. Protocollo di ripresa: vedi `CLAUDE.md`.
+Branch: `release/v0.5.0` (da `main` a383a08); rilascio con PR verso `main`.
 Obiettivo utente: coprire il più possibile le funzioni di AbleSet; Windows e
 macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 2026-10-20 (confermati il 2026-10-21) + regola degli artefatti di rilascio
