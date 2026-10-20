@@ -38,7 +38,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 - [x] GREEN UI: brano/sezione in coda evidenziati, barra «In coda» con salta / subito / annulla, tasti J, ⇧J, C, scelta della modalità in Opzioni
 
 ### S — Editor della scaletta
-- [ ] RED: ricerca approssimata (iniziali, parti del titolo, tag), scaletta come testo (`{nota}`, `-- stop --`) e incolla con match approssimato, backup a ogni sovrascrittura
+- [x] RED: ricerca approssimata (iniziali, parti del titolo, tag), scaletta come testo (`{nota}`, `-- stop --`) e incolla con match approssimato, backup a ogni sovrascrittura
 - [ ] GREEN: trascinamento anche touch, Ctrl+K, copia/incolla, backup
 
 ### T — Safe Mode e password

@@ -301,6 +301,43 @@ test("jump modes: OSC jumpToQueued, clearQueuedJump and queued values", async (t
   await seek;
 });
 
+test("editor: search, copy and paste the setlist as text", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const found = await (await fetch(c.url("/api/search?q=fin"))).json();
+  assert.deepEqual(found.results[0], { kind: "song", index: 2, name: "Finale" });
+  assert.equal(await (await fetch(c.url("/api/setlist-text"))).text(), "Intro Song\nPerché\nFinale\n");
+  const res = await fetch(c.url("/api/setlist-text"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: "finale {bis}\n-- stop --\nintro song\nNope" }),
+  });
+  assert.deepEqual(await res.json(), { ok: true, unmatched: ["Nope"] });
+  const s = await c.state();
+  assert.deepEqual(s.setlist.map((x) => [x.name, x.skip, x.stopAfter, x.notes]), [
+    ["Finale", false, true, "bis"],
+    ["Intro Song", false, false, ""],
+    ["Perché", true, false, ""],
+  ]);
+  const bad = await fetch(c.url("/api/setlist-text"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  assert.equal(bad.status, 400);
+});
+
+test("editor: overwriting a saved setlist keeps a backup that can be restored", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "saveSetlist", name: "Tour" });
+  await c.cmd({ cmd: "setlist", skip: ["Perché"] });
+  await c.cmd({ cmd: "saveSetlist", name: "Tour" }); // overwrite: the first version goes to the backups
+  const s = await c.state();
+  assert.equal(s.backups.length, 1);
+  assert.equal(s.backups[0].name, "Tour");
+  await c.cmd({ cmd: "setlist", skip: ["Finale"] });
+  assert.equal((await c.cmd({ cmd: "restoreBackup", name: "Tour", at: s.backups[0].at })).status, 200);
+  assert.deepEqual((await c.state()).setlist.filter((x) => x.skip).map((x) => x.name), []); // the first version
+  assert.equal((await c.cmd({ cmd: "restoreBackup", name: "Tour", at: "never" })).status, 400);
+});
+
 test("HTTP /api/cmd: valid, invalid and unknown commands", async (t) => {
   const c = await setup(t);
   await c.connect();
