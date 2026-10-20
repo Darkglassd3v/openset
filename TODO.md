@@ -6,13 +6,13 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [ ] A — `.als` offline: traccia Sections e tracce `+LYRICS`
+- [ ] B — durate con automazione del tempo (`.als`)
 
 ## Da fare
 
 ### A — Sections e testi dal `.als` (offline)
-- [ ] RED `test/als-parser.test.js`: clip arrangement di `Sections` e `+LYRICS`, clip di sessione escluse, nomi tracce
-- [ ] GREEN `server/als-parser.js` → `tracks`; server offline usa `cuesFromLive`/`lyricsFromClips` anche col `.als`
+- [x] RED `test/als-parser.test.js`: clip arrangement di `Sections` e `+LYRICS`, clip di sessione escluse, nomi tracce
+- [x] GREEN `server/als-parser.js` → `tracks`; server offline usa `cuesFromLive`/`lyricsFromClips` anche col `.als`
 
 ### B — Durate con automazione del tempo (`.als`)
 - [ ] RED: mappa del tempo dal `.als` (punti FloatEvent del Tempo del Master), secondi tra due beat con rampe lineari

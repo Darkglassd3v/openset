@@ -54,7 +54,43 @@ test("parseAls: accepts plain XML and attribute-less <Locator>", () => {
 
 test("parseAls: project without locators or tempo", () => {
   const res = parseAls(write("empty.als", zlib.gzipSync("<Ableton><LiveSet/></Ableton>")));
-  assert.deepEqual(res, { tempo: null, sigNum: 4, sigDen: 4, locators: [] });
+  assert.deepEqual(res.locators, []);
+  assert.equal(res.tempo, null);
+  assert.deepEqual([res.sigNum, res.sigDen], [4, 4]);
+});
+
+// Arrangement clips live in MainSequencer > ClipTimeable > ArrangerAutomation;
+// session clips (ClipSlotList) must be ignored.
+const midiTrack = (id, name, clips, sessionClip = "") => `
+    <MidiTrack Id="${id}">
+      <Name><EffectiveName Value="${name}" /><UserName Value="${name}" /></Name>
+      <DeviceChain><MainSequencer>
+        <ClipSlotList><ClipSlot Id="0"><ClipSlot><Value>${sessionClip}</Value></ClipSlot></ClipSlot></ClipSlotList>
+        <ClipTimeable><ArrangerAutomation><Events>
+          ${clips.map(([n, s, e], i) => `<MidiClip Id="${i}" Time="${s}">
+            <CurrentStart Value="${s}" /><CurrentEnd Value="${e}" /><Name Value="${n}" /></MidiClip>`).join("")}
+        </Events></ArrangerAutomation></ClipTimeable>
+      </MainSequencer></DeviceChain>
+    </MidiTrack>`;
+
+const SET_WITH_TRACKS = `<Ableton><LiveSet><Tracks>
+  ${midiTrack(10, "Sections", [["Chorus", 16, 32], ["Verse", 0, 16]],
+    '<MidiClip Id="9" Time="0"><CurrentStart Value="0" /><CurrentEnd Value="4" /><Name Value="Session" /></MidiClip>')}
+  ${midiTrack(11, "Vox +LYRICS [+2]", [["[Am]Ciao &amp; addio", 0, 4]])}
+  ${midiTrack(12, "Keys", [["Pad", 0, 64]])}
+  <AudioTrack Id="13"><Name><EffectiveName Value="Drums" /></Name></AudioTrack>
+</Tracks></LiveSet></Ableton>`;
+
+test("parseAls: clips of the Sections and +LYRICS tracks", () => {
+  const res = parseAls(write("tracks.als", zlib.gzipSync(SET_WITH_TRACKS)));
+  assert.deepEqual(res.tracks, [
+    { name: "Sections", clips: [{ name: "Verse", start: 0, end: 16 }, { name: "Chorus", start: 16, end: 32 }] },
+    { name: "Vox +LYRICS [+2]", clips: [{ name: "[Am]Ciao & addio", start: 0, end: 4 }] },
+  ]);
+});
+
+test("parseAls: no tracks section gives an empty list", () => {
+  assert.deepEqual(parseAls(write("none.als", zlib.gzipSync(XML))).tracks, []);
 });
 
 test("parseAls: missing file throws", () => {

@@ -421,6 +421,34 @@ test("/api/load-als works from this computer only", async (t) => {
   }
 });
 
+test("offline .als: Sections and +LYRICS tracks work without Live", async (t) => {
+  const c = await setup(t);
+  const xml = `<Ableton><LiveSet><Tracks>
+    <MidiTrack Id="1"><Name><EffectiveName Value="Sections" /></Name><DeviceChain><MainSequencer>
+      <ClipTimeable><ArrangerAutomation><Events>
+        <MidiClip Id="0" Time="0"><CurrentStart Value="0" /><CurrentEnd Value="8" /><Name Value="Strofa" /></MidiClip>
+      </Events></ArrangerAutomation></ClipTimeable></MainSequencer></DeviceChain></MidiTrack>
+    <MidiTrack Id="2"><Name><EffectiveName Value="Voce +LYRICS" /></Name><DeviceChain><MainSequencer>
+      <ClipTimeable><ArrangerAutomation><Events>
+        <MidiClip Id="0" Time="4"><CurrentStart Value="4" /><CurrentEnd Value="8" /><Name Value="[C]Riga" /></MidiClip>
+      </Events></ArrangerAutomation></ClipTimeable></MainSequencer></DeviceChain></MidiTrack>
+  </Tracks><Locators><Locators>
+    <Locator Id="0"><Time Value="0" /><Name Value="Uno" /></Locator>
+  </Locators></Locators></LiveSet></Ableton>`;
+  const file = path.join(c.baseDir, "tracks.als");
+  fs.writeFileSync(file, zlib.gzipSync(xml));
+  const res = await fetch(c.url("/api/load-als"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file }),
+  });
+  assert.equal(res.status, 200);
+  const s = await c.state();
+  assert.deepEqual(s.setlist[0].sections.map((x) => x.name), ["Strofa"]);
+  const lyr = await (await fetch(c.url("/api/lyrics/Uno"))).json();
+  assert.deepEqual(lyr.lines[0], { beat: 4, chords: null, segments: [{ chord: "C", text: "Riga" }] });
+});
+
 test("lyrics: JSON files with accented names and Live +LYRICS tracks", async (t) => {
   const c = await setup(t);
   fs.mkdirSync(path.join(c.baseDir, "lyrics"));

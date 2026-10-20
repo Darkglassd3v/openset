@@ -151,13 +151,14 @@ function start(opts = {}) {
     }
   }
 
+  // clips of the Sections/+LYRICS tracks, from Live or from the loaded .als
+  function currentTracks() {
+    return liveState.connected ? tracks : (offlineProject && offlineProject.tracks) || [];
+  }
+
   function setlist() {
-    const source = liveState.connected
-      ? S.cuesFromLive(cues, tracks)
-      : offlineProject
-      ? offlineProject.locators
-      : [];
-    return S.applyOrder(S.buildSetlist(source), prefs);
+    const source = liveState.connected ? cues : offlineProject ? offlineProject.locators : [];
+    return S.applyOrder(S.buildSetlist(S.cuesFromLive(source, currentTracks())), prefs);
   }
 
   function publicState(list = setlist()) {
@@ -579,7 +580,7 @@ function start(opts = {}) {
       lyr = JSON.parse(fs.readFileSync(path.join(LYRICS_DIR, L.lyricsFileName(name)), "utf-8"));
     } catch {}
     if (!lyr && song) {
-      lyr = L.lyricsFromClips(song, tracks);
+      lyr = L.lyricsFromClips(song, currentTracks());
       if (lyr) transpose = L.addTranspose(song.transpose, lyr.transpose);
     }
     const out = L.normalizeLyrics(lyr, transpose);
