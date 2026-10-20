@@ -93,6 +93,51 @@ test("parseAls: no tracks section gives an empty list", () => {
   assert.deepEqual(parseAls(write("none.als", zlib.gzipSync(XML))).tracks, []);
 });
 
+// Every track's Mixer has a <Tempo>; only the master's counts. Live 12 calls
+// it MainTrack. Tempo automation points at the Tempo's AutomationTarget id.
+const masterSet = (tag, envelope) => `<Ableton><LiveSet><Tracks>
+  <AudioTrack Id="1"><DeviceChain><Mixer>
+    <Tempo><Manual Value="120" /><AutomationTarget Id="3" /></Tempo>
+    <TimeSignature><Manual Value="201" /></TimeSignature>
+  </Mixer></DeviceChain></AudioTrack>
+</Tracks>
+<${tag}>
+  <AutomationEnvelopes><Envelopes>${envelope}</Envelopes></AutomationEnvelopes>
+  <DeviceChain><Mixer>
+    <Tempo><LomId Value="0" /><Manual Value="128" /><AutomationTarget Id="8"><LockEnvelope Value="0" /></AutomationTarget></Tempo>
+    <TimeSignature><Manual Value="302" /></TimeSignature>
+  </Mixer></DeviceChain>
+</${tag}></LiveSet></Ableton>`;
+const TEMPO_ENVELOPE = `<AutomationEnvelope Id="0">
+  <EnvelopeTarget><PointeeId Value="8" /></EnvelopeTarget>
+  <Automation><Events>
+    <FloatEvent Id="1" Time="-63072000" Value="120" />
+    <FloatEvent Id="2" Time="32" Value="120" />
+    <FloatEvent Id="3" Time="32" Value="60" />
+  </Events></Automation>
+</AutomationEnvelope>
+<AutomationEnvelope Id="1">
+  <EnvelopeTarget><PointeeId Value="3" /></EnvelopeTarget>
+  <Automation><Events><FloatEvent Id="1" Time="0" Value="999" /></Events></Automation>
+</AutomationEnvelope>`;
+
+test("parseAls: tempo, time signature and tempo map come from the master track", () => {
+  for (const tag of ["MasterTrack", "MainTrack"]) {
+    const res = parseAls(write(tag + ".als", zlib.gzipSync(masterSet(tag, TEMPO_ENVELOPE))));
+    assert.equal(res.tempo, 128);
+    assert.deepEqual([res.sigNum, res.sigDen], [6, 8]); // Live stores 6/8 as 302
+    assert.deepEqual(res.tempoMap, [
+      { beat: 0, bpm: 120 },
+      { beat: 32, bpm: 120 },
+      { beat: 32, bpm: 60 },
+    ]);
+  }
+});
+
+test("parseAls: no tempo automation means no tempo map", () => {
+  assert.equal(parseAls(write("flat.als", zlib.gzipSync(masterSet("MasterTrack", "")))).tempoMap, null);
+});
+
 test("parseAls: missing file throws", () => {
   assert.throws(() => parseAls(path.join(tmp, "nope.als")), /ENOENT/);
 });

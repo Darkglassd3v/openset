@@ -449,6 +449,35 @@ test("offline .als: Sections and +LYRICS tracks work without Live", async (t) =>
   assert.deepEqual(lyr.lines[0], { beat: 4, chords: null, segments: [{ chord: "C", text: "Riga" }] });
 });
 
+test("tempo map of a loaded .als is used offline and for the same set in Live", async (t) => {
+  const c = await setup(t);
+  // 0-32 at 120 BPM, then 60 BPM; locators match the LIVE set
+  const xml = `<Ableton><LiveSet><Locators><Locators>${LIVE.cues
+    .map((q, i) => `<Locator Id="${i}"><Time Value="${q.time}" /><Name Value="${q.name.replace(">", "&gt;")}" /></Locator>`)
+    .join("")}</Locators></Locators>
+    <MasterTrack><AutomationEnvelopes><Envelopes><AutomationEnvelope Id="0">
+      <EnvelopeTarget><PointeeId Value="8" /></EnvelopeTarget>
+      <Automation><Events><FloatEvent Id="1" Time="0" Value="120" /><FloatEvent Id="2" Time="32" Value="120" /><FloatEvent Id="3" Time="32" Value="60" /></Events></Automation>
+    </AutomationEnvelope></Envelopes></AutomationEnvelopes>
+    <DeviceChain><Mixer><Tempo><Manual Value="120" /><AutomationTarget Id="8" /></Tempo></Mixer></DeviceChain>
+    </MasterTrack></LiveSet></Ableton>`;
+  const file = path.join(c.baseDir, "map.als");
+  fs.writeFileSync(file, zlib.gzipSync(xml));
+  await fetch(c.url("/api/load-als"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ file }),
+  });
+  // Perché (40-72) is entirely at 60 BPM: 32 s instead of 16 s at 120
+  assert.deepEqual((await c.state()).setlist.map((s) => s.seconds), [16, 32, 0]);
+  await c.connect();
+  assert.deepEqual((await c.state()).setlist.map((s) => s.seconds), [16, 32, 0]);
+  // a different set in Live ignores the map
+  c.sendLive({ ...LIVE, cues: [{ name: "Altro", time: 40 }, { name: "=END", time: 72 }] });
+  await waitFor(async () => (await c.state()).setlist[0].name === "Altro", "other set");
+  assert.equal((await c.state()).setlist[0].seconds, 16);
+});
+
 test("lyrics: JSON files with accented names and Live +LYRICS tracks", async (t) => {
   const c = await setup(t);
   fs.mkdirSync(path.join(c.baseDir, "lyrics"));

@@ -11,6 +11,7 @@ const {
   prevSong,
   songLength,
   songSeconds,
+  beatsToSeconds,
   timing,
   quantBeats,
 } = require("../server/setlist");
@@ -303,6 +304,27 @@ test("songSeconds: override or length at the tempo", () => {
   assert.equal(songSeconds(b, 120), 16);
   assert.equal(songSeconds(b, 0), 16); // bad tempo falls back to 120
   assert.equal(songSeconds(c, 120), 0);
+});
+
+test("beatsToSeconds: constant, step and linear ramp tempo", () => {
+  const step = [{ beat: 0, bpm: 120 }, { beat: 32, bpm: 120 }, { beat: 32, bpm: 60 }];
+  assert.equal(beatsToSeconds(step, 0, 32), 16);
+  assert.equal(beatsToSeconds(step, 0, 64), 48);
+  assert.equal(beatsToSeconds(step, 40, 48), 8); // after the last point: last tempo
+  const ramp = [{ beat: 0, bpm: 120 }, { beat: 32, bpm: 60 }];
+  assert.ok(Math.abs(beatsToSeconds(ramp, 0, 32) - 32 * Math.LN2) < 1e-9);
+  assert.equal(beatsToSeconds([{ beat: 8, bpm: 60 }], 0, 4), 4); // before the first point
+  assert.equal(beatsToSeconds(step, 10, 10), 0);
+  assert.equal(beatsToSeconds(step, 12, 10), 0);
+});
+
+test("songSeconds and timing follow a tempo map", () => {
+  const songs = buildSetlist([{ name: "A", time: 0 }, { name: "B", time: 32 }, { name: "=END", time: 64 }]);
+  const map = [{ beat: 0, bpm: 120 }, { beat: 32, bpm: 120 }, { beat: 32, bpm: 60 }];
+  assert.equal(songSeconds(songs[1], 120, map), 32);
+  assert.deepEqual(timing(songs, 1, 40, 120, map), {
+    songLeft: 24, songElapsed: 8, setElapsed: 24, setTotal: 48, songsLeft: 0,
+  });
 });
 
 test("timing: song and set times in seconds", () => {

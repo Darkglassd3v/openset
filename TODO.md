@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [ ] B — durate con automazione del tempo (`.als`)
+- [ ] C — durate misurate dal vivo
 
 ## Da fare
 
@@ -15,8 +15,8 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 - [x] GREEN `server/als-parser.js` → `tracks`; server offline usa `cuesFromLive`/`lyricsFromClips` anche col `.als`
 
 ### B — Durate con automazione del tempo (`.als`)
-- [ ] RED: mappa del tempo dal `.als` (punti FloatEvent del Tempo del Master), secondi tra due beat con rampe lineari
-- [ ] GREEN: `tempoMap` in `als-parser.js`, `beatsToSeconds` in `setlist.js`, timing/durate offline la usano
+- [x] RED: mappa del tempo dal `.als` (punti FloatEvent del Tempo del Master), secondi tra due beat con rampe lineari
+- [x] GREEN: `tempoMap` in `als-parser.js`, `beatsToSeconds` in `setlist.js`, timing/durate offline la usano
 
 ### C — Durate misurate dal vivo
 - [ ] RED: brano suonato dall'inizio alla fine senza salti → durata reale salvata in `setlist.json`, usata al posto della stima

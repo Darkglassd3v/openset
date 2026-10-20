@@ -161,20 +161,30 @@ function start(opts = {}) {
     return S.applyOrder(S.buildSetlist(S.cuesFromLive(source, currentTracks())), prefs);
   }
 
+  // Tempo map of the loaded .als: offline, or while Live plays the same set
+  // (Live's API does not expose tempo automation).
+  function tempoMap() {
+    const map = offlineProject && offlineProject.tempoMap;
+    if (!map || !liveState.connected) return map || null;
+    const key = (list) => JSON.stringify(list.map((c) => [c.name, Math.round(c.time * 1000)]));
+    return key(offlineProject.locators) === key(cues) ? map : null;
+  }
+
   function publicState(list = setlist()) {
     const tempo = liveState.connected
       ? liveState.tempo
       : (offlineProject && offlineProject.tempo) || liveState.tempo;
+    const map = tempoMap();
     const current = S.songAt(list, liveState.beat);
     return {
       ...liveState,
       tempo,
       offline: !liveState.connected && !!offlineProject,
-      setlist: list.map((s) => ({ ...s, seconds: S.songSeconds(s, tempo) })),
+      setlist: list.map((s) => ({ ...s, seconds: S.songSeconds(s, tempo, map) })),
       current,
       next: S.nextSong(list, current),
       section: S.sectionAt(list[current], liveState.beat),
-      timing: S.timing(list, current, liveState.beat, tempo),
+      timing: S.timing(list, current, liveState.beat, tempo, map),
       quantBeats: S.quantBeats(liveState.quant, liveState.sig_num, liveState.sig_den),
       settings: prefs.settings,
       saved: Object.keys(prefs.saved),

@@ -201,26 +201,63 @@ function prevSong(songs, idx) {
   return -1;
 }
 
-// Played length in beats: from the play start to the song end (or +END),
-// without +SKIP sections. 0 when the end is unknown (last song, no marker).
-function songLength(s) {
+// Beat ranges actually played: from the play start to the song end (or
+// +END), without +SKIP sections. Empty when the end is unknown.
+function playedRanges(s) {
   const stop = s.endAt ?? s.end;
-  if (stop == null) return 0;
-  let len = stop - s.playStart;
-  for (const sec of s.sections)
-    if (sec.flags.SKIP && sec.time >= s.playStart && sec.time < stop && sec.end != null)
-      len -= Math.min(sec.end, stop) - sec.time;
-  return Math.max(0, len);
+  if (stop == null) return [];
+  const ranges = [];
+  let from = s.playStart;
+  for (const sec of s.sections) {
+    if (!sec.flags.SKIP || sec.time < s.playStart || sec.time >= stop || sec.end == null) continue;
+    if (sec.time > from) ranges.push([from, sec.time]);
+    from = Math.max(from, Math.min(sec.end, stop));
+  }
+  if (stop > from) ranges.push([from, stop]);
+  return ranges;
 }
 
-// shortcut: constant tempo; tempo automation is ignored, use [m:ss] overrides when it matters
-function songSeconds(s, tempo) {
-  return s.duration != null ? s.duration : (songLength(s) * 60) / (tempo > 0 ? tempo : 120);
+function songLength(s) {
+  return playedRanges(s).reduce((t, [a, b]) => t + b - a, 0);
 }
 
-function timing(songs, cur, beat, tempo) {
+// Seconds between two beats with a tempo map [{ beat, bpm }]: Live ramps the
+// tempo linearly between points and holds it before the first and after the last.
+function beatsToSeconds(map, from, to) {
+  if (!(to > from)) return 0;
+  const hold = (a, b, bpm) => ((b - a) * 60) / bpm;
+  let secs = 0;
+  if (from < map[0].beat) {
+    const b = Math.min(to, map[0].beat);
+    secs += hold(from, b, map[0].bpm);
+    from = b;
+  }
+  for (let i = 0; i + 1 < map.length && from < to; i++) {
+    const p = map[i];
+    const q = map[i + 1];
+    const a = Math.max(from, p.beat);
+    const b = Math.min(to, q.beat);
+    if (b <= a) continue; // also skips tempo steps (two points on one beat)
+    const k = (q.bpm - p.bpm) / (q.beat - p.beat);
+    const ta = p.bpm + k * (a - p.beat);
+    const tb = p.bpm + k * (b - p.beat);
+    secs += Math.abs(k) < 1e-9 ? hold(a, b, ta) : (60 / k) * Math.log(tb / ta);
+    from = b;
+  }
+  if (to > from) secs += hold(from, to, map[map.length - 1].bpm);
+  return secs;
+}
+
+// Without a tempo map the tempo is taken as constant; [m:ss] overrides win.
+function songSeconds(s, tempo, map) {
+  if (s.duration != null) return s.duration;
+  if (map) return playedRanges(s).reduce((t, [a, b]) => t + beatsToSeconds(map, a, b), 0);
+  return (songLength(s) * 60) / (tempo > 0 ? tempo : 120);
+}
+
+function timing(songs, cur, beat, tempo, map) {
   const spb = 60 / (tempo > 0 ? tempo : 120);
-  const secs = (s) => songSeconds(s, tempo);
+  const secs = (s) => songSeconds(s, tempo, map);
   let setTotal = 0;
   let setElapsed = 0;
   let songsLeft = 0;
@@ -235,7 +272,8 @@ function timing(songs, cur, beat, tempo) {
   const s = songs[cur];
   if (s) {
     const d = secs(s);
-    songElapsed = Math.min(d, Math.max(0, (beat - s.playStart) * spb));
+    const played = map ? beatsToSeconds(map, s.playStart, beat) : (beat - s.playStart) * spb;
+    songElapsed = Math.min(d, Math.max(0, played));
     songLeft = d - songElapsed;
     if (!s.skip) setElapsed += songElapsed;
   }
@@ -261,6 +299,7 @@ module.exports = {
   prevSong,
   songLength,
   songSeconds,
+  beatsToSeconds,
   timing,
   quantBeats,
 };

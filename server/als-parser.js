@@ -43,17 +43,40 @@ function parseAls(filePath) {
     tracks.push({ name, clips });
   }
 
-  // --- Tempo (first Manual tempo value inside MasterTrack) ---
+  // Every track's Mixer has <Tempo>/<TimeSignature>; only the master's count
+  // (MasterTrack, called MainTrack since Live 12).
+  const master = (xml.match(/<(MasterTrack|MainTrack)[\s>][\s\S]*?<\/\1>/) || [xml])[0];
+  const tempoEl = (master.match(/<Tempo>[\s\S]*?<\/Tempo>/) || [""])[0];
+
+  // --- Tempo (Manual tempo value of the master) ---
   let tempo = null;
-  const tempoBlock = xml.match(/<Tempo>[\s\S]*?<Manual Value="([\d.]+)"/);
-  if (tempoBlock) tempo = parseFloat(tempoBlock[1]);
+  const manual = tempoEl.match(/<Manual Value="([\d.]+)"/);
+  if (manual) tempo = parseFloat(manual[1]);
 
-  // --- Time signature ---
+  // --- Time signature: stored as (numerator - 1) + 99 * log2(denominator) ---
   let sigNum = 4, sigDen = 4;
+  const sigEl = master.match(/<TimeSignature>[\s\S]*?<Manual Value="(\d+)"/);
   const sig = xml.match(/<TimeSignature>[\s\S]*?<Numerator Value="(\d+)"[\s\S]*?<Denominator Value="(\d+)"/);
-  if (sig) { sigNum = parseInt(sig[1]); sigDen = parseInt(sig[2]); }
+  if (sigEl) { const v = parseInt(sigEl[1]); sigNum = (v % 99) + 1; sigDen = 2 ** Math.floor(v / 99); }
+  else if (sig) { sigNum = parseInt(sig[1]); sigDen = parseInt(sig[2]); }
 
-  return { tempo, sigNum, sigDen, locators, tracks };
+  // --- Tempo map: automation envelope pointing at the master Tempo ---
+  let tempoMap = null;
+  const target = tempoEl.match(/<AutomationTarget Id="(\d+)"/);
+  if (target) {
+    for (const env of xml.match(/<AutomationEnvelope[\s>][\s\S]*?<\/AutomationEnvelope>/g) || []) {
+      if (matchAttr(env, "PointeeId") !== target[1]) continue;
+      const points = [];
+      for (const m of env.matchAll(/<FloatEvent[^>]*Time="([^"]+)"[^>]*Value="([^"]+)"/g)) {
+        const beat = Math.max(0, parseFloat(m[1])); // the first point sits far before the song start
+        const bpm = parseFloat(m[2]);
+        if (Number.isFinite(beat) && bpm > 0) points.push({ beat, bpm });
+      }
+      if (points.length) tempoMap = points.sort((a, b) => a.beat - b.beat);
+    }
+  }
+
+  return { tempo, sigNum, sigDen, locators, tracks, tempoMap };
 }
 
 function matchAttr(block, tag) {
