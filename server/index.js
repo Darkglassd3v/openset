@@ -804,6 +804,9 @@ function printAddresses(port) {
       if (n.family === "IPv4" && !n.internal) addrs.push(n.address);
   console.log(`\nOpenSet running:`);
   console.log(`  This computer : http://localhost:${port}`);
+  // Bonjour names survive DHCP changes, so a home-screen icon keeps working
+  if (process.platform === "darwin")
+    console.log(`  Phone/tablet  : http://${os.hostname().replace(/\.local$/, "")}.local:${port}`);
   for (const a of addrs)
     console.log(`  Phone/tablet  : http://${a}:${port}  (same Wi-Fi network)`);
   console.log("");

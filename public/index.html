@@ -5,7 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#0d0d11">
 <title>OpenSet</title>
-<link rel="icon" href="data:,">
+<link rel="icon" href="icon-192.png">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="OpenSet">
 <style>
   /* ---- tokens: stage console. Everything must be readable at 2 m in the dark. ---- */
   :root {
@@ -307,6 +313,8 @@
     <label><input type="checkbox" data-dev="speakSections"> Annuncia la sezione successiva (due battute prima)</label>
     <label><input type="checkbox" data-dev="speakCount"> Count-in parlato sull'ultima battuta</label>
     <p id="speechStatus">La voce esce da questo dispositivo (cuffie, in-ear, mixer).</p>
+    <p id="awakeStatus"></p>
+    <p id="installHint">Su iPad/iPhone: Safari → Condividi → Aggiungi alla schermata Home, per aprire OpenSet a schermo intero come un'app.</p>
     <p>Vista Palco su questo dispositivo:</p>
     <label><input type="checkbox" data-stage="desc"> Descrizione e tag</label>
     <label><input type="checkbox" data-stage="beats"> Battiti</label>
@@ -403,6 +411,23 @@ function connect() {
   ws.onclose = () => setTimeout(connect, 1500);
 }
 connect();
+
+// Keep the screen on while OpenSet is visible. Browsers allow it only on HTTPS or localhost.
+let wakeLock = null; // pending or active request
+function keepAwake() {
+  if (!navigator.wakeLock || document.visibilityState !== "visible" || wakeLock) return;
+  wakeLock = navigator.wakeLock.request("screen")
+    .then((s) => s.addEventListener("release", () => { wakeLock = null; }))
+    .catch(() => { wakeLock = null; }); // retried on the next tap
+}
+document.addEventListener("visibilitychange", keepAwake);
+document.addEventListener("pointerdown", keepAwake);
+keepAwake();
+$("awakeStatus").textContent = navigator.wakeLock
+  ? "Lo schermo resta acceso mentre OpenSet è aperto."
+  : "Questo browser non può tenere acceso lo schermo da qui: su iPad/iPhone imposta Impostazioni → Schermo e luminosità → Blocco automatico → Mai.";
+$("installHint").hidden = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
+
 function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
 
 // ---------- helpers ----------
