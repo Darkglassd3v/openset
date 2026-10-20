@@ -7,7 +7,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] M — rilascio v0.4.0 (push, CI, tag)
+- [ ] M — release CI v0.4.0 (4 zip)
 
 ## Da fare
 
@@ -31,7 +31,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 - [x] `npm run coverage`: righe 99.79%, rami 93.48%, funzioni 98.50%; Remote Script 17 OK
 - [x] README, `dist-extras/INSTALL-*.txt`, report `docs/releases/0.4.0/`, versione 0.4.0
 - [x] CI verde (run 39495250973), ma il test del CLI scriveva nella home reale: isolato, smoke test che verifica la copia di `lyrics/`
-- [ ] CI verde dopo la correzione, tag `v0.4.0`, 4 zip senza `__pycache__`
+- [x] CI verde dopo la correzione (run 39495681204: Windows/macOS/Ubuntu, copia di `lyrics/` nei 3 binari), tag `v0.4.0`
 
 ## Fatto
 
