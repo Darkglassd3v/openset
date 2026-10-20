@@ -1,78 +1,57 @@
-# TODO — OpenSet v0.3.0
+# TODO — OpenSet v0.4.0
 
 Stato aggiornato a ogni passo. Protocollo di ripresa: vedi `CLAUDE.md`.
 Obiettivo utente: coprire il più possibile le funzioni di AbleSet; Windows e
-macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
+macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
+"facile da avviare e da usare su tutti i dispositivi" (confermati il 2026-10-20).
 
 ## In corso
 
-- [x] v0.3.1 — PWA per iPad/iPhone (chiesta dall'utente il 2026-10-20)
+- [ ] I — cartella dati utente (fase RED)
 
 ## Da fare
 
-### H — PWA (v0.3.1)
-- [x] RED `test/server.test.js`: `/manifest.webmanifest` (standalone, icone PNG servite), meta iOS in `index.html`
-- [x] GREEN: manifest, icone 180/192/512, meta `apple-mobile-web-app-*`, Wake Lock dove il browser lo permette, avviso per il Blocco automatico di iOS
-- [x] Verifica in Chrome: manifest standalone con 3 icone, Wake Lock attivo su localhost, avviso Blocco automatico via IP (non sicuro), nessun errore in console
-- [x] Copertura: righe 99.88%, rami 93.36%; report `docs/releases/0.3.1/`
-- [x] Push, CI verde (run 39491594942: Windows/macOS/Ubuntu), tag `v0.3.1`
+### I — Cartella dati utente stabile
+- [ ] RED `test/datadir.test.js`: `dataDir(platform, env, home)` per macOS/Windows/Linux; migrazione che copia `setlist.json`, `lyrics/`, `custom.css` dalla cartella del programma senza sovrascrivere
+- [ ] GREEN `server/datadir.js`; il CLI usa la cartella dati come `baseDir`, `public/` resta nella cartella del programma
 
-### A — Sections e testi dal `.als` (offline)
-- [x] RED `test/als-parser.test.js`: clip arrangement di `Sections` e `+LYRICS`, clip di sessione escluse, nomi tracce
-- [x] GREEN `server/als-parser.js` → `tracks`; server offline usa `cuesFromLive`/`lyricsFromClips` anche col `.als`
+### J — Apertura automatica del browser
+- [ ] RED `test/launch.test.js`: `openCommand(platform, url)`, `parseArgs(argv)` (`--no-open`, `.als` primo argomento non-flag), errori dello spawn ignorati
+- [ ] GREEN `server/launch.js`; smoke test della CI con `--no-open`
 
-### B — Durate con automazione del tempo (`.als`)
-- [x] RED: mappa del tempo dal `.als` (punti FloatEvent del Tempo del Master), secondi tra due beat con rampe lineari
-- [x] GREEN: `tempoMap` in `als-parser.js`, `beatsToSeconds` in `setlist.js`, timing/durate offline la usano
+### K — Installazione automatica del Remote Script
+- [ ] RED `test/install.test.js`: User Library per macOS/Windows, copia solo se manca o è diverso, niente `__pycache__`, nessuna eccezione; stato in `/api/state`
+- [ ] GREEN `server/install.js`; UI: passi per collegare Live quando non è connesso
 
-### C — Durate misurate dal vivo
-- [x] RED: brano suonato dall'inizio alla fine senza salti → durata reale salvata in `setlist.json`, usata al posto della stima
-- [x] GREEN: `server/meter.js` + `songSeconds`: `[m:ss]` > mappa tempo > misurata > stima; pulsante "Azzera durate misurate"
+### L — Connetti un dispositivo e porta 80
+- [ ] RED: `deviceUrls` (`nome.local` su macOS, IP LAN, niente `:80`), `/api/connect` con QR SVG, `httpPort` come lista (porta occupata → successiva)
+- [ ] GREEN `server/connect.js` + `qrcode-generator`; UI in Opzioni; CLI su `[80, 39080]`, `PORT` forza la porta
 
-### D — Annunci vocali e count-in
-- [x] RED `test/cues.test.js`: annuncio sezione/brano una battuta prima, numeri del count-in sull'ultima battuta, nessun annuncio su seek
-- [x] GREEN `server/cues.js`, evento WS `cue`; UI: sintesi vocale del browser, attivabile per dispositivo
-
-### E — Ridondanza a due computer (stile AbleNet)
-- [x] RED: server principale inoltra i comandi ai peer (`/api/cmd` con `mirror`), niente loop, stato dei peer (online, scarto di beat)
-- [x] GREEN: `peers` nelle opzioni, inoltro, controllo stato; UI: lista peer (README in G)
-
-### F — Vista Palco personalizzabile per dispositivo
-- [x] UI: scelta degli elementi (tempi, prossimo, note, sezioni rapide, testi nel Palco), salvata per dispositivo
-- [x] Verifica nel browser con Live simulato: testi nel Palco, cue via WS (sezione + count 1-4), lista peer con stato
-
-### G — Rilascio
-- [x] `npm run coverage`: righe 99.75%, rami 91.39%
-- [x] README, versione 0.3.0, report TDD `docs/releases/0.3.0/`
-- [x] Push, CI verde (run 39487118022: 123/123 + 17 OK su Windows/macOS/Ubuntu), tag `v0.3.0`
+### M — Rilascio v0.4.0
+- [ ] `npm run coverage` ≥ 80% righe, test Python
+- [ ] README, `dist-extras/INSTALL-*.txt`, report `docs/releases/0.4.0/`, versione 0.4.0
+- [ ] Push, CI verde su Windows/macOS/Ubuntu, tag `v0.4.0`, 4 zip senza `__pycache__`
 
 ## Fatto
 
+- [x] v0.3.1 rilasciata (PWA per iPad/iPhone): vedi `docs/releases/0.3.1/v0.3.1.tdd.md`
+- [x] v0.3.0 rilasciata (sezioni e testi dal `.als`, mappa del tempo, durate misurate, annunci vocali, computer di riserva, Palco per dispositivo): vedi `docs/releases/0.3.0/v0.3.0.tdd.md`
 - [x] v0.2.0 rilasciata (notazione AbleSet, motore, editor, Palco, OSC/HTTP/MIDI, macOS arm64): vedi `docs/releases/0.2.0/v0.2.0.tdd.md`
 
 ## Da decidere con l'utente
 
 - Brani aggiunti a mano dalla UI, senza progetto Live (solo scaletta e testi):
   proposto il 2026-10-20, in attesa di risposta.
-- v0.4.0 "facile da avviare e da usare su tutti i dispositivi" (da
-  https://ableset.com/docs/all, proposta del 2026-10-20, in attesa di conferma):
-  1. Dati in una cartella utente stabile (macOS `~/Library/Application Support/OpenSet`,
-     Windows `%APPDATA%\OpenSet`, Linux `~/.config/openset`), con migrazione del
-     `setlist.json` che oggi sta accanto al binario.
-  2. Doppio clic che apre da solo il browser (`open`/`start`/`xdg-open`, `--no-open`).
-  3. Installazione automatica del Remote Script nella User Library di Live, più
-     una schermata "In attesa di Live" con i passi da seguire.
-  4. "Connetti un dispositivo": indirizzo `nome.local` e IP con QR code nella UI;
-     porta 80 se libera, altrimenti 39080.
-  5. Schermo sempre acceso (Wake Lock) e PWA a schermo intero sui tablet.
-  6. Nome per dispositivo, vista predefinita, blocco (⇧L), lista dei dispositivi
+- v0.5.0 (resto della proposta del 2026-10-20 da https://ableset.com/docs/all,
+  in attesa di conferma):
+  1. Nome per dispositivo, vista predefinita, blocco (⇧L), lista dei dispositivi
      connessi; OSC `/devices/showPage` e `/devices/reload`.
-  7. Modalità di salto (Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale)
+  2. Modalità di salto (Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale)
      con coda: J, ⇧J, C.
-  8. Editor: trascinamento anche touch, Ctrl+K per cercare (iniziali, tag),
+  3. Editor: trascinamento anche touch, Ctrl+K per cercare (iniziali, tag),
      copia/incolla della scaletta come testo con match approssimato, backup a
      ogni sovrascrittura.
-  9. Safe Mode e password facoltativa per le modifiche.
+  4. Safe Mode e password facoltativa per le modifiche.
 
 ## Rimandato
 
