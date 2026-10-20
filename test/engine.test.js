@@ -195,3 +195,41 @@ test("a boundary fires once per pass and again after jumping back", () => {
   assert.deepEqual(play(songs, [7.9, 8.1, 8.2]), [jump(4)]);
   assert.deepEqual(play(songs, [7.9, 8.1, 4.1, 7.9, 8.1]), [jump(4), jump(4)]);
 });
+
+// ---- jump modes: a jump chosen while playing waits in a queue ----
+const QSET = [
+  { name: "A", time: 0 }, { name: ">Verse", time: 0 }, { name: ">Chorus", time: 8 }, { name: ">Bridge", time: 16 },
+  { name: "SONG END", time: 32 }, { name: "B", time: 40 }, { name: "C", time: 72 },
+];
+const queued = (time, type = "song") => ({ queued: { time, type } });
+const mode = (jumpMode, extra = {}) => ({ settings: { jumpMode, ...extra } });
+
+test("jump mode End of Section: the queued jump happens at the end of the current section", () => {
+  const songs = set(QSET);
+  assert.deepEqual(play(songs, [9, 12, 15.9], { ...queued(72), ...mode("section") }), []);
+  assert.deepEqual(play(songs, [15.9, 16.1], { ...queued(72), ...mode("section") }), [jump(72)]);
+  // one quantization step early, like every jump that keeps playing
+  assert.deepEqual(play(songs, [11.9, 12.1], { ...queued(72), ...mode("section"), quantBeats: 4 }), [jump(72)]);
+});
+
+test("jump mode End of Song: the queued song replaces the next one at the song end", () => {
+  const songs = set(QSET);
+  assert.deepEqual(play(songs, [15.9, 16.1, 31.9], { ...queued(72), ...mode("song") }), []);
+  assert.deepEqual(play(songs, [31.9, 32.1], { ...queued(72), ...mode("song") }), [jump(72)]);
+  // a STOP still stops, then cues the queued song even without auto-jump
+  const stopSet = set(QSET.map((c) => (c.name === "SONG END" ? { name: "STOP", time: 32 } : c)));
+  assert.deepEqual(play(stopSet, [31.9, 32.1], { ...queued(72), ...mode("song", { autoJump: false }) }), [STOP, jump(72)]);
+});
+
+test("jump mode Dynamic: sections at the end of the section, songs at the end of the song", () => {
+  const songs = set(QSET);
+  assert.deepEqual(play(songs, [15.9, 16.1], { ...queued(0, "section"), ...mode("dynamic") }), [jump(0)]);
+  assert.deepEqual(play(songs, [15.9, 16.1], { ...queued(72, "song"), ...mode("dynamic") }), []);
+  assert.deepEqual(play(songs, [31.9, 32.1], { ...queued(72, "song"), ...mode("dynamic") }), [jump(72)]);
+});
+
+test("jump modes Quantized and Manual leave the queue to the server", () => {
+  const songs = set(QSET);
+  for (const m of ["quantized", "manual"])
+    assert.deepEqual(play(songs, [15.9, 16.1, 31.9, 32.1], { ...queued(72), ...mode(m) }), [jump(40)], m);
+});

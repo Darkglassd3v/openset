@@ -217,6 +217,90 @@ test("devices: OSC and HTTP commands reach the matching browsers only", async (t
   assert.equal((await c.cmd({ cmd: "devices", action: "explode", devices: "all" })).status, 400);
 });
 
+test("jump modes: the setting is validated, quantized by default", async (t) => {
+  const c = await setup(t);
+  assert.equal((await c.state()).settings.jumpMode, "quantized");
+  assert.equal((await c.cmd({ cmd: "settings", jumpMode: "dynamic" })).status, 200);
+  assert.equal((await c.state()).settings.jumpMode, "dynamic");
+  assert.equal((await c.cmd({ cmd: "settings", jumpMode: "sometimes" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "settings", jumpMode: true })).status, 400);
+});
+
+test("jump modes: while playing a jump is queued, then J, Shift+J or C", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "settings", jumpMode: "song" });
+  // stopped: jumps right away
+  let sent = c.expectCmd({ cmd: "jump", time: 40 });
+  await c.cmd({ cmd: "song", name: "Perché" });
+  await sent;
+  await c.at(10, { is_playing: true });
+  const before = c.cmds.length;
+  await c.cmd({ cmd: "song", name: "Finale" });
+  let s = await c.state();
+  assert.deepEqual(s.queued, { time: 72, type: "song", song: 2, section: -1 });
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "not sent to Live yet");
+  await c.cmd({ cmd: "section", name: "Chorus" }); // a newer choice replaces it
+  assert.deepEqual((await c.state()).queued, { time: 16, type: "section", song: 0, section: 1 });
+  sent = c.expectCmd({ cmd: "jump", time: 16 });
+  assert.equal((await c.cmd({ cmd: "jumpToQueued" })).status, 200); // J: quantized by Live
+  await sent;
+  assert.equal((await c.state()).queued, null);
+  await c.cmd({ cmd: "next" });
+  sent = c.expectCmd({ cmd: "seek", time: 40 });
+  await c.cmd({ cmd: "jumpToQueued", now: true }); // Shift+J: right now
+  await sent;
+  await c.cmd({ cmd: "next" });
+  assert.equal((await c.cmd({ cmd: "clearQueue" })).status, 200); // C
+  assert.equal((await c.state()).queued, null);
+  assert.equal((await c.cmd({ cmd: "jumpToQueued" })).status, 400); // nothing queued
+});
+
+test("jump modes: the engine plays the queued song at the song end, a stop plays it at once", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "settings", jumpMode: "song" });
+  await c.at(10, { is_playing: true });
+  await c.cmd({ cmd: "song", name: "Finale" });
+  const stopped = c.expectCmd({ cmd: "stop" });
+  const cued = c.expectCmd({ cmd: "jump", time: 72 }); // Intro Song ends with STOP
+  await c.at(31.9, { is_playing: true });
+  await c.at(32.1, { is_playing: true });
+  await stopped;
+  await cued;
+  await waitFor(async () => (await c.state()).queued === null, "queue cleared");
+
+  await c.cmd({ cmd: "settings", jumpMode: "manual" });
+  await c.at(41, { is_playing: true });
+  await c.cmd({ cmd: "song", name: "Intro Song" });
+  assert.equal((await c.state()).queued.time, 0);
+  const jumped = c.expectCmd({ cmd: "jump", time: 0 });
+  await c.at(42, { is_playing: false }); // playback stopped: manual mode jumps now
+  await jumped;
+});
+
+test("jump modes: OSC jumpToQueued, clearQueuedJump and queued values", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "settings", jumpMode: "section" });
+  await c.at(10, { is_playing: true });
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  sendOsc(c, osc, "/setlist/jumpToSong", ["Finale"]);
+  await waitFor(() => got.get("/setlist/queuedName")?.[0] === "Finale", "queued name");
+  assert.deepEqual(got.get("/setlist/queuedIndex"), [2, -1]);
+  sendOsc(c, osc, "/setlist/clearQueuedJump", []);
+  await waitFor(async () => (await c.state()).queued === null, "cleared");
+  sendOsc(c, osc, "/setlist/jumpToSong", ["Finale"]);
+  await waitFor(async () => (await c.state()).queued, "queued again");
+  const seek = c.expectCmd({ cmd: "seek", time: 72 });
+  sendOsc(c, osc, "/setlist/jumpToQueued", [true]);
+  await seek;
+});
+
 test("HTTP /api/cmd: valid, invalid and unknown commands", async (t) => {
   const c = await setup(t);
   await c.connect();

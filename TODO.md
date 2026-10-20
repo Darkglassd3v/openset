@@ -32,7 +32,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 - [x] GREEN: `server/devices.js`, server (lista, ping/latenza, comando `devices`, OSC `/devices/*`, valore `/devices/names`) + UI (nome, vista all'apertura, blocco ⇧L con sblocco a pressione lunga, lista in Opzioni)
 
 ### R — Modalità di salto e coda
-- [ ] RED: modalità Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale; coda; J, ⇧J, C; OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`
+- [x] RED: modalità Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale; coda; J, ⇧J, C; OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`
 - [ ] GREEN: motore + UI (brano/sezione in coda evidenziati, pulsanti salta / salta subito)
 
 ### S — Editor della scaletta
