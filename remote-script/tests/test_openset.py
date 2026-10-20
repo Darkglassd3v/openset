@@ -190,6 +190,33 @@ class OpenSetTest(unittest.TestCase):
         self.os._send_clips()
         self.assertEqual(len([m for m in self.received() if m.get("type") == "clips"]), 1)
 
+    def test_sections_track_without_arrangement_clips_is_skipped(self):
+        class BadName(object):
+            @property
+            def name(self):
+                raise RuntimeError("track gone")
+
+        self.song.tracks = [FakeTrack("Sections"), BadName()]  # Live 10 track, deleted track
+        self.received()
+        self.os._send_clips()
+        clips = [m for m in self.received() if m.get("type") == "clips"]
+        self.assertEqual(clips, [])  # same empty list as at startup: nothing new to send
+        self.assertTrue(any("clips error" in m for m in self.os.logged))
+
+    def test_busy_port_and_missing_listeners_are_logged(self):
+        script.LISTEN_PORT = self.os._sock.getsockname()[1]
+        other = script.OpenSet(object())  # no listener API, port taken
+        try:
+            self.assertTrue(any("busy" in m for m in other.logged))
+            self.assertTrue(any("listener error" in m for m in other.logged))
+        finally:
+            other.disconnect()
+
+    def test_send_errors_are_swallowed(self):
+        self.os._sock.close()
+        self.os._send({"type": "pong"})  # must not raise inside Live
+        self.os.disconnect()  # closing twice is fine too
+
     def test_state_errors_are_logged(self):
         self.song.cue_points = None
         self.os._send_state()

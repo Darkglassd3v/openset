@@ -130,7 +130,13 @@ class OpenSet(ControlSurface):
     def _send_clips(self):
         # clips of the "Sections" track and of "+LYRICS" tracks (Live 11+ API)
         tracks = []
-        for t in self._song.tracks:
+        try:
+            all_tracks = list(self._song.tracks)
+        except Exception as e:
+            # never let a scan error break the _tick loop
+            self.log_message("OpenSet clips error: %s" % e)
+            return
+        for t in all_tracks:
             try:
                 name = t.name
                 if not (name.strip().lower().startswith("sections") or "+LYRICS" in name):
