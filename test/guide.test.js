@@ -10,7 +10,7 @@ const CHANGELOG = `# Changelog
 ## 2.0.0 — 2026-11-01
 
 - **Modalità di salto**: il brano scelto va in coda e parte a fine sezione.
-- Nuovo tasto \`J\` per <saltare>.
+- Nuovo tasto \`J\` per <saltare>, da *Opzioni*.
 
 ## 1.9.0 — 2026-10-01
 
@@ -23,7 +23,7 @@ test("changelog: one section per version, newest first, with its items", () => {
   assert.equal(sections[0].date, "2026-11-01");
   assert.deepEqual(sections[0].items, [
     "**Modalità di salto**: il brano scelto va in coda e parte a fine sezione.",
-    "Nuovo tasto `J` per <saltare>.",
+    "Nuovo tasto `J` per <saltare>, da *Opzioni*.",
   ]);
 });
 
@@ -34,7 +34,7 @@ test("guide: version, new features and step-by-step commands for every platform"
   // the new features of this version, escaped, with bold and code
   assert.match(html, /Novità della versione 2\.0\.0/);
   assert.match(html, /<b>Modalità di salto<\/b>: il brano scelto va in coda/);
-  assert.match(html, /<code>J<\/code> per &lt;saltare&gt;/);
+  assert.match(html, /<code>J<\/code> per &lt;saltare&gt;, da <i>Opzioni<\/i>/);
   // previous versions in the appendix
   assert.match(html, /Vecchia funzione/);
   for (const platform of ["Windows", "macOS", "Linux", "iPad e iPhone"]) assert.match(html, new RegExp(`<h2[^>]*>${platform}`));
