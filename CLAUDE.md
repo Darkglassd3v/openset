@@ -50,7 +50,14 @@ Ogni modifica segue questo ordine. Non saltare passi.
    `docs/releases/<versione>/`, commit, `git push origin main`, poi tag
    `v<versione>` e `git push origin v<versione>` (il tag avvia la release CI).
 
-Aggiorna `TODO.md` dopo ogni passo completato, prima del commit.
+## Regole per i commit
+
+- Commit separati e autoconsistenti: uno per modulo o funzione, ognuno con il
+  proprio codice e i propri test verdi. Mai mescolare modifiche non correlate.
+- Ogni commit include l'aggiornamento di `TODO.md` (checkbox spuntate, sezione
+  "In corso" sul passo successivo), così la storia git e il TODO coincidono.
+- Messaggi Conventional Commits (`test:`, `feat:`, `fix:`, `refactor:`,
+  `docs:`, `ci:`, `chore:`) con l'evidenza dei test nel corpo.
 
 ## Ripresa dopo limite o reset
 
