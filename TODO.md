@@ -8,12 +8,12 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — inizio da N (versione visibile e nomi con versione)
+- [ ] v0.5.0 — N (versione visibile e nomi con versione), fase GREEN
 
 ## Da fare
 
 ### N — Versione visibile e nomi con la versione
-- [ ] RED: `/api/state` espone `version`; il CLI stampa `OpenSet <versione>` all'avvio
+- [x] RED: `/api/state` espone `version`; il CLI stampa `OpenSet <versione>` all'avvio
 - [ ] GREEN: banner nel terminale, versione e logo nell'intestazione della UI
 - [ ] Release CI: zip `openset-<versione>-<piattaforma>.zip`, programma `openset-<versione>[.exe]`; smoke test CI aggiornato
 

@@ -621,6 +621,17 @@ test("the Remote Script install status is published for the UI", async (t) => {
   assert.deepEqual((await c.state()).scriptInstall, status);
 });
 
+test("the app version is published and shown in the UI header with the logo", async (t) => {
+  const c = await setup(t, { publicDir: path.join(__dirname, "..", "public") });
+  assert.equal((await c.state()).version, require("../package.json").version);
+  const html = await (await fetch(c.url("/"))).text();
+  assert.match(html, /<img class="logo" src="logo.svg" alt="OpenSet">/);
+  assert.match(html, /id="version"/);
+  const logo = await fetch(c.url("/logo.svg"));
+  assert.equal(logo.status, 200);
+  assert.match(logo.headers.get("content-type"), /image\/svg\+xml/);
+});
+
 test("PWA: manifest, icons and iOS home-screen tags are served", async (t) => {
   const c = await setup(t, { publicDir: path.join(__dirname, "..", "public") });
   const res = await fetch(c.url("/manifest.webmanifest"));
@@ -809,8 +820,12 @@ test("CLI: a busy port prints a hint and exits with 1", async (t) => {
     },
   });
   let stderr = "";
+  let stdout = "";
   child.stderr.on("data", (d) => (stderr += d));
+  child.stdout.on("data", (d) => (stdout += d));
   const code = await new Promise((r) => child.on("exit", r));
   assert.equal(code, 1);
   assert.match(stderr, /OpenSet cannot start: .*EADDRINUSE.*already running/);
+  // the version is the first thing printed at start-up
+  assert.equal(stdout.split(/\r?\n/)[0], `OpenSet ${require("../package.json").version}`);
 });
