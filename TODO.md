@@ -7,7 +7,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] L — connetti un dispositivo e porta 80 (fase RED)
+- [ ] L — connetti un dispositivo e porta 80 (fase GREEN)
 
 ## Da fare
 
@@ -24,7 +24,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 - [x] GREEN `server/install.js`; UI: passi per collegare Live quando non è connesso
 
 ### L — Connetti un dispositivo e porta 80
-- [ ] RED: `deviceUrls` (`nome.local` su macOS, IP LAN, niente `:80`), `/api/connect` con QR SVG, `httpPort` come lista (porta occupata → successiva)
+- [x] RED: `deviceUrls` (`nome.local` su macOS, IP LAN, niente `:80`), `/api/connect` con QR SVG, `httpPort` come lista (porta occupata → successiva)
 - [ ] GREEN `server/connect.js` + `qrcode-generator`; UI in Opzioni; CLI su `[80, 39080]`, `PORT` forza la porta
 
 ### M — Rilascio v0.4.0

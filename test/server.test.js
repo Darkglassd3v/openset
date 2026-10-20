@@ -594,6 +594,26 @@ test("a busy port rejects start() instead of crashing", async (t) => {
   await assert.rejects(start({ ...base, httpPort: 0, udpPort: c.srv.udpPort }), { code: "EADDRINUSE" });
 });
 
+test("a list of HTTP ports falls back to the next free one", async (t) => {
+  const c = await setup(t);
+  const base = { baseDir: c.baseDir, log: false, udpPort: 0 };
+  const busy = c.srv.httpPort;
+  const srv = await start({ ...base, httpPort: [busy, 0] });
+  t.after(() => srv.close());
+  assert.notEqual(srv.httpPort, busy);
+  assert.equal((await fetch(`http://127.0.0.1:${srv.httpPort}/api/state`)).status, 200);
+  await assert.rejects(start({ ...base, httpPort: [busy, busy] }), { code: "EADDRINUSE" });
+});
+
+test("/api/connect lists the addresses for other devices with QR codes", async (t) => {
+  const interfaces = { en0: [{ family: "IPv4", internal: false, address: "192.168.1.50" }] };
+  const c = await setup(t, { netInfo: () => ({ platform: "darwin", hostname: "Studio", interfaces }) });
+  const { urls } = await (await fetch(c.url("/api/connect"))).json();
+  const p = c.srv.httpPort;
+  assert.deepEqual(urls.map((u) => u.url), [`http://Studio.local:${p}`, `http://192.168.1.50:${p}`]);
+  for (const u of urls) assert.match(u.qr, /^<svg /);
+});
+
 test("the Remote Script install status is published for the UI", async (t) => {
   assert.equal((await (await setup(t)).state()).scriptInstall, null);
   const status = { status: "installed", path: "/Users/ana/Music/Ableton/User Library/Remote Scripts/OpenSet" };
