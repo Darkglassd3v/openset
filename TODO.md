@@ -23,7 +23,7 @@ macOS obbligatori, Linux se costa poco.
 ### Fase 2 — GREEN
 - [x] `server/setlist.js`
 - [x] `server/engine.js`
-- [ ] `server/lyrics.js`
+- [x] `server/lyrics.js`
 - [ ] `server/osc.js`
 - [x] fix `server/als-parser.js`
 - [ ] `server/index.js`: start(opts), comandi condivisi WS/HTTP/OSC, prefs `setlist.json`, motore, stato pubblico
