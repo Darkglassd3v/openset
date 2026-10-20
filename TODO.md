@@ -14,7 +14,8 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 - [x] RED `test/server.test.js`: `/manifest.webmanifest` (standalone, icone PNG servite), meta iOS in `index.html`
 - [x] GREEN: manifest, icone 180/192/512, meta `apple-mobile-web-app-*`, Wake Lock dove il browser lo permette, avviso per il Blocco automatico di iOS
 - [x] Verifica in Chrome: manifest standalone con 3 icone, Wake Lock attivo su localhost, avviso Blocco automatico via IP (non sicuro), nessun errore in console
-- [ ] Copertura, binario locale, rilascio v0.3.1
+- [x] Copertura: righe 99.88%, rami 93.36%; report `docs/releases/0.3.1/`
+- [ ] Push, CI verde, tag `v0.3.1`
 
 ### A — Sections e testi dal `.als` (offline)
 - [x] RED `test/als-parser.test.js`: clip arrangement di `Sections` e `+LYRICS`, clip di sessione escluse, nomi tracce
