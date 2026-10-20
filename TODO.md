@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco.
 
 ## In corso
 
-- [ ] Fase 5 — Build e rilascio
+- [ ] Verificare la release v0.2.0 (4 zip) generata dal tag
 
 ## Da fare
 
@@ -42,11 +42,11 @@ macOS obbligatori, Linux se costa poco.
 - [x] `npm run coverage`: righe 95.18% → 99.53%, rami 85.45% → 89.92% (`index.js` rami 76.74% → 86.25%); Python 88% → 94%
 
 ### Fase 5 — Build e rilascio
-- [ ] CI matrice Windows/macOS/Ubuntu: test Node + Python + build pkg + avvio binario (scritta in `.github/workflows/ci.yml`, da verificare dopo il push)
+- [x] CI matrice Windows/macOS/Ubuntu: test Node + Python + build pkg + avvio binario (run 39483624099: 99/99 + 17 OK su tutti e tre)
 - [ ] Release: macOS arm64 nativo (firmato ad-hoc) + x64, Windows x64, Linux x64 (scritta in `release.yml`, da verificare col tag)
 - [x] README/INSTALL: notazione, editor, OSC, HTTP, MIDI, scorciatoie, firewall
 - [x] Versione 0.2.0, report TDD `docs/releases/0.2.0/v0.2.0.tdd.md`
-- [ ] Commit, push main, CI verde, tag `v0.2.0`, push tag
+- [x] Commit, push main, CI verde, tag `v0.2.0`, push tag
 
 ## Fatto
 
