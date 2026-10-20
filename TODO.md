@@ -1,6 +1,7 @@
 # TODO — OpenSet v0.5.0
 
 Stato aggiornato a ogni passo. Protocollo di ripresa: vedi `CLAUDE.md`.
+Branch: `release/v0.5.0` (da `main` a383a08); rilascio con PR verso `main`.
 Obiettivo utente: coprire il più possibile le funzioni di AbleSet; Windows e
 macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 2026-10-20 (confermati il 2026-10-21) + regola degli artefatti di rilascio
@@ -8,7 +9,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — P: guida PDF e CHANGELOG
+- [ ] v0.5.0 — U: PR #1 verso main, CI verde, merge, tag
 
 ## Da fare
 
@@ -23,28 +24,33 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 - [x] macOS: `OpenSet <versione>.app` (`scripts/make-macos-app.sh`, `dist-extras/Info.plist`) con icona `.icns`, apre il Terminale con il server; lo smoke test CI su macOS avvia il programma dentro il bundle
 
 ### P — Guida PDF e CHANGELOG
-- [ ] RED `test/guide.test.js`: la guida generata contiene versione, novità della versione da `CHANGELOG.md` e i passi per Windows, macOS, Linux, iPad/iPhone
-- [ ] GREEN `scripts/build-guide.js` (HTML con logo → PDF con Chrome headless), `CHANGELOG.md`
-- [ ] Release CI: `OpenSet-<versione>-Guida.pdf` dentro ogni zip e tra gli asset
+- [x] RED `test/guide.test.js`: la guida generata contiene versione, novità della versione da `CHANGELOG.md` e i passi per Windows, macOS, Linux, iPad/iPhone
+- [x] GREEN `scripts/build-guide.js` (HTML con logo → PDF con Chrome headless), `CHANGELOG.md` (0.1.0-0.4.0; la 0.5.0 al rilascio)
+- [x] Release CI: `OpenSet-<versione>-Guida.pdf` dentro ogni zip e tra gli asset; la CI su Ubuntu genera la guida a ogni push
 
 ### Q — Dispositivi
-- [ ] RED: nome per dispositivo, lista dei connessi (nome, IP, pagina, latenza), OSC `/devices/showPage|reload|lock|unlock|toggleLock` con `all`, nome/tag o IP
-- [ ] GREEN: server + UI (nome, vista predefinita, blocco ⇧L, lista in Opzioni)
+- [x] RED: nome per dispositivo, lista dei connessi (nome, IP, pagina, latenza), OSC `/devices/showPage|reload|lock|unlock|toggleLock` con `all`, nome/tag o IP
+- [x] GREEN: `server/devices.js`, server (lista, ping/latenza, comando `devices`, OSC `/devices/*`, valore `/devices/names`) + UI (nome, vista all'apertura, blocco ⇧L con sblocco a pressione lunga, lista in Opzioni)
 
 ### R — Modalità di salto e coda
-- [ ] RED: modalità Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale; coda; J, ⇧J, C; OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`
-- [ ] GREEN: motore + UI (brano/sezione in coda evidenziati, pulsanti salta / salta subito)
+- [x] RED: modalità Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale; coda; J, ⇧J, C; OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`
+- [x] GREEN motore + server: `jumpMode` nelle impostazioni, coda nello stato, `jumpToQueued`/`clearQueue`, salto in coda allo stop, OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`, valori `queuedName`/`queuedIndex`
+- [x] GREEN UI: brano/sezione in coda evidenziati, barra «In coda» con salta / subito / annulla, tasti J, ⇧J, C, scelta della modalità in Opzioni
 
 ### S — Editor della scaletta
-- [ ] RED: ricerca approssimata (iniziali, parti del titolo, tag), scaletta come testo (`{nota}`, `-- stop --`) e incolla con match approssimato, backup a ogni sovrascrittura
-- [ ] GREEN: trascinamento anche touch, Ctrl+K, copia/incolla, backup
+- [x] RED: ricerca approssimata (iniziali, parti del titolo, tag), scaletta come testo (`{nota}`, `-- stop --`) e incolla con match approssimato, backup a ogni sovrascrittura
+- [x] GREEN server: `server/editor.js` (ricerca, testo, incolla approssimato), `GET /api/search`, `GET|POST /api/setlist-text`, backup a ogni sovrascrittura e `restoreBackup`
+- [x] GREEN UI: trascinamento anche touch, Ctrl+K, copia/incolla, togli/rimetti tutti, ripristino backup
 
 ### T — Safe Mode e password
-- [ ] RED: Safe Mode (niente salti di brano dalla UI mentre suona, conferma prima della pausa; MIDI/OSC esclusi); password facoltativa (hash scrypt) per modificare e comandare dalla web app, `localhost` sempre ammesso
-- [ ] GREEN: server + UI
+- [x] RED: Safe Mode (niente salti di brano dalla UI mentre suona, conferma prima della pausa; MIDI/OSC esclusi); password facoltativa (hash scrypt) per modificare e comandare dalla web app, `localhost` sempre ammesso
+- [x] GREEN server: `server/auth.js` (scrypt con salt, confronto a tempo costante, 5 tentativi poi 30 s di attesa), `safeMode` nelle impostazioni, accesso per WebSocket (`auth` con password o token) e HTTP (`X-OpenSet-Password`, `Authorization: Bearer`), `setPassword` mai ripetuto ai computer di riserva, OSC `/settings/safeMode`
+- [x] GREEN UI: Safe Mode e conferma dello stop, password in Opzioni, sola lettura con «Sblocca» (token salvato nel browser)
 
 ### U — Rilascio v0.5.0
-- [ ] Copertura, README, report TDD, guida PDF, CI verde, tag `v0.5.0`, asset verificati
+- [x] Copertura: righe 99.21%, rami 93.58%, funzioni 97.78% (168 test Node, 17 Python)
+- [x] CHANGELOG 0.5.0, guida (scorciatoie nuove), README, report TDD `docs/releases/0.5.0/`, versione 0.5.0
+- [ ] PR #1 pronta, CI verde, merge, tag `v0.5.0` su main, asset verificati
 
 
 ### I — Cartella dati utente stabile

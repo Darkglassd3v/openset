@@ -46,10 +46,23 @@ Ogni modifica segue questo ordine. Non saltare passi.
 3. **`ecc:test-coverage`**: `npm run coverage`, obiettivo ≥ 80% sulle righe di
    `server/`. Aggiungi test per i buchi. Commit `test: ...`.
 4. **Build**: binario pkg locale, avvio e verifica `GET /api/state`.
-5. **Rilascio**: aggiorna `VERSION` e `package.json`, README, `CHANGELOG.md`
-   (sezione della versione con tutte le novità), report TDD in
-   `docs/releases/<versione>/`, commit, `git push origin main`, poi tag
+5. **Rilascio** (sul branch `release/v<versione>`, vedi "Branch"): aggiorna
+   `VERSION` e `package.json`, README, `CHANGELOG.md` (sezione della versione
+   con tutte le novità), report TDD in `docs/releases/<versione>/`, commit,
+   `git push origin release/v<versione>`, PR verso `main` (`gh pr create`),
+   CI verde sulla PR, `gh pr merge --merge`, poi su `main` aggiornato tag
    `v<versione>` e `git push origin v<versione>` (il tag avvia la release CI).
+
+## Branch (regola dell'utente, 2026-10-21)
+
+- Ogni versione si sviluppa su un branch `release/v<versione>` creato da `main`;
+  mai lavoro sulle funzioni direttamente su `main`.
+- Push del branch e PR verso `main`: la CI gira sulla PR. Merge solo con CI
+  verde, con merge commit (niente squash: la storia RED/GREEN resta).
+- Tag `v<versione>` su `main` dopo il merge (il tag avvia la release): `main`
+  coincide sempre con l'ultima versione rilasciata più la documentazione.
+- Correzioni urgenti a una versione rilasciata: `hotfix/v<x.y.z>` dal tag, stessa
+  procedura con PR.
 
 ## Regole per gli artefatti di rilascio (regola dell'utente, 2026-10-21)
 

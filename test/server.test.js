@@ -171,6 +171,274 @@ test("WebSocket: initial state and commands", async (t) => {
   assert.equal((await c.state()).connected, true);
 });
 
+// a browser tab: collects the messages sent to it
+async function browser(c, t, info) {
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  const msgs = [];
+  ws.on("message", (b) => msgs.push(JSON.parse(b)));
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  if (info) ws.send(JSON.stringify({ type: "device", ...info }));
+  return { ws, msgs, got: (want) => waitFor(() => msgs.find((m) => m.type === "device" && Object.keys(want).every((k) => m[k] === want[k])), JSON.stringify(want)) };
+}
+
+test("devices: connected browsers are listed with name, address, view and lock", async (t) => {
+  const c = await setup(t);
+  const tab = await browser(c, t, { name: "ipad-1, stage", view: "stage", locked: false });
+  const listed = await waitFor(async () => (await c.state()).devices.find((d) => d.name === "ipad-1, stage"), "device");
+  assert.deepEqual({ ...listed, latencyMs: undefined }, { name: "ipad-1, stage", ip: "127.0.0.1", view: "stage", locked: false, latencyMs: undefined });
+  tab.ws.send(JSON.stringify({ type: "device", name: 7, view: "nowhere" })); // ignored
+  tab.ws.close();
+  await waitFor(async () => (await c.state()).devices.length === 0, "device gone");
+});
+
+test("devices: the latency to each browser is measured with WebSocket pings", async (t) => {
+  const c = await setup(t, { pingMs: 30 });
+  await browser(c, t, { name: "ipad" });
+  const d = await waitFor(async () => (await c.state()).devices.find((x) => x.latencyMs !== null), "latency");
+  assert.ok(d.latencyMs >= 0 && d.latencyMs < 1000);
+});
+
+test("devices: OSC and HTTP commands reach the matching browsers only", async (t) => {
+  const c = await setup(t);
+  const ipad = await browser(c, t, { name: "ipad-1, stage" });
+  const phone = await browser(c, t, { name: "phone" });
+  await waitFor(async () => (await c.state()).devices.filter((d) => d.name).length === 2, "two devices");
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+
+  sendOsc(c, osc, "/devices/showPage", ["stage", "performance"]);
+  await ipad.got({ action: "showPage", view: "stage" });
+  sendOsc(c, osc, "/devices/toggleLock", ["all"]);
+  await ipad.got({ action: "lock", locked: true });
+  await phone.got({ action: "lock", locked: true });
+  await waitFor(async () => (await c.state()).devices.every((d) => d.locked), "all locked");
+  sendOsc(c, osc, "/devices/unlock", ["PHONE"]);
+  await phone.got({ action: "lock", locked: false });
+  sendOsc(c, osc, "/devices/reload", ["127.0.0.1"]);
+  await ipad.got({ action: "reload" });
+  await phone.got({ action: "reload" });
+  assert.ok(!phone.msgs.some((m) => m.action === "showPage"), "phone kept its page");
+  assert.equal((await c.cmd({ cmd: "devices", action: "lock", devices: "phone" })).status, 200);
+  assert.equal((await c.cmd({ cmd: "devices", action: "showPage", devices: "all", page: "canvas" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "devices", action: "explode", devices: "all" })).status, 400);
+});
+
+test("jump modes: the setting is validated, quantized by default", async (t) => {
+  const c = await setup(t);
+  assert.equal((await c.state()).settings.jumpMode, "quantized");
+  assert.equal((await c.cmd({ cmd: "settings", jumpMode: "dynamic" })).status, 200);
+  assert.equal((await c.state()).settings.jumpMode, "dynamic");
+  assert.equal((await c.cmd({ cmd: "settings", jumpMode: "sometimes" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "settings", jumpMode: true })).status, 400);
+});
+
+test("jump modes: while playing a jump is queued, then J, Shift+J or C", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "settings", jumpMode: "song" });
+  // stopped: jumps right away
+  let sent = c.expectCmd({ cmd: "jump", time: 40 });
+  await c.cmd({ cmd: "song", name: "Perché" });
+  await sent;
+  await c.at(10, { is_playing: true });
+  const before = c.cmds.length;
+  await c.cmd({ cmd: "song", name: "Finale" });
+  let s = await c.state();
+  assert.deepEqual(s.queued, { time: 72, type: "song", song: 2, section: -1 });
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "not sent to Live yet");
+  await c.cmd({ cmd: "section", name: "Chorus" }); // a newer choice replaces it
+  assert.deepEqual((await c.state()).queued, { time: 16, type: "section", song: 0, section: 1 });
+  sent = c.expectCmd({ cmd: "jump", time: 16 });
+  assert.equal((await c.cmd({ cmd: "jumpToQueued" })).status, 200); // J: quantized by Live
+  await sent;
+  assert.equal((await c.state()).queued, null);
+  await c.cmd({ cmd: "next" });
+  sent = c.expectCmd({ cmd: "seek", time: 40 });
+  await c.cmd({ cmd: "jumpToQueued", now: true }); // Shift+J: right now
+  await sent;
+  await c.cmd({ cmd: "next" });
+  assert.equal((await c.cmd({ cmd: "clearQueue" })).status, 200); // C
+  assert.equal((await c.state()).queued, null);
+  assert.equal((await c.cmd({ cmd: "jumpToQueued" })).status, 400); // nothing queued
+});
+
+test("jump modes: the engine plays the queued song at the song end, a stop plays it at once", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "settings", jumpMode: "song" });
+  await c.at(10, { is_playing: true });
+  await c.cmd({ cmd: "song", name: "Finale" });
+  const stopped = c.expectCmd({ cmd: "stop" });
+  const cued = c.expectCmd({ cmd: "jump", time: 72 }); // Intro Song ends with STOP
+  await c.at(31.9, { is_playing: true });
+  await c.at(32.1, { is_playing: true });
+  await stopped;
+  await cued;
+  await waitFor(async () => (await c.state()).queued === null, "queue cleared");
+
+  await c.cmd({ cmd: "settings", jumpMode: "manual" });
+  await c.at(41, { is_playing: true });
+  await c.cmd({ cmd: "song", name: "Intro Song" });
+  assert.equal((await c.state()).queued.time, 0);
+  const jumped = c.expectCmd({ cmd: "jump", time: 0 });
+  await c.at(42, { is_playing: false }); // playback stopped: manual mode jumps now
+  await jumped;
+});
+
+test("jump modes: OSC jumpToQueued, clearQueuedJump and queued values", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "settings", jumpMode: "section" });
+  await c.at(10, { is_playing: true });
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  sendOsc(c, osc, "/setlist/jumpToSong", ["Finale"]);
+  await waitFor(() => got.get("/setlist/queuedName")?.[0] === "Finale", "queued name");
+  assert.deepEqual(got.get("/setlist/queuedIndex"), [2, -1]);
+  sendOsc(c, osc, "/setlist/clearQueuedJump", []);
+  await waitFor(async () => (await c.state()).queued === null, "cleared");
+  sendOsc(c, osc, "/setlist/jumpToSong", ["Finale"]);
+  await waitFor(async () => (await c.state()).queued, "queued again");
+  const seek = c.expectCmd({ cmd: "seek", time: 72 });
+  sendOsc(c, osc, "/setlist/jumpToQueued", [true]);
+  await seek;
+});
+
+test("editor: search, copy and paste the setlist as text", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const found = await (await fetch(c.url("/api/search?q=fin"))).json();
+  assert.deepEqual(found.results[0], { kind: "song", index: 2, name: "Finale" });
+  assert.equal(await (await fetch(c.url("/api/setlist-text"))).text(), "Intro Song\nPerché\nFinale\n");
+  const res = await fetch(c.url("/api/setlist-text"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text: "finale {bis}\n-- stop --\nintro song\nNope" }),
+  });
+  assert.deepEqual(await res.json(), { ok: true, unmatched: ["Nope"] });
+  const s = await c.state();
+  assert.deepEqual(s.setlist.map((x) => [x.name, x.skip, x.stopAfter, x.notes]), [
+    ["Finale", false, true, "bis"],
+    ["Intro Song", false, false, ""],
+    ["Perché", true, false, ""],
+  ]);
+  const bad = await fetch(c.url("/api/setlist-text"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  assert.equal(bad.status, 400);
+});
+
+test("editor: overwriting a saved setlist keeps a backup that can be restored", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "saveSetlist", name: "Tour" });
+  await c.cmd({ cmd: "setlist", skip: ["Perché"] });
+  await c.cmd({ cmd: "saveSetlist", name: "Tour" }); // overwrite: the first version goes to the backups
+  const s = await c.state();
+  assert.equal(s.backups.length, 1);
+  assert.equal(s.backups[0].name, "Tour");
+  await c.cmd({ cmd: "setlist", skip: ["Finale"] });
+  assert.equal((await c.cmd({ cmd: "restoreBackup", name: "Tour", at: s.backups[0].at })).status, 200);
+  assert.deepEqual((await c.state()).setlist.filter((x) => x.skip).map((x) => x.name), []); // the first version
+  assert.equal((await c.cmd({ cmd: "restoreBackup", name: "Tour", at: "never" })).status, 400);
+});
+
+test("Safe Mode: while playing, no song changes from the web app; OSC and MIDI still work", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  assert.equal((await c.state()).settings.safeMode, false);
+  await c.cmd({ cmd: "settings", safeMode: true });
+  await c.at(10, { is_playing: true });
+  for (const cmd of [{ cmd: "song", name: "Finale" }, { cmd: "next" }, { cmd: "prev", force: true }, { cmd: "jump", time: 40 }])
+    assert.equal((await c.cmd(cmd)).status, 400, JSON.stringify(cmd));
+  let sent = c.expectCmd({ cmd: "jump", time: 16 }); // a section of the song being played is fine
+  assert.equal((await c.cmd({ cmd: "section", name: "Chorus" })).status, 200);
+  await sent;
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  sent = c.expectCmd({ cmd: "jump", time: 72 });
+  sendOsc(c, osc, "/setlist/jumpToSong", ["Finale"]);
+  await sent;
+  const tab = await browser(c, t);
+  sent = c.expectCmd({ cmd: "jump", time: 40 });
+  tab.ws.send(JSON.stringify({ cmd: "next", midi: true })); // a mapped MIDI pedal
+  await sent;
+  await c.at(12, { is_playing: false });
+  sent = c.expectCmd({ cmd: "jump", time: 72 });
+  assert.equal((await c.cmd({ cmd: "song", name: "Finale" })).status, 200); // stopped: allowed
+  await sent;
+});
+
+test("password: stored as a salted hash, never published, set only from this computer", async (t) => {
+  const c = await setup(t);
+  assert.equal((await c.state()).passwordSet, false);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "abc" })).status, 400); // too short
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "palco-2026" })).status, 200);
+  const s = await c.state();
+  assert.equal(s.passwordSet, true);
+  assert.ok(!JSON.stringify(s).includes("palco-2026") && !("auth" in s));
+  const saved = JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8"));
+  assert.match(saved.auth.salt, /^[0-9a-f]{32}$/);
+  assert.match(saved.auth.hash, /^[0-9a-f]{64}$/);
+  assert.ok(!fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8").includes("palco-2026"));
+  // this computer keeps full control without the password
+  assert.equal((await c.cmd({ cmd: "stop" })).status, 200);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "" })).status, 200);
+  assert.equal((await c.state()).passwordSet, false);
+});
+
+test("password: other devices need it to give commands; wrong guesses are slowed down", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const lan = (p) => `http://${LAN_IP}:${c.srv.httpPort}${p}`;
+  const post = (p, body, headers = {}) =>
+    fetch(lan(p), { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify(body) });
+  assert.equal((await post("/api/cmd", { cmd: "next" })).status, 401);
+  assert.equal((await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "nope" })).status, 401);
+  assert.equal((await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "palco-2026" })).status, 200);
+  assert.equal((await post("/api/setlist-text", { text: "Finale" })).status, 401);
+  assert.equal((await post("/api/cmd", { cmd: "setPassword", password: "" })).status, 401);
+  assert.equal((await fetch(lan("/api/state"))).status, 200); // reading is always allowed
+
+  // a browser on another device: read-only until it unlocks
+  const ws = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
+  const msgs = [];
+  ws.on("message", (b) => msgs.push(JSON.parse(b)));
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  const access = (n) => waitFor(() => msgs.filter((m) => m.type === "access")[n], "access message " + n);
+  assert.equal((await access(0)).control, false);
+  const before = c.cmds.length;
+  ws.send(JSON.stringify({ cmd: "next" })); // ignored; the reply asks for the password
+  assert.equal((await access(1)).control, false);
+  ws.send(JSON.stringify({ type: "auth", password: "wrong" }));
+  assert.equal((await access(2)).control, false);
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "ignored without the password");
+  ws.send(JSON.stringify({ type: "auth", password: "palco-2026" }));
+  const ok = await access(3);
+  assert.equal(ok.control, true);
+  assert.match(ok.token, /^[0-9a-f]{64}$/);
+  const jumped = c.expectCmd({ cmd: "jump", time: 40 });
+  ws.send(JSON.stringify({ cmd: "next" }));
+  await jumped;
+
+  // a reload unlocks with the token instead of the password
+  const ws2 = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
+  const msgs2 = [];
+  ws2.on("message", (b) => msgs2.push(JSON.parse(b)));
+  await new Promise((r) => ws2.once("open", r));
+  t.after(() => ws2.close());
+  ws2.send(JSON.stringify({ type: "auth", token: ok.token }));
+  await waitFor(() => msgs2.some((m) => m.type === "access" && m.control), "token accepted");
+
+  // five wrong passwords lock this address out for a while, even with the right one
+  for (let i = 0; i < 5; i++) await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "guess" + i });
+  assert.equal((await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "palco-2026" })).status, 429);
+});
+
 test("HTTP /api/cmd: valid, invalid and unknown commands", async (t) => {
   const c = await setup(t);
   await c.connect();
@@ -778,11 +1046,11 @@ test("prefs: a corrupt setlist.json falls back to defaults, an unwritable one is
   t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
   fs.writeFileSync(
     path.join(baseDir, "setlist.json"),
-    JSON.stringify({ order: "x", settings: { autoplay: "yes", alwaysStop: true }, saved: [1], midi: [{}] })
+    JSON.stringify({ order: "x", settings: { autoplay: "yes", alwaysStop: true, jumpMode: "x" }, saved: [1], midi: [{}] })
   );
   const c = await setup(t, { baseDir });
   const s = await c.state();
-  assert.deepEqual(s.settings, { alwaysStop: true, autoJump: true, autoplay: false });
+  assert.deepEqual(s.settings, { alwaysStop: true, autoJump: true, autoplay: false, jumpMode: "quantized", safeMode: false });
   assert.deepEqual(s.saved, []);
   assert.deepEqual(s.midi, []);
 

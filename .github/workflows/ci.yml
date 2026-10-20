@@ -44,6 +44,12 @@ jobs:
       - name: Remote Script tests
         run: python -m unittest discover -s remote-script/tests -v
 
+      - name: PDF guide (headless Chrome)
+        if: runner.os == 'Linux'
+        run: |
+          node scripts/build-guide.js build/guide.pdf
+          test "$(head -c 4 build/guide.pdf)" = "%PDF"
+
       - name: Program name with the version
         run: echo "BIN=openset-$(node -p "require('./package.json').version")${{ matrix.ext }}" >> "$GITHUB_ENV"
 

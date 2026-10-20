@@ -5,6 +5,11 @@
 // boundary: Live quantizes CuePoint.jump() to the global quantization, so the
 // jump lands exactly on the boundary. Stops cannot be quantized and happen as
 // soon as the playhead crosses the boundary (up to one ~100 ms tick late).
+//
+// Jump modes (AbleSet): with "section", "song" or "dynamic" a jump chosen while
+// playing waits in a queue and replaces the next boundary's target: the end
+// of the current section, or of the song. "manual" jumps when playback stops,
+// which the server handles.
 
 const { EPS, songAt, nextSong } = require("./setlist");
 
@@ -19,16 +24,24 @@ function events(songs, idx, opts) {
   const add = (ev) => ev && evs.push(ev);
   const goto = (at, target) =>
     Math.abs(target - at) < EPS ? null : { at, cmds: [{ cmd: "jump", time: target }], preroll: true };
+  const q = opts.queued;
+  const wait = !q ? null : opts.jumpMode === "dynamic" ? (q.type === "section" ? "section" : "song") : opts.jumpMode;
   const songEnd = (at) => {
     const n = nextSong(songs, idx);
-    const target = n >= 0 ? songs[n].playStart : null;
+    const queuedHere = wait === "song" || wait === "section";
+    const target = queuedHere ? q.time : n >= 0 ? songs[n].playStart : null;
     if (song.endMarker === "STOP" || opts.alwaysStop || song.stopAfter || target == null) {
       const cmds = [{ cmd: "stop" }];
-      if (target != null && (song.jumpAfterStop ?? opts.autoJump)) cmds.push({ cmd: "jump", time: target });
+      if (target != null && (queuedHere || (song.jumpAfterStop ?? opts.autoJump))) cmds.push({ cmd: "jump", time: target });
       return { at, cmds };
     }
     return goto(at, target);
   };
+
+  // queued jump at the end of the current section: added first, so it wins
+  // over other automation on the same boundary
+  if (wait === "section")
+    for (const sec of song.sections) if (sec.time > song.time + EPS) add(goto(sec.time, q.time));
 
   song.sections.forEach((sec, i) => {
     const f = sec.flags;
@@ -63,7 +76,7 @@ function createEngine() {
   const fired = new Set(); // boundaries already handled during this pass
   let loopRun = null; // active +LOOP:N { start, end, left }
 
-  function update({ songs, prevBeat: prev, beat, playing, loop, quantBeats: q = 0, settings = {} }) {
+  function update({ songs, prevBeat: prev, beat, playing, loop, quantBeats: q = 0, settings = {}, queued = null }) {
     if (!playing) return [];
     if (beat < prev - EPS) {
       // moved back: a loop wrap or a jump, boundaries ahead can fire again
@@ -80,7 +93,7 @@ function createEngine() {
     }
     if (loopRun && beat >= loopRun.end) loopRun = null;
 
-    const opts = { alwaysStop: false, autoJump: true, ...settings };
+    const opts = { alwaysStop: false, autoJump: true, ...settings, queued };
     // the song we were in and the one we just entered
     const ids = [...new Set([songAt(songs, prev), songAt(songs, beat)])].filter((i) => i >= 0);
     const evs = ids.flatMap((i) => events(songs, i, opts)).sort((a, b) => a.at - b.at);

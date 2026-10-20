@@ -7,6 +7,7 @@
 // - Speaks AbleSet's OSC API on the same UDP port, for TouchOSC/Companion
 
 const http = require("http");
+const crypto = require("crypto");
 const net = require("net");
 const path = require("path");
 const fs = require("fs");
@@ -26,6 +27,9 @@ const { dataDir, migrateData } = require("./datadir");
 const { parseArgs, openBrowser } = require("./launch");
 const { userLibraries, installRemoteScript } = require("./install");
 const { deviceUrls, bonjourName, qrSvg } = require("./connect");
+const { matchDevices, pageView, VIEWS } = require("./devices");
+const { searchSongs, setlistText, parseSetlistText } = require("./editor");
+const { validAuth, hashPassword, checkPassword, createLimiter } = require("./auth");
 const { version: VERSION } = require("../package.json");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
@@ -42,6 +46,8 @@ const UDP_LIVE = { host: "127.0.0.1", port: 39050 }; // commands to Live
 
 // AbleSet's OSC names for Live's global quantization values
 const QUANT_NAMES = ["none", "8", "4", "2", "1", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"];
+// when a jump chosen while playing happens (AbleSet's jump modes)
+const JUMP_MODES = ["quantized", "section", "song", "dynamic", "manual"];
 
 const num = (v) => typeof v === "number" && Number.isFinite(v);
 const strs = (a) => Array.isArray(a) && a.length <= 1000 && a.every((x) => typeof x === "string");
@@ -49,6 +55,7 @@ const strMap = (o) =>
   !!o && typeof o === "object" && !Array.isArray(o) && Object.values(o).every((x) => typeof x === "string");
 const isLoopback = (a) => typeof a === "string" && (a === "::1" || /^(::ffff:)?127\./.test(a));
 const validName = (n) => typeof n === "string" && n.trim().length > 0 && n.length <= 64;
+const validSetting = (k, v) => (k === "jumpMode" ? JUMP_MODES.includes(v) : typeof v === "boolean");
 
 function defaultPrefs() {
   return {
@@ -57,11 +64,13 @@ function defaultPrefs() {
     stopAfter: [],
     notes: {},
     measured: {}, // song name -> seconds measured during real playback
-    settings: { alwaysStop: false, autoJump: true, autoplay: false },
+    settings: { alwaysStop: false, autoJump: true, autoplay: false, jumpMode: "quantized", safeMode: false },
     saved: {},
+    backups: [], // saved setlists replaced by a newer save: { name, at, data }, newest first
     setlistName: null,
     midi: [],
     peers: [],
+    auth: null, // web app password: { salt, hash }
   };
 }
 
@@ -116,6 +125,7 @@ function start(opts = {}) {
     log: true,
     now: Date.now, // injectable clock for tests
     peerPollMs: 1000,
+    pingMs: 2000, // browser latency check
     scriptInstall: null, // Remote Script install result, shown by the UI
     netInfo, // platform, host name and interfaces, for /api/connect
     ...opts,
@@ -142,11 +152,13 @@ function start(opts = {}) {
   let lyricsRev = 0;
   let lastLiveMsg = 0;
   let offlineProject = null; // from .als parsing
+  let queued = null; // { time, type: "song"|"section" }: a jump waiting for its moment
   let prefs = loadPrefs();
   const engine = createEngine();
   const meter = createMeter();
   const chunks = { id: null, parts: [] };
   const subscribers = new Map(); // OSC clients: "host:port" -> { host, port }
+  const devices = new Map(); // browser WebSocket -> { name, ip, view, locked, latencyMs }
   const lastOsc = new Map(); // address -> last args sent, to push only changes
 
   function loadPrefs() {
@@ -157,7 +169,7 @@ function start(opts = {}) {
     } catch {}
     const settings = { ...base.settings };
     for (const k of Object.keys(settings))
-      if (saved.settings && typeof saved.settings[k] === "boolean") settings[k] = saved.settings[k];
+      if (saved.settings && validSetting(k, saved.settings[k])) settings[k] = saved.settings[k];
     return {
       ...base,
       ...(cleanSetlist(saved, base) || {}),
@@ -169,8 +181,12 @@ function start(opts = {}) {
           ? saved.measured
           : {},
       setlistName: typeof saved.setlistName === "string" ? saved.setlistName : null,
+      backups: Array.isArray(saved.backups)
+        ? saved.backups.filter((b) => b && validName(b.name) && typeof b.at === "string" && b.data && typeof b.data === "object")
+        : [],
       midi: cleanMidi(saved.midi) || [],
       peers: cleanPeers(saved.peers) || [],
+      auth: validAuth(saved.auth) ? { salt: saved.auth.salt, hash: saved.auth.hash } : null,
     };
   }
 
@@ -220,12 +236,23 @@ function start(opts = {}) {
       quantBeats: S.quantBeats(liveState.quant, liveState.sig_num, liveState.sig_den),
       settings: prefs.settings,
       saved: Object.keys(prefs.saved),
+      backups: prefs.backups.map(({ name, at }) => ({ name, at })),
       setlistName: prefs.setlistName,
       midi: prefs.midi,
       peers: prefs.peers.map((url) => peerStatus.get(url) || { url, online: false }),
+      queued: queued && queuedInfo(list),
       lyricsRev,
       scriptInstall: cfg.scriptInstall,
+      devices: [...devices.values()],
+      passwordSet: !!prefs.auth,
     };
+  }
+
+  // where the queued jump lands: song and section index
+  function queuedInfo(list) {
+    const song = S.songAt(list, queued.time);
+    const sections = list[song] ? list[song].sections : [];
+    return { ...queued, song, section: sections.findIndex((x) => Math.abs(x.time - queued.time) < S.EPS) };
   }
 
   function changed(list) {
@@ -252,6 +279,7 @@ function start(opts = {}) {
     }
     if (msg.type !== "state") return;
     const wasConnected = liveState.connected;
+    const wasPlaying = liveState.is_playing;
     const prevBeat = liveState.beat;
     const { type, cues: newCues, ...rest } = msg;
     liveState = { ...liveState, ...rest, connected: true };
@@ -267,8 +295,15 @@ function start(opts = {}) {
         loop: liveState.loop,
         quantBeats: S.quantBeats(liveState.quant, liveState.sig_num, liveState.sig_den),
         settings: prefs.settings,
+        queued,
       });
       cmds.forEach(sendToLive);
+      if (queued && cmds.some((c) => c.cmd === "jump" && Math.abs(c.time - queued.time) < S.EPS)) queued = null;
+      // playback stopped with a jump waiting (Manual mode waits for this): jump now
+      if (queued && wasPlaying && !liveState.is_playing) {
+        sendToLive({ cmd: "jump", time: queued.time });
+        queued = null;
+      }
       const measured = meter.update({
         songs: list,
         prevBeat,
@@ -351,11 +386,15 @@ function start(opts = {}) {
   // which is not repeated again). Engine commands are not: each computer runs
   // its own engine on the same set, and Ableton Link keeps the clocks together.
 
-  const LOCAL_ONLY = new Set(["peers", "midi"]);
+  const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword"]);
   const peerStatus = new Map(); // url -> { url, online, connected, playing, song, drift }
 
-  function runCommand(msg) {
-    const ok = handleCommand(msg);
+  // source: "web" (browser, HTTP) or "osc". Safe Mode only limits the web app;
+  // MIDI mapped in a browser and commands repeated from the main computer pass.
+  function runCommand(msg, source = "web") {
+    const safe =
+      source === "web" && !!msg && !msg.midi && !msg.mirror && prefs.settings.safeMode && liveState.is_playing;
+    const ok = handleCommand(msg, safe);
     if (ok && !msg.mirror && !LOCAL_ONLY.has(msg.cmd)) {
       const body = JSON.stringify({ ...msg, mirror: true });
       for (const url of prefs.peers)
@@ -399,7 +438,14 @@ function start(opts = {}) {
 
   // ---------------- commands (WebSocket, HTTP, OSC) ----------------
 
-  function jumpTo(time) {
+  // A jump from the user. In the queued jump modes, while playing, it waits
+  // for the engine (end of section/song) or for J / Shift+J / a stop.
+  function jumpTo(time, type = "section") {
+    if (prefs.settings.jumpMode !== "quantized" && liveState.is_playing) {
+      queued = { time, type };
+      changed();
+      return true;
+    }
     sendToLive({ cmd: "jump", time });
     if (prefs.settings.autoplay && !liveState.is_playing) sendToLive({ cmd: "play" });
     return true;
@@ -412,7 +458,8 @@ function start(opts = {}) {
     return true;
   }
 
-  function handleCommand(msg) {
+  // safe: Safe Mode is on while playing, so only the current song can be played
+  function handleCommand(msg, safe = false) {
     if (!msg || typeof msg !== "object") return false;
     const list = setlist();
     const cur = S.songAt(list, liveState.beat);
@@ -428,26 +475,30 @@ function start(opts = {}) {
         sendToLive({ cmd: liveState.is_playing ? "stop" : "play" });
         return true;
       case "jump":
-        return num(msg.time) && jumpTo(msg.time);
+        if (safe && num(msg.time) && S.songAt(list, msg.time) !== cur) return false;
+        return num(msg.time) && jumpTo(msg.time, list.some((s) => Math.abs(s.playStart - msg.time) < S.EPS) ? "song" : "section");
       case "seek":
         if (!num(msg.time)) return false;
         sendToLive({ cmd: "seek", time: msg.time });
         return true;
       case "song": {
+        if (safe) return false;
         const i = typeof msg.name === "string" ? list.findIndex((s) => s.name === msg.name) : msg.index;
-        return Number.isInteger(i) && !!list[i] && jumpTo(list[i].playStart);
+        return Number.isInteger(i) && !!list[i] && jumpTo(list[i].playStart, "song");
       }
       case "next": {
+        if (safe) return false;
         const n = S.nextSong(list, cur);
-        if (n >= 0) jumpTo(list[n].playStart);
+        if (n >= 0) jumpTo(list[n].playStart, "song");
         return true;
       }
       case "prev": {
         // like AbleSet: back to the start of the song first, unless forced
-        if (song && !msg.force && liveState.beat - song.playStart > 1) return jumpTo(song.playStart);
+        if (song && !msg.force && liveState.beat - song.playStart > 1) return jumpTo(song.playStart, "song");
+        if (safe) return false;
         const p = S.prevSong(list, cur);
-        if (p >= 0) jumpTo(list[p].playStart);
-        else if (song) jumpTo(song.playStart);
+        if (p >= 0) jumpTo(list[p].playStart, "song");
+        else if (song) jumpTo(song.playStart, "song");
         return true;
       }
       case "section": {
@@ -497,15 +548,37 @@ function start(opts = {}) {
         const settings = { ...prefs.settings };
         for (const k of Object.keys(settings)) {
           if (msg[k] === undefined) continue;
-          if (typeof msg[k] !== "boolean") return false;
+          if (!validSetting(k, msg[k])) return false;
           settings[k] = msg[k];
         }
+        if (settings.jumpMode === "quantized") queued = null;
         return setPrefs({ settings });
       }
+      case "jumpToQueued": {
+        if (!queued || (safe && S.songAt(list, queued.time) !== cur)) return false;
+        // J: quantized by Live; Shift+J: right now
+        sendToLive({ cmd: msg.now ? "seek" : "jump", time: queued.time });
+        queued = null;
+        changed();
+        return true;
+      }
+      case "clearQueue":
+        queued = null;
+        changed();
+        return true;
       case "saveSetlist": {
         if (!validName(msg.name)) return false;
         const { order, skip, stopAfter, notes } = prefs;
-        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes } }, setlistName: msg.name });
+        // overwriting keeps the previous version, like AbleSet's Backup folder
+        const backups = Object.hasOwn(prefs.saved, msg.name)
+          ? [{ name: msg.name, at: new Date(cfg.now()).toISOString(), data: prefs.saved[msg.name] }, ...prefs.backups].slice(0, 20)
+          : prefs.backups;
+        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes } }, setlistName: msg.name, backups });
+      }
+      case "restoreBackup": {
+        const b = prefs.backups.find((x) => x.name === msg.name && x.at === msg.at);
+        const loaded = b && cleanSetlist(b.data, defaultPrefs());
+        return !!loaded && setPrefs({ ...loaded, setlistName: b.name });
       }
       case "loadSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;
@@ -527,12 +600,46 @@ function start(opts = {}) {
         const peers = cleanPeers(msg.urls);
         return !!peers && setPrefs({ peers });
       }
+      case "devices":
+        return deviceCommand(msg);
+      case "setPassword": {
+        // "" removes it; only browsers that may command get here
+        const pw = msg.password;
+        if (pw !== "" && (typeof pw !== "string" || pw.length < 4 || pw.length > 128)) return false;
+        prefs = { ...prefs, auth: pw ? hashPassword(pw) : null };
+        savePrefs();
+        tokens.clear();
+        for (const ws of wss.clients) ws.authed = false;
+        for (const ws of wss.clients) sendAccess(ws);
+        changed();
+        return true;
+      }
     }
     return false;
   }
 
+  // AbleSet's /devices commands: showPage, reload, lock, unlock, toggleLock
+  function deviceCommand({ action, devices: spec, page }) {
+    const view = pageView(page);
+    if (!["showPage", "reload", "lock", "unlock", "toggleLock"].includes(action) || (action === "showPage" && !view))
+      return false;
+    const targets = new Set(matchDevices([...devices.values()], spec));
+    for (const [ws, d] of devices) {
+      if (!targets.has(d)) continue;
+      if (action === "showPage") ws.send(JSON.stringify({ type: "device", action, view }));
+      else if (action === "reload") ws.send(JSON.stringify({ type: "device", action }));
+      else {
+        d.locked = action === "toggleLock" ? !d.locked : action === "lock";
+        ws.send(JSON.stringify({ type: "device", action: "lock", locked: d.locked }));
+      }
+    }
+    if (action !== "showPage" && action !== "reload") changed();
+    return true;
+  }
+
   // AbleSet-compatible OSC: https://ableset.com/docs/osc (subset)
   function handleOsc({ address, args }, rinfo) {
+    const runOsc = (msg) => runCommand(msg, "osc");
     const [a, b] = args;
     const list = setlist();
     const cur = S.songAt(list, liveState.beat);
@@ -560,50 +667,60 @@ function start(opts = {}) {
     switch (address) {
       case "/global/play":
       case "/global/startPlaying":
-        return runCommand({ cmd: "play" });
+        return runOsc({ cmd: "play" });
       case "/global/continuePlaying":
-        return runCommand({ cmd: "continue" });
+        return runOsc({ cmd: "continue" });
       case "/global/stop":
       case "/global/pause":
-        return runCommand({ cmd: "stop" });
+        return runOsc({ cmd: "stop" });
       case "/global/playPause":
       case "/global/playStop":
-        return runCommand({ cmd: "playStop" });
+        return runOsc({ cmd: "playStop" });
       case "/global/quantization":
-        return runCommand({ cmd: "quant", value: QUANT_NAMES.indexOf(String(a)) });
+        return runOsc({ cmd: "quant", value: QUANT_NAMES.indexOf(String(a)) });
       case "/global/tempo":
-        return runCommand({ cmd: "tempo", bpm: a });
+        return runOsc({ cmd: "tempo", bpm: a });
       case "/global/tempo/adjust":
-        return runCommand({ cmd: "tempoAdjust", delta: a });
+        return runOsc({ cmd: "tempoAdjust", delta: a });
       case "/setlist/jumpToTime":
-        return runCommand({ cmd: "jump", time: a });
+        return runOsc({ cmd: "jump", time: a });
       case "/setlist/jumpToSong":
-        return runCommand({ cmd: "song", index: pick(list, a) });
+        return runOsc({ cmd: "song", index: pick(list, a) });
       case "/setlist/jumpBySongs": {
         const steps = Math.trunc(Number(a) || 0);
-        if (steps === -1) return runCommand({ cmd: "prev", force: args.includes("force=true") });
+        if (steps === -1) return runOsc({ cmd: "prev", force: args.includes("force=true") });
         const i = by(steps, cur, (i, d) => (d > 0 ? S.nextSong(list, i) : S.prevSong(list, i)));
-        return i !== cur && runCommand({ cmd: "song", index: i });
+        return i !== cur && runOsc({ cmd: "song", index: i });
       }
       case "/setlist/jumpToSection":
         // clients send booleans as T, 1 or "true"
-        return !!song && runCommand({ cmd: "section", index: pick(song.sections, a, [true, 1, "true"].includes(b)) });
+        return !!song && runOsc({ cmd: "section", index: pick(song.sections, a, [true, 1, "true"].includes(b)) });
       case "/setlist/jumpBySections": {
         if (!song) return false;
         const j = S.sectionAt(song, liveState.beat) + Math.trunc(Number(a) || 0);
-        return runCommand({ cmd: "section", index: Math.max(0, Math.min(song.sections.length - 1, j)) });
+        return runOsc({ cmd: "section", index: Math.max(0, Math.min(song.sections.length - 1, j)) });
       }
       case "/setlist/jumpToQuickPlaySection": {
         const quick = song ? song.sections.filter((x) => x.quick) : [];
         const target = quick[pick(quick, a)];
-        return !!target && runCommand({ cmd: "section", index: song.sections.indexOf(target) });
+        return !!target && runOsc({ cmd: "section", index: song.sections.indexOf(target) });
       }
+      case "/devices/showPage":
+      case "/devices/reload":
+      case "/devices/lock":
+      case "/devices/unlock":
+      case "/devices/toggleLock":
+        return runOsc({ cmd: "devices", action: address.slice(9), devices: String(a ?? ""), page: b });
+      case "/setlist/jumpToQueued":
+        return runOsc({ cmd: "jumpToQueued", now: [true, 1, "true"].includes(a) });
+      case "/setlist/clearQueuedJump":
+        return runOsc({ cmd: "clearQueue" });
       case "/loop/enable":
-        return runCommand({ cmd: "loopOn" });
+        return runOsc({ cmd: "loopOn" });
       case "/loop/escape":
-        return runCommand({ cmd: "loopOff" });
+        return runOsc({ cmd: "loopOff" });
       case "/loop/toggle":
-        return runCommand({ cmd: "loopToggle" });
+        return runOsc({ cmd: "loopToggle" });
       case "/subscribe":
       case "/unsubscribe":
       case "/getValues": {
@@ -661,7 +778,17 @@ function start(opts = {}) {
       "/setlist/activeSectionIndex": [st.section],
       "/setlist/nextSongName": [next ? next.name : ""],
       "/setlist/nextSongIndex": [st.next],
+      "/devices/names": st.devices.map((d) => d.name).filter(Boolean),
+      "/setlist/queuedName": queuedNames(st),
+      "/settings/safeMode": [st.settings.safeMode ? 1 : 0],
+      "/setlist/queuedIndex": st.queued ? [st.queued.song, st.queued.section] : [-1, -1],
     };
+  }
+
+  function queuedNames(st) {
+    const song = st.queued && st.setlist[st.queued.song];
+    const sec = song && song.sections[st.queued.section];
+    return [song ? song.name : "", sec ? sec.name : ""];
   }
 
   // Sends changed values to all subscribers, or everything to one target.
@@ -717,10 +844,81 @@ function start(opts = {}) {
     res.json(out);
   });
 
-  app.post("/api/cmd", (req, res) => {
+  // setlist editor: song search (Ctrl+K) and the setlist as text to copy or paste
+  app.get("/api/search", (req, res) => {
+    const list = setlist();
+    const results = searchSongs(list, String(req.query.q || "").slice(0, 100)).slice(0, 20);
+    res.json({ results: results.map((r) => (r.kind === "song" ? { ...r, name: list[r.index].name } : r)) });
+  });
+
+  app.get("/api/setlist-text", (_req, res) => res.type("text/plain").send(setlistText(setlist())));
+
+  app.post("/api/setlist-text", async (req, res) => {
+    if (!(await httpAllowed(req, res))) return;
+    const { text } = req.body || {};
+    if (typeof text !== "string" || text.length > 100000) return res.status(400).json({ error: "Missing 'text'" });
+    const { order, skip, stopAfter, notes, unmatched } = parseSetlistText(text, setlist());
+    if (!runCommand({ cmd: "setlist", order, skip, stopAfter, notes: { ...prefs.notes, ...notes } }))
+      return res.status(400).json({ error: "Invalid setlist" });
+    res.json({ ok: true, unmatched });
+  });
+
+  app.post("/api/cmd", async (req, res) => {
+    if (!(await httpAllowed(req, res))) return;
     if (runCommand(req.body)) res.json({ ok: true });
     else res.status(400).json({ error: "Unknown or invalid command" });
   });
+
+  // ---------------- web app password ----------------
+  // With a password set, only this computer and unlocked browsers give
+  // commands; everyone can still read the state. OSC is not covered.
+  const tokens = new Set(); // unlocked browsers, until the next restart or password change
+  const limiter = createLimiter({ now: cfg.now });
+  const clientIp = (req) => String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+  const canControl = (ws) => !prefs.auth || isLoopback(ws.ip) || ws.authed;
+
+  function sendAccess(ws, token) {
+    if (ws.readyState === 1)
+      ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!prefs.auth, ...(token ? { token } : {}) }));
+  }
+
+  function newToken() {
+    const token = crypto.randomBytes(32).toString("hex");
+    if (tokens.size >= 200) tokens.delete(tokens.values().next().value);
+    tokens.add(token);
+    return token;
+  }
+
+  async function wsAuth(ws, { password, token }) {
+    let ok = false;
+    if (!limiter.blocked(ws.ip)) {
+      ok = typeof token === "string" && tokens.has(token) ? true : await checkPassword(prefs.auth, password);
+      if (ok) limiter.ok(ws.ip);
+      else limiter.fail(ws.ip);
+    }
+    ws.authed = ok;
+    sendAccess(ws, ok ? (tokens.has(token) ? token : newToken()) : null);
+  }
+
+  // HTTP: X-OpenSet-Password header, or "Authorization: Bearer <token>"
+  async function httpAllowed(req, res) {
+    if (!prefs.auth || isLoopback(req.socket.remoteAddress)) return true;
+    const ip = clientIp(req);
+    if (limiter.blocked(ip)) {
+      res.status(429).json({ error: "Too many wrong passwords: try again later" });
+      return false;
+    }
+    const bearer = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    if (bearer && tokens.has(bearer)) return true;
+    const pw = req.get("x-openset-password");
+    if (pw !== undefined && (await checkPassword(prefs.auth, pw))) {
+      limiter.ok(ip);
+      return true;
+    }
+    if (pw !== undefined || bearer) limiter.fail(ip);
+    res.status(401).json({ error: "Password required" });
+    return false;
+  }
 
   app.post("/api/load-als", (req, res) => {
     // reads files from disk: only from the computer running OpenSet
@@ -753,18 +951,50 @@ function start(opts = {}) {
     }
   }
 
-  wss.on("connection", (ws) => {
+  wss.on("connection", (ws, req) => {
+    const ip = clientIp(req);
+    ws.ip = ip;
+    ws.authed = false;
+    devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null });
+    ws.on("pong", () => {
+      const d = devices.get(ws);
+      if (d && ws.pingAt) d.latencyMs = Date.now() - ws.pingAt; // shown with the next state update
+    });
+    ws.on("close", () => {
+      devices.delete(ws);
+      if (!closed) changed();
+    });
     ws.send(JSON.stringify({ type: "state", state: publicState() }));
+    sendAccess(ws);
     ws.on("message", (buf) => {
       let msg;
       try { msg = JSON.parse(buf.toString()); } catch { return; }
       try {
-        runCommand(msg);
+        if (msg && msg.type === "device") deviceInfo(devices.get(ws), msg);
+        else if (msg && msg.type === "auth") wsAuth(ws, msg).catch((e) => console.error("[auth]", e.message));
+        else if (!canControl(ws)) sendAccess(ws); // read-only: tell the browser to ask for the password
+        else runCommand(msg);
       } catch (e) {
         console.error("[ws]", e.message);
       }
     });
   });
+
+  // what a browser tells about itself: its name, the view it shows, its lock
+  function deviceInfo(d, { name, view, locked }) {
+    if (!d) return;
+    if (typeof name === "string" && name.length <= 64) d.name = name.trim();
+    if (Object.values(VIEWS).includes(view)) d.view = view;
+    if (typeof locked === "boolean") d.locked = locked;
+    changed();
+  }
+
+  const pingTimer = setInterval(() => {
+    for (const ws of wss.clients) {
+      ws.pingAt = Date.now();
+      ws.ping();
+    }
+  }, cfg.pingMs);
 
   // ---------------- startup ----------------
 
@@ -784,6 +1014,7 @@ function start(opts = {}) {
     closed = true;
     clearInterval(timer);
     clearInterval(peerTimer);
+    clearInterval(pingTimer);
     for (const c of wss.clients) c.terminate();
     wss.close();
     udp.close();
@@ -795,6 +1026,7 @@ function start(opts = {}) {
     const fail = (e) => {
       clearInterval(timer);
       clearInterval(peerTimer);
+      clearInterval(pingTimer);
       wss.close();
       try { udp.close(); } catch {}
       reject(e);

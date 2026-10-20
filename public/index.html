@@ -100,6 +100,14 @@
   .chip.playing { border-color: var(--amber); color: var(--amber); }
   .chip:active { background: var(--amber-dim); }
   .loop-chip { border-style: dashed; color: var(--dim); }
+  .chip.queued { border: 1px dashed var(--amber); color: var(--amber); }
+  .song.queued .song-head { box-shadow: inset 3px 0 0 var(--amber); }
+  .queue-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0;
+    padding: 8px 14px; background: var(--amber-dim); border-top: 1px solid var(--amber);
+  }
+  .queue-bar span { flex: 1; min-width: 0; font-size: 15px; }
+  .queue-bar .btn { padding: 8px 12px; }
   .list-foot {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     padding: 16px 14px 24px; color: var(--dim); font-size: 13px;
@@ -135,6 +143,25 @@
     flex: 1 1 220px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px;
     background: var(--ink); color: var(--text); font-size: 14px;
   }
+  .drag { padding: 8px 6px; color: var(--dim); cursor: grab; touch-action: none; font-size: 18px; line-height: 1; }
+  .song.dragging { opacity: .45; }
+  .song.drop { box-shadow: inset 0 3px 0 var(--amber); }
+  .panel {
+    position: fixed; z-index: 40; top: 70px; left: 50%; transform: translateX(-50%);
+    width: min(560px, calc(100% - 24px)); background: var(--panel); border: 1px solid var(--amber);
+    border-radius: 10px; padding: 12px; box-shadow: 0 10px 40px rgba(0, 0, 0, .6);
+  }
+  .panel input, .panel textarea {
+    width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--ink); color: var(--text); font-size: 16px; user-select: text;
+  }
+  .panel ul { list-style: none; margin-top: 8px; max-height: 50vh; overflow-y: auto; }
+  .panel li button {
+    width: 100%; text-align: left; padding: 10px; background: none; border: none; border-radius: 6px; cursor: pointer; font-size: 16px;
+  }
+  .panel li button:hover, .panel li:first-child button { background: var(--line); }
+  .panel .row { margin-top: 8px; }
+  .panel p { margin-top: 8px; font-size: 13px; color: var(--dim); }
   .on-dot { color: var(--green); }
   .off-dot { color: var(--red); }
 
@@ -194,6 +221,11 @@
   .settings td { padding: 4px 16px 4px 0; }
   .settings kbd { font-family: ui-monospace, Consolas, monospace; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .lock-layer {
+    position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: calc(110px + env(safe-area-inset-bottom)); background: rgba(13, 13, 17, .15);
+  }
+  .lock-layer .btn { font-size: 16px; padding: 14px 20px; border-color: var(--amber); color: var(--amber); touch-action: none; }
 
   /* ---- signature: song progress strip ---- */
   .strip {
@@ -262,6 +294,7 @@
     <div class="set-name" id="setName"></div>
   </div>
   <span class="ver mono" id="version" title="Versione di OpenSet"></span>
+  <button class="btn" id="unlockApp" hidden>🔒 Sola lettura · Sblocca</button>
   <div class="clock-box">
     <div class="clock mono" id="clock">1.1.1</div>
     <div class="bpm mono" id="bpm">— BPM</div>
@@ -310,6 +343,23 @@
     <label><input type="checkbox" data-set="autoJump"> Dopo uno stop, porta il cursore al brano successivo</label>
     <label><input type="checkbox" data-set="autoplay"> Avvia la riproduzione quando salti a un brano o a una sezione</label>
     <label>Quantizzazione dei salti in Live <select id="quant"></select></label>
+    <label>Quando saltare mentre suona <select id="jumpMode">
+      <option value="quantized">Subito (con la quantizzazione)</option>
+      <option value="section">A fine sezione</option>
+      <option value="song">A fine brano</option>
+      <option value="dynamic">Dinamico: sezioni a fine sezione, brani a fine brano</option>
+      <option value="manual">Manuale: allo stop</option></select></label>
+    <p>Fuori da «Subito», il brano o la sezione scelti vanno in coda: <kbd>J</kbd> salta, <kbd>⇧</kbd> <kbd>J</kbd> salta subito, <kbd>C</kbd> annulla.</p>
+
+    <h2>Sicurezza</h2>
+    <label><input type="checkbox" data-set="safeMode"> Safe Mode: mentre suona, niente cambi di brano dalla web app e conferma prima dello stop</label>
+    <p>MIDI e OSC non sono limitati dal Safe Mode.</p>
+    <p id="pwStatus"></p>
+    <div class="row">
+      <input class="field" type="password" id="pwNew" autocomplete="new-password" placeholder="Nuova password (almeno 4 caratteri)" aria-label="Nuova password">
+      <button class="btn" id="pwSet">Imposta password</button>
+      <button class="btn" id="pwClear">Rimuovi</button>
+    </div>
 
     <h2>Progetto .als</h2>
     <p>Per la modalità offline e per durate esatte con l'automazione del tempo.
@@ -326,6 +376,12 @@
     <label><input type="checkbox" data-dev="speakCount"> Count-in parlato sull'ultima battuta</label>
     <p id="speechStatus">La voce esce da questo dispositivo (cuffie, in-ear, mixer).</p>
     <p id="awakeStatus"></p>
+    <label>Nome di questo dispositivo <input class="field" id="devName" maxlength="64" placeholder="es. ipad-1, palco" aria-label="Nome di questo dispositivo"></label>
+    <label>Vista all'apertura <select id="devView" aria-label="Vista all'apertura">
+      <option value="">L'ultima usata</option><option value="setlist">Scaletta</option>
+      <option value="stage">Palco</option><option value="lyrics">Testi</option></select></label>
+    <div class="row"><button class="btn" id="lockBtn">Blocca questo dispositivo</button>
+      <span class="dim">Bloccato, ignora tocchi e tasti; si sblocca tenendo premuto il lucchetto o con <kbd>⇧</kbd> <kbd>L</kbd>.</span></div>
     <p id="installHint">Su iPad/iPhone: Safari → Condividi → Aggiungi alla schermata Home, per aprire OpenSet a schermo intero come un'app.</p>
     <p>Vista Palco su questo dispositivo:</p>
     <label><input type="checkbox" data-stage="desc"> Descrizione e tag</label>
@@ -335,6 +391,13 @@
     <label><input type="checkbox" data-stage="notes"> Note</label>
     <label><input type="checkbox" data-stage="quick"> Pulsanti delle sezioni</label>
     <label><input type="checkbox" data-stage="lyrics"> Riga del testo corrente e successiva</label>
+
+    <h2>Dispositivi collegati</h2>
+    <p>Telefoni, tablet e computer con OpenSet aperto. Via OSC (come AbleSet):
+      <span class="mono">/devices/showPage all performance</span>, <span class="mono">/devices/reload</span>,
+      <span class="mono">/devices/lock</span>, <span class="mono">/devices/unlock</span>, <span class="mono">/devices/toggleLock</span>
+      con <span class="mono">all</span>, un nome (o tag) o un indirizzo IP.</p>
+    <ul id="deviceList"></ul>
 
     <h2>MIDI</h2>
     <p id="midiStatus">Web MIDI funziona in Chrome o Edge aperti su questo computer (http://localhost:39080). Tieni aperta una sola scheda.</p>
@@ -360,6 +423,11 @@
       <tr><td><kbd>←</kbd> <kbd>PagSu</kbd></td><td>Inizio brano / brano precedente</td></tr>
       <tr><td><kbd>↓</kbd> <kbd>↑</kbd></td><td>Sezione successiva / precedente</td></tr>
       <tr><td><kbd>L</kbd></td><td>Loop della sezione corrente</td></tr>
+      <tr><td><kbd>⇧</kbd> <kbd>L</kbd></td><td>Blocca / sblocca questo dispositivo</td></tr>
+      <tr><td><kbd>J</kbd> / <kbd>⇧</kbd> <kbd>J</kbd></td><td>Salta al brano o alla sezione in coda / subito</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Annulla il salto in coda</td></tr>
+      <tr><td><kbd>Ctrl</kbd> <kbd>K</kbd></td><td>Aggiungi brani alla scaletta (cerca per titolo, iniziali o #tag)</td></tr>
+      <tr><td><kbd>Ctrl</kbd> <kbd>C</kbd> / <kbd>V</kbd></td><td>Nell'editor: copia / incolla la scaletta come testo</td></tr>
     </table>
 
     <h2>Controllo esterno</h2>
@@ -368,6 +436,34 @@
       Stile personalizzato: <span class="mono">custom.css</span> accanto all'eseguibile.</p>
   </div>
 </main>
+
+<div class="lock-layer" id="lockLayer" hidden>
+  <button class="btn" id="unlockBtn">🔒 Bloccato · tieni premuto per sbloccare</button>
+</div>
+
+<div class="panel" id="searchPanel" hidden role="dialog" aria-label="Aggiungi brani">
+  <input id="searchInput" placeholder="Cerca un brano: titolo, iniziali o #tag" aria-label="Cerca un brano" autocomplete="off">
+  <ul id="searchList"></ul>
+  <p>Invio aggiunge il primo risultato in fondo ai brani da suonare · Esc chiude</p>
+</div>
+<div class="panel" id="pastePanel" hidden role="dialog" aria-label="Incolla una scaletta">
+  <textarea id="pasteText" rows="9" aria-label="Scaletta come testo"></textarea>
+  <div class="row"><button class="btn primary" id="pasteApply">Applica</button><button class="btn" id="pasteCancel">Chiudi</button></div>
+  <p id="pasteStatus"></p>
+</div>
+
+<div class="panel" id="authPanel" hidden role="dialog" aria-label="Sblocca i comandi">
+  <input type="password" id="authPw" placeholder="Password di OpenSet" aria-label="Password di OpenSet" autocomplete="current-password">
+  <div class="row"><button class="btn primary" id="authGo">Sblocca</button><button class="btn" id="authCancel">Chiudi</button></div>
+  <p id="authStatus">Questo OpenSet è protetto: senza password puoi solo guardare.</p>
+</div>
+
+<div class="queue-bar" id="queueBar" hidden>
+  <span>In coda: <b id="queueName"></b></span>
+  <button class="btn" data-q="jump">Salta <kbd>J</kbd></button>
+  <button class="btn" data-q="now">Subito <kbd>⇧J</kbd></button>
+  <button class="btn" data-q="clear">Annulla <kbd>C</kbd></button>
+</div>
 
 <div class="strip" id="strip"><div class="playhead" id="playhead"></div></div>
 
@@ -393,8 +489,10 @@ const ACTIONS = {
 };
 const KEYS = {
   " ": "playStop", ArrowRight: "next", PageDown: "next", ArrowLeft: "prev", PageUp: "prev",
-  ArrowDown: "nextSection", ArrowUp: "prevSection", l: "loopToggle", L: "loopToggle",
+  ArrowDown: "nextSection", ArrowUp: "prevSection", l: "loopToggle",
+  j: "jumpToQueued", c: "clearQueue",
 };
+const VIEW_NAMES = { setlist: "Scaletta", stage: "Palco", lyrics: "Testi", settings: "Opzioni" };
 
 let state = null;
 let view = store.get("openset.view", "setlist");
@@ -415,10 +513,17 @@ const lyr = { cache: {}, rev: -1, song: null, line: -2 };
 let ws;
 function connect() {
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host);
+  ws.onopen = () => {
+    sendDevice();
+    const token = store.get("openset.token", "");
+    if (token) send({ type: "auth", token });
+  };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
     if (msg.type === "state") { state = msg.state; render(); }
     if (msg.type === "cue") onCue(msg.cue);
+    if (msg.type === "device") onDeviceCommand(msg);
+    if (msg.type === "access") onAccess(msg);
   };
   ws.onclose = () => setTimeout(connect, 1500);
 }
@@ -440,7 +545,71 @@ $("awakeStatus").textContent = navigator.wakeLock
   : "Questo browser non può tenere acceso lo schermo da qui: su iPad/iPhone imposta Impostazioni → Schermo e luminosità → Blocco automatico → Mai.";
 $("installHint").hidden = navigator.standalone || matchMedia("(display-mode: standalone)").matches;
 
-function send(obj) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj)); }
+let lastCommand = 0;
+function send(obj) {
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj));
+  if (obj.cmd) lastCommand = Date.now();
+}
+
+// ---------- password: read-only until unlocked ----------
+let access = { control: true, passwordSet: false };
+let authTried = false;
+function onAccess(msg) {
+  access = msg;
+  if (msg.token) store.set("openset.token", msg.token);
+  $("unlockApp").hidden = msg.control;
+  if (msg.control) { $("authPanel").hidden = true; authTried = false; }
+  else if (authTried) { $("authStatus").textContent = "Password errata, o troppi tentativi: riprova tra poco."; authTried = false; }
+  else if (Date.now() - lastCommand < 2000) openAuth(); // a command was refused
+  settingsKey = "";
+  if (state) render();
+}
+function openAuth() {
+  $("authPanel").hidden = false;
+  $("authPw").value = "";
+  $("authPw").focus();
+}
+function tryAuth() {
+  authTried = true;
+  send({ type: "auth", password: $("authPw").value });
+}
+$("unlockApp").onclick = openAuth;
+$("authGo").onclick = tryAuth;
+$("authPw").addEventListener("keydown", (e) => { if (e.key === "Enter") tryAuth(); });
+$("authCancel").onclick = () => { $("authPanel").hidden = true; };
+
+// Safe Mode: a stop while playing needs a second press within 3 s
+let stopArmed = 0;
+function stopGuarded(cmd) {
+  if (!(state && state.settings.safeMode && state.is_playing) || Date.now() - stopArmed < 3000) {
+    stopArmed = 0;
+    $("btnStop").textContent = "Stop";
+    return send({ cmd });
+  }
+  stopArmed = Date.now();
+  $("btnStop").textContent = "Conferma stop";
+  setTimeout(() => { if (Date.now() - stopArmed >= 3000) $("btnStop").textContent = "Stop"; }, 3100);
+}
+
+// ---------- this device: name, view and lock, as seen by the server ----------
+function sendDevice() { send({ type: "device", name: device.name || "", view, locked: !!device.locked }); }
+function onDeviceCommand(msg) {
+  if (msg.action === "showPage" && VIEW_NAMES[msg.view]) showView(msg.view);
+  if (msg.action === "reload") location.reload();
+  if (msg.action === "lock") setLocked(msg.locked);
+}
+function setLocked(on) {
+  device.locked = !!on;
+  saveDevice();
+  $("lockLayer").hidden = !device.locked;
+  sendDevice();
+}
+let unlockTimer = null;
+$("unlockBtn").addEventListener("pointerdown", () => { unlockTimer = setTimeout(() => setLocked(false), 1000); });
+for (const ev of ["pointerup", "pointerleave", "pointercancel"])
+  $("unlockBtn").addEventListener(ev, () => clearTimeout(unlockTimer));
+$("lockBtn").onclick = () => setLocked(true);
+$("lockLayer").hidden = !device.locked;
 
 // ---------- helpers ----------
 function esc(t) { return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
@@ -481,6 +650,11 @@ function render() {
   if (song && spokenSong !== null && song.name !== spokenSong && device.speakSongs) speak(song.name, true);
   spokenSong = song ? song.name : "";
 
+  const q = st.queued;
+  const qSong = q && st.setlist[q.song];
+  $("queueBar").hidden = !qSong;
+  if (qSong) $("queueName").textContent = qSong.name + (qSong.sections[q.section] ? " › " + qSong.sections[q.section].name : "");
+
   renderSetlist();
   renderStrip();
   if (view === "stage") renderStage();
@@ -489,16 +663,20 @@ function render() {
 }
 
 function renderSetlist() {
-  const key = JSON.stringify([state.setlist, editing, state.saved, state.setlistName, state.connected, state.offline, state.scriptInstall]);
+  const key = JSON.stringify([state.setlist, editing, state.saved, state.backups, state.setlistName, state.connected, state.offline, state.scriptInstall]);
   if (key !== listKey) { listKey = key; buildSetlist(); }
   document.querySelectorAll("#setlist .song").forEach((el) => {
     const cur = +el.dataset.i === state.current;
     el.classList.toggle("current", cur);
     el.setAttribute("aria-current", cur ? "true" : "false");
   });
-  document.querySelectorAll("#setlist .chip.playing").forEach((c) => c.classList.remove("playing"));
+  document.querySelectorAll("#setlist .chip.playing, #setlist .chip.queued").forEach((c) => c.classList.remove("playing", "queued"));
   const chip = document.querySelector(`#setlist .chip[data-song="${state.current}"][data-sec="${state.section}"]`);
   if (chip) chip.classList.add("playing");
+  const q = state.queued;
+  document.querySelectorAll("#setlist .song").forEach((el) => el.classList.toggle("queued", !!q && q.section < 0 && +el.dataset.i === q.song));
+  const qChip = q && document.querySelector(`#setlist .chip[data-song="${q.song}"][data-sec="${q.section}"]`);
+  if (qChip) qChip.classList.add("queued");
 }
 
 function scriptNote(inst) {
@@ -535,6 +713,11 @@ function buildSetlist() {
         <button class="btn primary" data-act="done">Fine</button>
         <button class="btn" data-act="print">Stampa</button>
         <button class="btn" data-act="clearMeasured" title="Le durate vengono misurate quando un brano suona dall'inizio alla fine">Azzera durate misurate</button>
+        <button class="btn" data-act="search" title="Ctrl+K">+ Aggiungi</button>
+        <button class="btn" data-act="skipAll">Togli tutti</button>
+        <button class="btn" data-act="unskipAll">Rimetti tutti</button>
+        <button class="btn" data-act="copy" title="Ctrl+C">Copia</button>
+        <button class="btn" data-act="paste" title="Ctrl+V">Incolla</button>
         <input id="saveName" placeholder="Nome scaletta" aria-label="Nome scaletta" value="${esc(state.setlistName || "")}">
         <button class="btn" data-act="save">Salva</button>
         ${state.saved.length ? `
@@ -542,10 +725,15 @@ function buildSetlist() {
             `<option ${n === state.setlistName ? "selected" : ""}>${esc(n)}</option>`).join("")}</select>
           <button class="btn" data-act="load">Carica</button>
           <button class="btn" data-act="delete">Elimina</button>` : ""}
+        ${state.backups.length ? `
+          <select id="backupPick" aria-label="Versioni precedenti">${state.backups.map((b, i) =>
+            `<option value="${i}">${esc(b.name)} · ${esc(new Date(b.at).toLocaleString())}</option>`).join("")}</select>
+          <button class="btn" data-act="restore">Ripristina</button>` : ""}
       </div>
       <ol class="songs">${list.map((s, i) => `
         <li class="song ${s.skip ? "skip" : ""} ${classes(s)}" data-i="${i}">
           <div class="edit-row">
+            <span class="drag" data-drag="${i}" aria-hidden="true" title="Trascina per spostare">⠿</span>
             <button class="btn" data-act="up" data-i="${i}" aria-label="Sposta su ${esc(s.name)}" ${i ? "" : "disabled"}>↑</button>
             <button class="btn" data-act="down" data-i="${i}" aria-label="Sposta giù ${esc(s.name)}" ${i < list.length - 1 ? "" : "disabled"}>↓</button>
             <span class="song-name">${esc(s.name)}</span>
@@ -556,6 +744,7 @@ function buildSetlist() {
         </li>`).join("")}
       </ol>
       <div class="list-foot">Totale ${fmt(t.setTotal)} · ${count} brani</div>`;
+    fetch("/api/setlist-text").then((r) => r.text()).then((txt) => { setlistTextCache = txt; }).catch(() => {});
     return;
   }
   el.innerHTML = `
@@ -616,12 +805,129 @@ $("setlist").addEventListener("click", (e) => {
   else if (act === "save") { const name = $("saveName").value.trim(); if (name) send({ cmd: "saveSetlist", name }); }
   else if (act === "load") send({ cmd: "loadSetlist", name: $("loadName").value });
   else if (act === "delete") send({ cmd: "deleteSetlist", name: $("loadName").value });
+  else if (act === "restore") {
+    const b = state.backups[+$("backupPick").value];
+    if (b) send({ cmd: "restoreBackup", name: b.name, at: b.at });
+  } else if (act === "search") openSearch();
+  else if (act === "skipAll" || act === "unskipAll") editSetlist((rows) => rows.forEach((r) => { r.skip = act === "skipAll"; }));
+  else if (act === "copy") copySetlist();
+  else if (act === "paste") openPaste("");
   if (e.detail > 0) b.blur(); // keep Space for play/stop after a tap
 });
 $("setlist").addEventListener("change", (e) => {
   if (!e.target.classList.contains("note")) return;
   const i = +e.target.dataset.i;
   editSetlist((rows) => { rows[i].notes = e.target.value.trim(); });
+});
+
+// ---------- editor: drag to reorder (mouse and touch) ----------
+let drag = null;
+$("setlist").addEventListener("pointerdown", (e) => {
+  const h = e.target.closest("[data-drag]");
+  if (!h || !editing) return;
+  e.preventDefault();
+  drag = { from: +h.dataset.drag, to: +h.dataset.drag };
+  try { h.setPointerCapture(e.pointerId); } catch {} // keeps the moves coming when the finger leaves the handle
+  h.closest(".song").classList.add("dragging");
+});
+$("setlist").addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const row = document.elementFromPoint(e.clientX, e.clientY)?.closest("#setlist .song");
+  document.querySelectorAll("#setlist .song.drop").forEach((r) => r.classList.remove("drop"));
+  if (row) { drag.to = +row.dataset.i; row.classList.add("drop"); }
+});
+function endDrag() {
+  if (!drag) return;
+  const { from, to } = drag;
+  drag = null;
+  document.querySelectorAll("#setlist .dragging, #setlist .drop").forEach((r) => r.classList.remove("dragging", "drop"));
+  if (to !== from) editSetlist((rows) => rows.splice(to, 0, rows.splice(from, 1)[0]));
+}
+$("setlist").addEventListener("pointerup", endDrag);
+$("setlist").addEventListener("pointercancel", () => { drag = null; listKey = ""; render(); });
+
+// ---------- editor: add songs (Ctrl+K), copy and paste as text ----------
+let setlistTextCache = "";
+let searchResults = [];
+function openSearch() {
+  if (!editing) { editing = true; render(); }
+  $("pastePanel").hidden = true;
+  $("searchPanel").hidden = false;
+  $("searchInput").value = "";
+  $("searchList").innerHTML = "";
+  $("searchInput").focus();
+}
+// picked songs are played again and move after the last played song
+function addSongs(indexes) {
+  const names = new Set(indexes.map((i) => state.setlist[i] && state.setlist[i].name));
+  editSetlist((rows) => {
+    const picked = rows.filter((r) => names.has(r.name));
+    const rest = rows.filter((r) => !names.has(r.name));
+    picked.forEach((r) => { r.skip = false; });
+    let at = 0;
+    rest.forEach((r, k) => { if (!r.skip) at = k + 1; });
+    rows.splice(0, rows.length, ...rest.slice(0, at), ...picked, ...rest.slice(at));
+  });
+}
+$("searchInput").addEventListener("input", async () => {
+  const q = $("searchInput").value;
+  try {
+    searchResults = q.trim() ? (await (await fetch("/api/search?q=" + encodeURIComponent(q))).json()).results : [];
+  } catch { searchResults = []; }
+  $("searchList").innerHTML = searchResults.map((r, i) => `<li><button data-pick="${i}">${r.kind === "tag"
+    ? `#${esc(r.tag)} <span class="dim">· tutti i ${r.indexes.length} brani</span>`
+    : esc(r.name) + (state.setlist[r.index] && state.setlist[r.index].skip ? ' <span class="dim">· tolto</span>' : "")}</button></li>`).join("") ||
+    (q.trim() ? '<li class="dim">Nessun brano trovato.</li>' : "");
+});
+function pick(r) {
+  if (!r) return;
+  addSongs(r.kind === "tag" ? r.indexes : [r.index]);
+  $("searchPanel").hidden = true;
+}
+$("searchList").addEventListener("click", (e) => { const b = e.target.closest("[data-pick]"); if (b) pick(searchResults[+b.dataset.pick]); });
+$("searchInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") pick(searchResults[0]);
+  if (e.key === "Escape") $("searchPanel").hidden = true;
+});
+async function copySetlist() {
+  const text = await (await fetch("/api/setlist-text")).text();
+  try {
+    await navigator.clipboard.writeText(text);
+    return;
+  } catch {} // the clipboard API needs HTTPS or localhost
+  openPaste(text, "Copia il testo qui sopra (seleziona e Ctrl+C / Copia).");
+  $("pasteText").select();
+}
+function openPaste(text, note = "Un brano per riga. {nota} accanto al titolo aggiunge una nota, una riga «-- stop --» ferma dopo il brano sopra.") {
+  if (!editing) { editing = true; render(); }
+  $("searchPanel").hidden = true;
+  $("pastePanel").hidden = false;
+  $("pasteText").value = text;
+  $("pasteStatus").textContent = note;
+  if (!text) $("pasteText").focus();
+}
+async function applyPaste(text) {
+  try {
+    const r = await fetch("/api/setlist-text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const res = await r.json();
+    if (!r.ok) throw new Error(res.error);
+    if (res.unmatched.length) openPaste(text, "Non trovati (restano fuori): " + res.unmatched.join(", "));
+    else $("pastePanel").hidden = true;
+  } catch (err) {
+    $("pasteStatus").textContent = "Errore: " + (err.message || "rete");
+  }
+}
+$("pasteApply").onclick = () => applyPaste($("pasteText").value);
+$("pasteCancel").onclick = () => { $("pastePanel").hidden = true; };
+document.addEventListener("copy", (e) => {
+  if (!editing || e.target.closest("input, textarea") || String(getSelection())) return;
+  e.preventDefault();
+  e.clipboardData.setData("text/plain", setlistTextCache);
+});
+document.addEventListener("paste", (e) => {
+  if (!editing || e.target.closest("input, textarea")) return;
+  e.preventDefault();
+  applyPaste(e.clipboardData.getData("text/plain"));
 });
 
 function renderStrip() {
@@ -796,15 +1102,20 @@ $("quant").innerHTML = QUANT.map((q, i) => `<option value="${i}">${q}</option>`)
 $("midiAction").innerHTML = Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
 
 function renderSettings() {
-  const key = JSON.stringify([state.settings, state.quant, state.midi, state.peers, midi.status, midi.learning]);
+  const key = JSON.stringify([state.settings, state.quant, state.midi, state.peers, state.devices, state.passwordSet, midi.status, midi.learning]);
   if (key === settingsKey) return;
   settingsKey = key;
   document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });
   document.querySelectorAll("[data-dev]").forEach((c) => { c.checked = !!device[c.dataset.dev]; });
   const show = stageShow();
   document.querySelectorAll("[data-stage]").forEach((c) => { c.checked = !!show[c.dataset.stage]; });
+  $("pwStatus").textContent = state.passwordSet
+    ? "Password attiva: gli altri dispositivi la chiedono per comandare (questo computer no). Non vale per OSC."
+    : "Nessuna password: chiunque sulla rete può comandare OpenSet dal browser.";
+  $("pwClear").hidden = !state.passwordSet;
   if (!("speechSynthesis" in window)) $("speechStatus").textContent = "Sintesi vocale non disponibile in questo browser.";
   $("quant").value = String(state.quant);
+  $("jumpMode").value = state.settings.jumpMode;
   $("midiStatus").textContent = midi.status;
   $("midiLearn").textContent = midi.learning ? "Premi un tasto MIDI… (annulla)" : "Impara da MIDI";
   $("midiList").innerHTML = state.midi.map((m, i) => `
@@ -812,6 +1123,14 @@ function renderSettings() {
       → ${esc(ACTIONS[m.action] || m.action)}
       <button class="btn" data-del="${i}" aria-label="Elimina mappatura">✕</button></li>`).join("") ||
     "<li>Nessuna mappatura.</li>";
+  if (document.activeElement !== $("devName")) $("devName").value = device.name || "";
+  $("devView").value = device.view || "";
+  $("deviceList").innerHTML = state.devices.map((d) => `
+    <li><span class="on-dot" aria-hidden="true">●</span>
+      <span class="mono">${esc(d.name || "senza nome")}</span> · ${esc(d.ip)}
+      ${d.view ? " · " + esc(VIEW_NAMES[d.view] || d.view) : ""}${d.locked ? " · 🔒 bloccato" : ""}
+      ${d.latencyMs != null ? ` · ${d.latencyMs} ms` : ""}</li>`).join("") ||
+    "<li>Nessun dispositivo collegato.</li>";
   $("peerList").innerHTML = state.peers.map((p, i) => `
     <li><span class="${p.online ? "on-dot" : "off-dot"}" aria-hidden="true">●</span>
       <span class="mono">${esc(p.url)}</span>
@@ -834,6 +1153,13 @@ $("alsLoad").onclick = async () => {
     $("alsStatus").textContent = "Errore di rete.";
   }
 };
+$("pwSet").onclick = () => {
+  const password = $("pwNew").value;
+  if (password.length < 4) { $("pwStatus").textContent = "La password deve avere almeno 4 caratteri."; return; }
+  send({ cmd: "setPassword", password });
+  $("pwNew").value = "";
+};
+$("pwClear").onclick = () => send({ cmd: "setPassword", password: "" });
 $("peerAdd").onclick = () => {
   const url = $("peerUrl").value.trim();
   if (!url || !state) return;
@@ -856,6 +1182,9 @@ $("settings").addEventListener("change", (e) => {
     saveDevice();
   }
   if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
+  if (e.target.id === "jumpMode") send({ cmd: "settings", jumpMode: e.target.value });
+  if (e.target.id === "devName") { device.name = e.target.value.trim(); saveDevice(); sendDevice(); }
+  if (e.target.id === "devView") { device.view = e.target.value; saveDevice(); }
 });
 $("midiList").addEventListener("click", (e) => {
   const b = e.target.closest("[data-del]");
@@ -907,7 +1236,7 @@ function onMidi(e) {
     return;
   }
   const hit = state.midi.find((x) => sameControl(x, m));
-  if (hit) send({ cmd: hit.action });
+  if (hit) send({ cmd: hit.action, midi: true }); // MIDI is not limited by Safe Mode
 }
 $("midiLearn").onclick = async () => {
   if (midi.learning) midi.learning = null;
@@ -917,8 +1246,14 @@ $("midiLearn").onclick = async () => {
 };
 
 // ---------- transport, keyboard, tabs ----------
+$("queueBar").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-q]");
+  if (!b) return;
+  send(b.dataset.q === "clear" ? { cmd: "clearQueue" } : { cmd: "jumpToQueued", now: b.dataset.q === "now" });
+  if (e.detail > 0) b.blur();
+});
 $("btnPlay").onclick = () => { if (!state || !state.is_playing) send({ cmd: "play" }); };
-$("btnStop").onclick = () => send({ cmd: "stop" });
+$("btnStop").onclick = () => stopGuarded("stop");
 $("btnLoop").onclick = () => send({ cmd: "loopToggle" });
 $("btnPrev").onclick = () => send({ cmd: "prev" });
 $("btnNext").onclick = () => send({ cmd: "next" });
@@ -926,13 +1261,18 @@ document.querySelectorAll("footer button").forEach((b) =>
   b.addEventListener("click", (e) => { if (e.detail > 0) b.blur(); }));
 
 document.addEventListener("keydown", (e) => {
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && !device.locked) { e.preventDefault(); openSearch(); return; }
   if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest("input, select, textarea")) return;
+  if (e.key === "L" && e.shiftKey) { e.preventDefault(); setLocked(!device.locked); return; }
+  if (device.locked) return;
+  if (e.key === "J" && e.shiftKey) { e.preventDefault(); send({ cmd: "jumpToQueued", now: true }); return; }
   // a focused button keeps Space/Enter for itself (keyboard navigation)
   if ((e.key === " " || e.key === "Enter") && e.target.closest("button")) return;
   const cmd = KEYS[e.key];
   if (!cmd) return;
   e.preventDefault();
-  send({ cmd });
+  if (cmd === "playStop" && state && state.is_playing) stopGuarded(cmd);
+  else send({ cmd });
 });
 
 async function loadConnect() {
@@ -951,10 +1291,11 @@ function showView(v) {
   stageKey = settingsKey = "";
   lyr.song = null;
   if (v === "settings") loadConnect();
+  sendDevice();
   render();
 }
 document.querySelectorAll("nav button").forEach((b) => { b.onclick = () => showView(b.dataset.view); });
-showView(["setlist", "stage", "lyrics", "settings"].includes(view) ? view : "setlist");
+showView(VIEW_NAMES[device.view] ? device.view : VIEW_NAMES[view] ? view : "setlist");
 
 // MIDI mappings saved on the server keep working after a reload
 const startMidi = setInterval(() => {
