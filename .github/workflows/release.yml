@@ -68,10 +68,14 @@ jobs:
           name: openset-macos-arm64
           path: build
 
+      - name: PDF guide (version, new features, steps for every platform)
+        run: |
+          mkdir -p release
+          node scripts/build-guide.js "release/OpenSet-${{ steps.ver.outputs.version }}-Guida.pdf"
+
       - name: Assemble platform packages
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
-          mkdir -p release
           for PLAT in linux-x64 win-x64 macos-x64 macos-arm64; do
             DIR="pkg-$PLAT"
             mkdir -p "$DIR"
@@ -102,6 +106,7 @@ jobs:
               macos-*) GUIDE=dist-extras/INSTALL-macos.txt ;;
             esac
             sed "s/{{VERSION}}/$VERSION/g" "$GUIDE" > "$DIR/INSTALL.txt"
+            cp "release/OpenSet-$VERSION-Guida.pdf" "$DIR/"
             ( cd "$DIR" && zip -rq "../release/openset-$VERSION-$PLAT.zip" . )
           done
           ls -la release/
@@ -110,14 +115,17 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           name: OpenSet ${{ github.ref_name }}
-          files: release/*.zip
+          files: |
+            release/*.zip
+            release/*.pdf
           body: |
             ## OpenSet ${{ steps.ver.outputs.version }}
 
             Controller di scaletta open-source per Ableton Live. Ogni zip contiene
             il programma `openset-${{ steps.ver.outputs.version }}` (Node.js incluso),
-            il Remote Script per Live, l'interfaccia web, `VERSION.txt` e la guida
-            `INSTALL.txt` per la piattaforma.
+            il Remote Script per Live, l'interfaccia web, `VERSION.txt`, la guida
+            `INSTALL.txt` per la piattaforma e `OpenSet-${{ steps.ver.outputs.version }}-Guida.pdf`
+            (novità di questa versione e passi per ogni piattaforma, anche qui tra gli asset).
 
             ### Windows
             ```powershell

@@ -8,7 +8,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — P: guida PDF e CHANGELOG
+- [ ] v0.5.0 — Q: dispositivi
 
 ## Da fare
 
@@ -24,8 +24,8 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ### P — Guida PDF e CHANGELOG
 - [x] RED `test/guide.test.js`: la guida generata contiene versione, novità della versione da `CHANGELOG.md` e i passi per Windows, macOS, Linux, iPad/iPhone
-- [ ] GREEN `scripts/build-guide.js` (HTML con logo → PDF con Chrome headless), `CHANGELOG.md`
-- [ ] Release CI: `OpenSet-<versione>-Guida.pdf` dentro ogni zip e tra gli asset
+- [x] GREEN `scripts/build-guide.js` (HTML con logo → PDF con Chrome headless), `CHANGELOG.md` (0.1.0-0.4.0; la 0.5.0 al rilascio)
+- [x] Release CI: `OpenSet-<versione>-Guida.pdf` dentro ogni zip e tra gli asset; la CI su Ubuntu genera la guida a ogni push
 
 ### Q — Dispositivi
 - [ ] RED: nome per dispositivo, lista dei connessi (nome, IP, pagina, latenza), OSC `/devices/showPage|reload|lock|unlock|toggleLock` con `all`, nome/tag o IP
