@@ -21,7 +21,10 @@ macOS obbligatori, Linux se costa poco.
 - [x] Eseguire, verificare RED, commit `test:`
 
 ### Fase 2 — GREEN
-- [ ] `server/setlist.js`, `server/engine.js`, `server/lyrics.js`, `server/osc.js`
+- [x] `server/setlist.js`
+- [ ] `server/engine.js`
+- [ ] `server/lyrics.js`
+- [ ] `server/osc.js`
 - [x] fix `server/als-parser.js`
 - [ ] `server/index.js`: start(opts), comandi condivisi WS/HTTP/OSC, prefs `setlist.json`, motore, stato pubblico
 - [ ] Remote Script: cue/clip solo se cambiano, invio a pezzi, quantizzazione, fix UDP Windows (`SIO_UDP_CONNRESET`)
