@@ -19,7 +19,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ### O — Icona ovunque
 - [x] Logo nell'intestazione della UI (favicon e PWA già fatti), fatto in N
-- [ ] Icona del `.exe` Windows (risorsa PE, verificata dallo smoke test su Windows)
+- [ ] Icona del `.exe` Windows (risorsa PE, verificata dallo smoke test su Windows) — RED `test/packaging.test.js` scritto
 - [ ] macOS: `OpenSet <versione>.app` con icona `.icns` che apre il Terminale con il server (dove possibile)
 
 ### P — Guida PDF e CHANGELOG
