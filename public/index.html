@@ -425,6 +425,7 @@ function buildSetlist() {
       <div class="edit-bar">
         <button class="btn primary" data-act="done">Fine</button>
         <button class="btn" data-act="print">Stampa</button>
+        <button class="btn" data-act="clearMeasured" title="Le durate vengono misurate quando un brano suona dall'inizio alla fine">Azzera durate misurate</button>
         <input id="saveName" placeholder="Nome scaletta" aria-label="Nome scaletta" value="${esc(state.setlistName || "")}">
         <button class="btn" data-act="save">Salva</button>
         ${state.saved.length ? `
@@ -498,6 +499,7 @@ $("setlist").addEventListener("click", (e) => {
     send({ cmd: "loopSection", start: s.time, length: s.end - s.time });
   } else if (act === "edit" || act === "done") { editing = act === "edit"; render(); }
   else if (act === "print") window.print();
+  else if (act === "clearMeasured") send({ cmd: "clearMeasured" });
   else if (act === "up" || act === "down") {
     const j = act === "up" ? i - 1 : i + 1;
     editSetlist((rows) => { [rows[i], rows[j]] = [rows[j], rows[i]]; });

@@ -306,6 +306,18 @@ test("songSeconds: override or length at the tempo", () => {
   assert.equal(songSeconds(c, 120), 0);
 });
 
+test("measured durations: [m:ss] > tempo map > measured > estimate", () => {
+  const songs = applyOrder(
+    buildSetlist([{ name: "A", time: 0 }, { name: "B [1:00]", time: 16 }, { name: "=END", time: 32 }]),
+    { measured: { A: 9.5, B: 70 } }
+  );
+  assert.equal(songs[0].measured, 9.5);
+  assert.equal(songSeconds(songs[0], 120), 9.5);
+  assert.equal(songSeconds(songs[1], 120), 60);
+  assert.equal(songSeconds(songs[0], 120, [{ beat: 0, bpm: 60 }]), 16);
+  assert.equal(applyOrder(buildSetlist([{ name: "C", time: 0 }])).at(0).measured, null);
+});
+
 test("beatsToSeconds: constant, step and linear ramp tempo", () => {
   const step = [{ beat: 0, bpm: 120 }, { beat: 32, bpm: 120 }, { beat: 32, bpm: 60 }];
   assert.equal(beatsToSeconds(step, 0, 32), 16);

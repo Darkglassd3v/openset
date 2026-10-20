@@ -19,6 +19,7 @@ const S = require("./setlist");
 const L = require("./lyrics");
 const osc = require("./osc");
 const { createEngine } = require("./engine");
+const { createMeter } = require("./meter");
 
 // When packaged as a standalone executable (pkg), public/ and lyrics/
 // live next to the binary; from source they live in the project root.
@@ -46,6 +47,7 @@ function defaultPrefs() {
     skip: [],
     stopAfter: [],
     notes: {},
+    measured: {}, // song name -> seconds measured during real playback
     settings: { alwaysStop: false, autoJump: true, autoplay: false },
     saved: {},
     setlistName: null,
@@ -93,6 +95,7 @@ function start(opts = {}) {
     liveTimeoutMs: 3000,
     alsFile: null,
     log: true,
+    now: Date.now, // injectable clock for tests
     ...opts,
   };
   const PREFS_FILE = path.join(cfg.baseDir, "setlist.json");
@@ -119,6 +122,7 @@ function start(opts = {}) {
   let offlineProject = null; // from .als parsing
   let prefs = loadPrefs();
   const engine = createEngine();
+  const meter = createMeter();
   const chunks = { id: null, parts: [] };
   const subscribers = new Map(); // OSC clients: "host:port" -> { host, port }
   const lastOsc = new Map(); // address -> last args sent, to push only changes
@@ -138,6 +142,10 @@ function start(opts = {}) {
       settings,
       // entries are validated again by cleanSetlist when loaded
       saved: saved.saved && typeof saved.saved === "object" && !Array.isArray(saved.saved) ? saved.saved : {},
+      measured:
+        saved.measured && typeof saved.measured === "object" && Object.values(saved.measured).every((v) => num(v) && v > 0)
+          ? saved.measured
+          : {},
       setlistName: typeof saved.setlistName === "string" ? saved.setlistName : null,
       midi: cleanMidi(saved.midi) || [],
     };
@@ -235,6 +243,19 @@ function start(opts = {}) {
         settings: prefs.settings,
       });
       cmds.forEach(sendToLive);
+      const measured = meter.update({
+        songs: list,
+        prevBeat,
+        beat: liveState.beat,
+        playing: liveState.is_playing,
+        loop: liveState.loop,
+        tempo: liveState.tempo,
+        now: cfg.now(),
+      });
+      if (measured) {
+        prefs.measured = { ...prefs.measured, [measured.name]: measured.seconds };
+        savePrefs();
+      }
     }
     changed(list);
   }
@@ -413,6 +434,8 @@ function start(opts = {}) {
         const midi = cleanMidi(msg.mappings);
         return !!midi && setPrefs({ midi });
       }
+      case "clearMeasured":
+        return setPrefs({ measured: {} });
     }
     return false;
   }

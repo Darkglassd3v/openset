@@ -478,6 +478,25 @@ test("tempo map of a loaded .als is used offline and for the same set in Live", 
   assert.equal((await c.state()).setlist[0].seconds, 16);
 });
 
+test("real song durations are learned from playback and can be cleared", async (t) => {
+  let now = 0;
+  const c = await setup(t, { now: () => now });
+  await c.connect({ ...LIVE, beat: 0 });
+  // Intro Song (0-32, STOP) played at a real 100 BPM while Live reports 120
+  for (let beat = 0; beat <= 32.5; beat += 2.5) {
+    now = beat * 600;
+    await c.at(beat, { is_playing: true });
+  }
+  await waitFor(async () => (await c.state()).setlist[0].measured != null, "measured duration");
+  const s = await c.state();
+  assert.ok(Math.abs(s.setlist[0].measured - 19.2) < 0.01);
+  assert.ok(Math.abs(s.setlist[0].seconds - 19.2) < 0.01);
+  const saved = JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8"));
+  assert.ok(Math.abs(saved.measured["Intro Song"] - 19.2) < 0.01);
+  assert.equal((await c.cmd({ cmd: "clearMeasured" })).status, 200);
+  assert.equal((await c.state()).setlist[0].measured, null);
+});
+
 test("lyrics: JSON files with accented names and Live +LYRICS tracks", async (t) => {
   const c = await setup(t);
   fs.mkdirSync(path.join(c.baseDir, "lyrics"));

@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [ ] C — durate misurate dal vivo
+- [ ] D — annunci vocali e count-in
 
 ## Da fare
 
@@ -19,8 +19,8 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 - [x] GREEN: `tempoMap` in `als-parser.js`, `beatsToSeconds` in `setlist.js`, timing/durate offline la usano
 
 ### C — Durate misurate dal vivo
-- [ ] RED: brano suonato dall'inizio alla fine senza salti → durata reale salvata in `setlist.json`, usata al posto della stima
-- [ ] GREEN: `server/index.js` + `songSeconds` con priorità `[m:ss]` > misurata > stima
+- [x] RED: brano suonato dall'inizio alla fine senza salti → durata reale salvata in `setlist.json`, usata al posto della stima
+- [x] GREEN: `server/meter.js` + `songSeconds`: `[m:ss]` > mappa tempo > misurata > stima; pulsante "Azzera durate misurate"
 
 ### D — Annunci vocali e count-in
 - [ ] RED `test/cues.test.js`: annuncio sezione/brano una battuta prima, numeri del count-in sull'ultima battuta, nessun annuncio su seek

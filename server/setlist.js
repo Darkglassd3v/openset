@@ -155,6 +155,7 @@ function applyOrder(songs, prefs = {}) {
   const skip = new Set(prefs.skip || []);
   const stopAfter = new Set(prefs.stopAfter || []);
   const notes = prefs.notes || {};
+  const measured = prefs.measured || {};
   const rank = (s) => {
     const i = order.indexOf(s.name);
     return i < 0 ? order.length : i;
@@ -166,6 +167,7 @@ function applyOrder(songs, prefs = {}) {
       skip: skip.has(s.name),
       stopAfter: stopAfter.has(s.name),
       notes: Object.hasOwn(notes, s.name) ? notes[s.name] : "",
+      measured: Object.hasOwn(measured, s.name) ? measured[s.name] : null,
     }))
     .sort((a, b) => rank(a) - rank(b)) // stable: unlisted songs keep timeline order
     .map((s) => ({ ...s, number: s.skip || s.nosong ? null : ++n }));
@@ -248,10 +250,11 @@ function beatsToSeconds(map, from, to) {
   return secs;
 }
 
-// Without a tempo map the tempo is taken as constant; [m:ss] overrides win.
+// Priority: [m:ss] override > tempo map > duration measured live > constant tempo.
 function songSeconds(s, tempo, map) {
   if (s.duration != null) return s.duration;
   if (map) return playedRanges(s).reduce((t, [a, b]) => t + beatsToSeconds(map, a, b), 0);
+  if (s.measured != null) return s.measured;
   return (songLength(s) * 60) / (tempo > 0 ? tempo : 120);
 }
 
