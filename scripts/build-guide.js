@@ -24,8 +24,12 @@ function changelogSections(md) {
 
 // text content only (no attributes), so quotes in commands stay copyable
 const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
-// the Markdown used in CHANGELOG.md: **bold** and `code`
-const inline = (t) => esc(t).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/`(.+?)`/g, "<code>$1</code>");
+// the Markdown used in CHANGELOG.md: **bold**, *italic* and `code`
+const inline = (t) =>
+  esc(t)
+    .replace(/`(.+?)`/g, "<code>$1</code>")
+    .replace(/\*\*(.+?)\*\*/g, "<b>$1</b>")
+    .replace(/\*(.+?)\*/g, "<i>$1</i>");
 const list = (items) => `<ul>${items.map((i) => `<li>${inline(i)}</li>`).join("")}</ul>`;
 const cmd = (...lines) => `<pre>${lines.map(esc).join("\n")}</pre>`;
 
