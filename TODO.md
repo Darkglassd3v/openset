@@ -41,6 +41,10 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 - [x] v0.3.0 rilasciata (sezioni e testi dal `.als`, mappa del tempo, durate misurate, annunci vocali, computer di riserva, Palco per dispositivo): vedi `docs/releases/0.3.0/v0.3.0.tdd.md`
 - [x] v0.2.0 rilasciata (notazione AbleSet, motore, editor, Palco, OSC/HTTP/MIDI, macOS arm64): vedi `docs/releases/0.2.0/v0.2.0.tdd.md`
 
+## Logo
+
+- [x] Logo "anello aperto + play" (scelto dall'utente il 2026-10-21): `docs/brand/logo.svg`, `docs/brand/logo-wordmark.svg`, icone PWA 180/192/512 rigenerate
+
 ## Da decidere con l'utente
 
 - Brani aggiunti a mano dalla UI, senza progetto Live (solo scaletta e testi):

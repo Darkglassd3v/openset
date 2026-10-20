@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 160">
+  <rect width="450" height="160" rx="24" fill="#0d0d11"/>
+  <path d="M126.98 62.90 A50 50 0 1 1 97.10 33.02" fill="none" stroke="#ffb03a" stroke-width="15" stroke-linecap="round"/>
+  <path d="M68.7 58 L68.7 102 L106 80 Z" fill="#e8e6df" stroke="#e8e6df" stroke-width="4" stroke-linejoin="round"/>
+  <text x="152" y="103" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="66" font-weight="800" letter-spacing="-1" fill="#e8e6df">Open<tspan fill="#ffb03a">Set</tspan></text>
+</svg>

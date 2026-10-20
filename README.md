@@ -1,5 +1,7 @@
 # OpenSet
 
+<p align="center"><img src="docs/brand/logo-wordmark.svg" alt="OpenSet" width="360"></p>
+
 Controller di scaletta **open-source per Ableton Live**, ispirato ad AbleSet.
 Trasforma il tuo progetto Live in una scaletta interattiva controllabile dal
 browser di qualsiasi telefono, tablet o computer sulla stessa rete Wi-Fi —
