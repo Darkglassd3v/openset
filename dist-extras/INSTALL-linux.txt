@@ -18,3 +18,6 @@ controllo/visualizzazione remota, oppure carica un progetto offline:
 
 Per il Remote Script (sul computer Win/Mac con Live), vedi la cartella
 remote-script/ inclusa nello zip e il README.
+
+Se compare "OpenSet cannot start ... already running": OpenSet e' gia'
+aperto (o AbleSet, che usa la stessa porta 39051). Chiudi l'altra istanza.

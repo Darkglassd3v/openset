@@ -44,7 +44,7 @@ macOS obbligatori, Linux se costa poco.
 ### Fase 5 — Build e rilascio
 - [ ] CI matrice Windows/macOS/Ubuntu: test Node + Python + build pkg + avvio binario (scritta in `.github/workflows/ci.yml`, da verificare dopo il push)
 - [ ] Release: macOS arm64 nativo (firmato ad-hoc) + x64, Windows x64, Linux x64 (scritta in `release.yml`, da verificare col tag)
-- [ ] README/INSTALL: notazione, editor, OSC, HTTP, MIDI, scorciatoie, firewall
+- [x] README/INSTALL: notazione, editor, OSC, HTTP, MIDI, scorciatoie, firewall
 - [ ] Versione 0.2.0, report TDD `docs/releases/0.2.0/v0.2.0.tdd.md`
 - [ ] Commit, push main, CI verde, tag `v0.2.0`, push tag
 

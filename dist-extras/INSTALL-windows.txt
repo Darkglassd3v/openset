@@ -21,3 +21,6 @@ OPENSET - INSTALLAZIONE SU WINDOWS
 
 Progetto offline senza Live:
      openset.exe "C:\percorso\Progetto Project\Progetto.als"
+
+Se compare "OpenSet cannot start ... already running": OpenSet e' gia'
+aperto (o AbleSet, che usa la stessa porta 39051). Chiudi l'altra istanza.
