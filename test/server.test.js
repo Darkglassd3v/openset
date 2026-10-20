@@ -405,12 +405,13 @@ test("password: other devices need it to give commands; wrong guesses are slowed
   const access = (n) => waitFor(() => msgs.filter((m) => m.type === "access")[n], "access message " + n);
   assert.equal((await access(0)).control, false);
   const before = c.cmds.length;
-  ws.send(JSON.stringify({ cmd: "next" }));
-  ws.send(JSON.stringify({ type: "auth", password: "wrong" }));
+  ws.send(JSON.stringify({ cmd: "next" })); // ignored; the reply asks for the password
   assert.equal((await access(1)).control, false);
+  ws.send(JSON.stringify({ type: "auth", password: "wrong" }));
+  assert.equal((await access(2)).control, false);
   assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "ignored without the password");
   ws.send(JSON.stringify({ type: "auth", password: "palco-2026" }));
-  const ok = await access(2);
+  const ok = await access(3);
   assert.equal(ok.control, true);
   assert.match(ok.token, /^[0-9a-f]{64}$/);
   const jumped = c.expectCmd({ cmd: "jump", time: 40 });
@@ -1042,7 +1043,7 @@ test("prefs: a corrupt setlist.json falls back to defaults, an unwritable one is
   );
   const c = await setup(t, { baseDir });
   const s = await c.state();
-  assert.deepEqual(s.settings, { alwaysStop: true, autoJump: true, autoplay: false, jumpMode: "quantized" });
+  assert.deepEqual(s.settings, { alwaysStop: true, autoJump: true, autoplay: false, jumpMode: "quantized", safeMode: false });
   assert.deepEqual(s.saved, []);
   assert.deepEqual(s.midi, []);
 

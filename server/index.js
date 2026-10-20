@@ -7,6 +7,7 @@
 // - Speaks AbleSet's OSC API on the same UDP port, for TouchOSC/Companion
 
 const http = require("http");
+const crypto = require("crypto");
 const net = require("net");
 const path = require("path");
 const fs = require("fs");
@@ -28,6 +29,7 @@ const { userLibraries, installRemoteScript } = require("./install");
 const { deviceUrls, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
+const { validAuth, hashPassword, checkPassword, createLimiter } = require("./auth");
 const { version: VERSION } = require("../package.json");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
@@ -62,12 +64,13 @@ function defaultPrefs() {
     stopAfter: [],
     notes: {},
     measured: {}, // song name -> seconds measured during real playback
-    settings: { alwaysStop: false, autoJump: true, autoplay: false, jumpMode: "quantized" },
+    settings: { alwaysStop: false, autoJump: true, autoplay: false, jumpMode: "quantized", safeMode: false },
     saved: {},
     backups: [], // saved setlists replaced by a newer save: { name, at, data }, newest first
     setlistName: null,
     midi: [],
     peers: [],
+    auth: null, // web app password: { salt, hash }
   };
 }
 
@@ -182,6 +185,7 @@ function start(opts = {}) {
         : [],
       midi: cleanMidi(saved.midi) || [],
       peers: cleanPeers(saved.peers) || [],
+      auth: validAuth(saved.auth) ? { salt: saved.auth.salt, hash: saved.auth.hash } : null,
     };
   }
 
@@ -239,6 +243,7 @@ function start(opts = {}) {
       lyricsRev,
       scriptInstall: cfg.scriptInstall,
       devices: [...devices.values()],
+      passwordSet: !!prefs.auth,
     };
   }
 
@@ -380,11 +385,15 @@ function start(opts = {}) {
   // which is not repeated again). Engine commands are not: each computer runs
   // its own engine on the same set, and Ableton Link keeps the clocks together.
 
-  const LOCAL_ONLY = new Set(["peers", "midi", "devices"]);
+  const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword"]);
   const peerStatus = new Map(); // url -> { url, online, connected, playing, song, drift }
 
-  function runCommand(msg) {
-    const ok = handleCommand(msg);
+  // source: "web" (browser, HTTP) or "osc". Safe Mode only limits the web app;
+  // MIDI mapped in a browser and commands repeated from the main computer pass.
+  function runCommand(msg, source = "web") {
+    const safe =
+      source === "web" && !!msg && !msg.midi && !msg.mirror && prefs.settings.safeMode && liveState.is_playing;
+    const ok = handleCommand(msg, safe);
     if (ok && !msg.mirror && !LOCAL_ONLY.has(msg.cmd)) {
       const body = JSON.stringify({ ...msg, mirror: true });
       for (const url of prefs.peers)
@@ -448,7 +457,8 @@ function start(opts = {}) {
     return true;
   }
 
-  function handleCommand(msg) {
+  // safe: Safe Mode is on while playing, so only the current song can be played
+  function handleCommand(msg, safe = false) {
     if (!msg || typeof msg !== "object") return false;
     const list = setlist();
     const cur = S.songAt(list, liveState.beat);
@@ -464,16 +474,19 @@ function start(opts = {}) {
         sendToLive({ cmd: liveState.is_playing ? "stop" : "play" });
         return true;
       case "jump":
+        if (safe && num(msg.time) && S.songAt(list, msg.time) !== cur) return false;
         return num(msg.time) && jumpTo(msg.time, list.some((s) => Math.abs(s.playStart - msg.time) < S.EPS) ? "song" : "section");
       case "seek":
         if (!num(msg.time)) return false;
         sendToLive({ cmd: "seek", time: msg.time });
         return true;
       case "song": {
+        if (safe) return false;
         const i = typeof msg.name === "string" ? list.findIndex((s) => s.name === msg.name) : msg.index;
         return Number.isInteger(i) && !!list[i] && jumpTo(list[i].playStart, "song");
       }
       case "next": {
+        if (safe) return false;
         const n = S.nextSong(list, cur);
         if (n >= 0) jumpTo(list[n].playStart, "song");
         return true;
@@ -481,6 +494,7 @@ function start(opts = {}) {
       case "prev": {
         // like AbleSet: back to the start of the song first, unless forced
         if (song && !msg.force && liveState.beat - song.playStart > 1) return jumpTo(song.playStart, "song");
+        if (safe) return false;
         const p = S.prevSong(list, cur);
         if (p >= 0) jumpTo(list[p].playStart, "song");
         else if (song) jumpTo(song.playStart, "song");
@@ -540,7 +554,7 @@ function start(opts = {}) {
         return setPrefs({ settings });
       }
       case "jumpToQueued": {
-        if (!queued) return false;
+        if (!queued || (safe && S.songAt(list, queued.time) !== cur)) return false;
         // J: quantized by Live; Shift+J: right now
         sendToLive({ cmd: msg.now ? "seek" : "jump", time: queued.time });
         queued = null;
@@ -587,6 +601,18 @@ function start(opts = {}) {
       }
       case "devices":
         return deviceCommand(msg);
+      case "setPassword": {
+        // "" removes it; only browsers that may command get here
+        const pw = msg.password;
+        if (pw !== "" && (typeof pw !== "string" || pw.length < 4 || pw.length > 128)) return false;
+        prefs = { ...prefs, auth: pw ? hashPassword(pw) : null };
+        savePrefs();
+        tokens.clear();
+        for (const ws of wss.clients) ws.authed = false;
+        for (const ws of wss.clients) sendAccess(ws);
+        changed();
+        return true;
+      }
     }
     return false;
   }
@@ -612,6 +638,7 @@ function start(opts = {}) {
 
   // AbleSet-compatible OSC: https://ableset.com/docs/osc (subset)
   function handleOsc({ address, args }, rinfo) {
+    const runOsc = (msg) => runCommand(msg, "osc");
     const [a, b] = args;
     const list = setlist();
     const cur = S.songAt(list, liveState.beat);
@@ -639,60 +666,60 @@ function start(opts = {}) {
     switch (address) {
       case "/global/play":
       case "/global/startPlaying":
-        return runCommand({ cmd: "play" });
+        return runOsc({ cmd: "play" });
       case "/global/continuePlaying":
-        return runCommand({ cmd: "continue" });
+        return runOsc({ cmd: "continue" });
       case "/global/stop":
       case "/global/pause":
-        return runCommand({ cmd: "stop" });
+        return runOsc({ cmd: "stop" });
       case "/global/playPause":
       case "/global/playStop":
-        return runCommand({ cmd: "playStop" });
+        return runOsc({ cmd: "playStop" });
       case "/global/quantization":
-        return runCommand({ cmd: "quant", value: QUANT_NAMES.indexOf(String(a)) });
+        return runOsc({ cmd: "quant", value: QUANT_NAMES.indexOf(String(a)) });
       case "/global/tempo":
-        return runCommand({ cmd: "tempo", bpm: a });
+        return runOsc({ cmd: "tempo", bpm: a });
       case "/global/tempo/adjust":
-        return runCommand({ cmd: "tempoAdjust", delta: a });
+        return runOsc({ cmd: "tempoAdjust", delta: a });
       case "/setlist/jumpToTime":
-        return runCommand({ cmd: "jump", time: a });
+        return runOsc({ cmd: "jump", time: a });
       case "/setlist/jumpToSong":
-        return runCommand({ cmd: "song", index: pick(list, a) });
+        return runOsc({ cmd: "song", index: pick(list, a) });
       case "/setlist/jumpBySongs": {
         const steps = Math.trunc(Number(a) || 0);
-        if (steps === -1) return runCommand({ cmd: "prev", force: args.includes("force=true") });
+        if (steps === -1) return runOsc({ cmd: "prev", force: args.includes("force=true") });
         const i = by(steps, cur, (i, d) => (d > 0 ? S.nextSong(list, i) : S.prevSong(list, i)));
-        return i !== cur && runCommand({ cmd: "song", index: i });
+        return i !== cur && runOsc({ cmd: "song", index: i });
       }
       case "/setlist/jumpToSection":
         // clients send booleans as T, 1 or "true"
-        return !!song && runCommand({ cmd: "section", index: pick(song.sections, a, [true, 1, "true"].includes(b)) });
+        return !!song && runOsc({ cmd: "section", index: pick(song.sections, a, [true, 1, "true"].includes(b)) });
       case "/setlist/jumpBySections": {
         if (!song) return false;
         const j = S.sectionAt(song, liveState.beat) + Math.trunc(Number(a) || 0);
-        return runCommand({ cmd: "section", index: Math.max(0, Math.min(song.sections.length - 1, j)) });
+        return runOsc({ cmd: "section", index: Math.max(0, Math.min(song.sections.length - 1, j)) });
       }
       case "/setlist/jumpToQuickPlaySection": {
         const quick = song ? song.sections.filter((x) => x.quick) : [];
         const target = quick[pick(quick, a)];
-        return !!target && runCommand({ cmd: "section", index: song.sections.indexOf(target) });
+        return !!target && runOsc({ cmd: "section", index: song.sections.indexOf(target) });
       }
       case "/devices/showPage":
       case "/devices/reload":
       case "/devices/lock":
       case "/devices/unlock":
       case "/devices/toggleLock":
-        return runCommand({ cmd: "devices", action: address.slice(9), devices: String(a ?? ""), page: b });
+        return runOsc({ cmd: "devices", action: address.slice(9), devices: String(a ?? ""), page: b });
       case "/setlist/jumpToQueued":
-        return runCommand({ cmd: "jumpToQueued", now: [true, 1, "true"].includes(a) });
+        return runOsc({ cmd: "jumpToQueued", now: [true, 1, "true"].includes(a) });
       case "/setlist/clearQueuedJump":
-        return runCommand({ cmd: "clearQueue" });
+        return runOsc({ cmd: "clearQueue" });
       case "/loop/enable":
-        return runCommand({ cmd: "loopOn" });
+        return runOsc({ cmd: "loopOn" });
       case "/loop/escape":
-        return runCommand({ cmd: "loopOff" });
+        return runOsc({ cmd: "loopOff" });
       case "/loop/toggle":
-        return runCommand({ cmd: "loopToggle" });
+        return runOsc({ cmd: "loopToggle" });
       case "/subscribe":
       case "/unsubscribe":
       case "/getValues": {
@@ -752,6 +779,7 @@ function start(opts = {}) {
       "/setlist/nextSongIndex": [st.next],
       "/devices/names": st.devices.map((d) => d.name).filter(Boolean),
       "/setlist/queuedName": queuedNames(st),
+      "/settings/safeMode": [st.settings.safeMode ? 1 : 0],
       "/setlist/queuedIndex": st.queued ? [st.queued.song, st.queued.section] : [-1, -1],
     };
   }
@@ -824,7 +852,8 @@ function start(opts = {}) {
 
   app.get("/api/setlist-text", (_req, res) => res.type("text/plain").send(setlistText(setlist())));
 
-  app.post("/api/setlist-text", (req, res) => {
+  app.post("/api/setlist-text", async (req, res) => {
+    if (!(await httpAllowed(req, res))) return;
     const { text } = req.body || {};
     if (typeof text !== "string" || text.length > 100000) return res.status(400).json({ error: "Missing 'text'" });
     const { order, skip, stopAfter, notes, unmatched } = parseSetlistText(text, setlist());
@@ -833,10 +862,62 @@ function start(opts = {}) {
     res.json({ ok: true, unmatched });
   });
 
-  app.post("/api/cmd", (req, res) => {
+  app.post("/api/cmd", async (req, res) => {
+    if (!(await httpAllowed(req, res))) return;
     if (runCommand(req.body)) res.json({ ok: true });
     else res.status(400).json({ error: "Unknown or invalid command" });
   });
+
+  // ---------------- web app password ----------------
+  // With a password set, only this computer and unlocked browsers give
+  // commands; everyone can still read the state. OSC is not covered.
+  const tokens = new Set(); // unlocked browsers, until the next restart or password change
+  const limiter = createLimiter({ now: cfg.now });
+  const clientIp = (req) => String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+  const canControl = (ws) => !prefs.auth || isLoopback(ws.ip) || ws.authed;
+
+  function sendAccess(ws, token) {
+    if (ws.readyState === 1)
+      ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!prefs.auth, ...(token ? { token } : {}) }));
+  }
+
+  function newToken() {
+    const token = crypto.randomBytes(32).toString("hex");
+    if (tokens.size >= 200) tokens.delete(tokens.values().next().value);
+    tokens.add(token);
+    return token;
+  }
+
+  async function wsAuth(ws, { password, token }) {
+    let ok = false;
+    if (!limiter.blocked(ws.ip)) {
+      ok = typeof token === "string" && tokens.has(token) ? true : await checkPassword(prefs.auth, password);
+      if (ok) limiter.ok(ws.ip);
+      else limiter.fail(ws.ip);
+    }
+    ws.authed = ok;
+    sendAccess(ws, ok ? (tokens.has(token) ? token : newToken()) : null);
+  }
+
+  // HTTP: X-OpenSet-Password header, or "Authorization: Bearer <token>"
+  async function httpAllowed(req, res) {
+    if (!prefs.auth || isLoopback(req.socket.remoteAddress)) return true;
+    const ip = clientIp(req);
+    if (limiter.blocked(ip)) {
+      res.status(429).json({ error: "Too many wrong passwords: try again later" });
+      return false;
+    }
+    const bearer = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    if (bearer && tokens.has(bearer)) return true;
+    const pw = req.get("x-openset-password");
+    if (pw !== undefined && (await checkPassword(prefs.auth, pw))) {
+      limiter.ok(ip);
+      return true;
+    }
+    if (pw !== undefined || bearer) limiter.fail(ip);
+    res.status(401).json({ error: "Password required" });
+    return false;
+  }
 
   app.post("/api/load-als", (req, res) => {
     // reads files from disk: only from the computer running OpenSet
@@ -870,7 +951,9 @@ function start(opts = {}) {
   }
 
   wss.on("connection", (ws, req) => {
-    const ip = String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
+    const ip = clientIp(req);
+    ws.ip = ip;
+    ws.authed = false;
     devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null });
     ws.on("pong", () => {
       const d = devices.get(ws);
@@ -881,11 +964,14 @@ function start(opts = {}) {
       if (!closed) changed();
     });
     ws.send(JSON.stringify({ type: "state", state: publicState() }));
+    sendAccess(ws);
     ws.on("message", (buf) => {
       let msg;
       try { msg = JSON.parse(buf.toString()); } catch { return; }
       try {
         if (msg && msg.type === "device") deviceInfo(devices.get(ws), msg);
+        else if (msg && msg.type === "auth") wsAuth(ws, msg).catch((e) => console.error("[auth]", e.message));
+        else if (!canControl(ws)) sendAccess(ws); // read-only: tell the browser to ask for the password
         else runCommand(msg);
       } catch (e) {
         console.error("[ws]", e.message);
