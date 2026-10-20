@@ -100,6 +100,14 @@
   .chip.playing { border-color: var(--amber); color: var(--amber); }
   .chip:active { background: var(--amber-dim); }
   .loop-chip { border-style: dashed; color: var(--dim); }
+  .chip.queued { border: 1px dashed var(--amber); color: var(--amber); }
+  .song.queued .song-head { box-shadow: inset 3px 0 0 var(--amber); }
+  .queue-bar {
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap; flex-shrink: 0;
+    padding: 8px 14px; background: var(--amber-dim); border-top: 1px solid var(--amber);
+  }
+  .queue-bar span { flex: 1; min-width: 0; font-size: 15px; }
+  .queue-bar .btn { padding: 8px 12px; }
   .list-foot {
     display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
     padding: 16px 14px 24px; color: var(--dim); font-size: 13px;
@@ -315,6 +323,13 @@
     <label><input type="checkbox" data-set="autoJump"> Dopo uno stop, porta il cursore al brano successivo</label>
     <label><input type="checkbox" data-set="autoplay"> Avvia la riproduzione quando salti a un brano o a una sezione</label>
     <label>Quantizzazione dei salti in Live <select id="quant"></select></label>
+    <label>Quando saltare mentre suona <select id="jumpMode">
+      <option value="quantized">Subito (con la quantizzazione)</option>
+      <option value="section">A fine sezione</option>
+      <option value="song">A fine brano</option>
+      <option value="dynamic">Dinamico: sezioni a fine sezione, brani a fine brano</option>
+      <option value="manual">Manuale: allo stop</option></select></label>
+    <p>Fuori da «Subito», il brano o la sezione scelti vanno in coda: <kbd>J</kbd> salta, <kbd>⇧</kbd> <kbd>J</kbd> salta subito, <kbd>C</kbd> annulla.</p>
 
     <h2>Progetto .als</h2>
     <p>Per la modalità offline e per durate esatte con l'automazione del tempo.
@@ -379,6 +394,8 @@
       <tr><td><kbd>↓</kbd> <kbd>↑</kbd></td><td>Sezione successiva / precedente</td></tr>
       <tr><td><kbd>L</kbd></td><td>Loop della sezione corrente</td></tr>
       <tr><td><kbd>⇧</kbd> <kbd>L</kbd></td><td>Blocca / sblocca questo dispositivo</td></tr>
+      <tr><td><kbd>J</kbd> / <kbd>⇧</kbd> <kbd>J</kbd></td><td>Salta al brano o alla sezione in coda / subito</td></tr>
+      <tr><td><kbd>C</kbd></td><td>Annulla il salto in coda</td></tr>
     </table>
 
     <h2>Controllo esterno</h2>
@@ -390,6 +407,13 @@
 
 <div class="lock-layer" id="lockLayer" hidden>
   <button class="btn" id="unlockBtn">🔒 Bloccato · tieni premuto per sbloccare</button>
+</div>
+
+<div class="queue-bar" id="queueBar" hidden>
+  <span>In coda: <b id="queueName"></b></span>
+  <button class="btn" data-q="jump">Salta <kbd>J</kbd></button>
+  <button class="btn" data-q="now">Subito <kbd>⇧J</kbd></button>
+  <button class="btn" data-q="clear">Annulla <kbd>C</kbd></button>
 </div>
 
 <div class="strip" id="strip"><div class="playhead" id="playhead"></div></div>
@@ -417,6 +441,7 @@ const ACTIONS = {
 const KEYS = {
   " ": "playStop", ArrowRight: "next", PageDown: "next", ArrowLeft: "prev", PageUp: "prev",
   ArrowDown: "nextSection", ArrowUp: "prevSection", l: "loopToggle",
+  j: "jumpToQueued", c: "clearQueue",
 };
 const VIEW_NAMES = { setlist: "Scaletta", stage: "Palco", lyrics: "Testi", settings: "Opzioni" };
 
@@ -527,6 +552,11 @@ function render() {
   if (song && spokenSong !== null && song.name !== spokenSong && device.speakSongs) speak(song.name, true);
   spokenSong = song ? song.name : "";
 
+  const q = st.queued;
+  const qSong = q && st.setlist[q.song];
+  $("queueBar").hidden = !qSong;
+  if (qSong) $("queueName").textContent = qSong.name + (qSong.sections[q.section] ? " › " + qSong.sections[q.section].name : "");
+
   renderSetlist();
   renderStrip();
   if (view === "stage") renderStage();
@@ -542,9 +572,13 @@ function renderSetlist() {
     el.classList.toggle("current", cur);
     el.setAttribute("aria-current", cur ? "true" : "false");
   });
-  document.querySelectorAll("#setlist .chip.playing").forEach((c) => c.classList.remove("playing"));
+  document.querySelectorAll("#setlist .chip.playing, #setlist .chip.queued").forEach((c) => c.classList.remove("playing", "queued"));
   const chip = document.querySelector(`#setlist .chip[data-song="${state.current}"][data-sec="${state.section}"]`);
   if (chip) chip.classList.add("playing");
+  const q = state.queued;
+  document.querySelectorAll("#setlist .song").forEach((el) => el.classList.toggle("queued", !!q && q.section < 0 && +el.dataset.i === q.song));
+  const qChip = q && document.querySelector(`#setlist .chip[data-song="${q.song}"][data-sec="${q.section}"]`);
+  if (qChip) qChip.classList.add("queued");
 }
 
 function scriptNote(inst) {
@@ -851,6 +885,7 @@ function renderSettings() {
   document.querySelectorAll("[data-stage]").forEach((c) => { c.checked = !!show[c.dataset.stage]; });
   if (!("speechSynthesis" in window)) $("speechStatus").textContent = "Sintesi vocale non disponibile in questo browser.";
   $("quant").value = String(state.quant);
+  $("jumpMode").value = state.settings.jumpMode;
   $("midiStatus").textContent = midi.status;
   $("midiLearn").textContent = midi.learning ? "Premi un tasto MIDI… (annulla)" : "Impara da MIDI";
   $("midiList").innerHTML = state.midi.map((m, i) => `
@@ -910,6 +945,7 @@ $("settings").addEventListener("change", (e) => {
     saveDevice();
   }
   if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
+  if (e.target.id === "jumpMode") send({ cmd: "settings", jumpMode: e.target.value });
   if (e.target.id === "devName") { device.name = e.target.value.trim(); saveDevice(); sendDevice(); }
   if (e.target.id === "devView") { device.view = e.target.value; saveDevice(); }
 });
@@ -973,6 +1009,12 @@ $("midiLearn").onclick = async () => {
 };
 
 // ---------- transport, keyboard, tabs ----------
+$("queueBar").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-q]");
+  if (!b) return;
+  send(b.dataset.q === "clear" ? { cmd: "clearQueue" } : { cmd: "jumpToQueued", now: b.dataset.q === "now" });
+  if (e.detail > 0) b.blur();
+});
 $("btnPlay").onclick = () => { if (!state || !state.is_playing) send({ cmd: "play" }); };
 $("btnStop").onclick = () => send({ cmd: "stop" });
 $("btnLoop").onclick = () => send({ cmd: "loopToggle" });
@@ -985,6 +1027,7 @@ document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey || e.target.closest("input, select, textarea")) return;
   if (e.key === "L" && e.shiftKey) { e.preventDefault(); setLocked(!device.locked); return; }
   if (device.locked) return;
+  if (e.key === "J" && e.shiftKey) { e.preventDefault(); send({ cmd: "jumpToQueued", now: true }); return; }
   // a focused button keeps Space/Enter for itself (keyboard navigation)
   if ((e.key === " " || e.key === "Enter") && e.target.closest("button")) return;
   const cmd = KEYS[e.key];
