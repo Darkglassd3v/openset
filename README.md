@@ -13,9 +13,12 @@ senza internet.
 - **Editor della scaletta** — riordina, salta brani, stop dopo un brano, note per il palco, salva/carica più scalette, stampa, durata totale
 - **Vista Palco** — brano e sezione in grande, prossimo brano, tempo rimanente nel brano e nello show, battiti, sezioni rapide
 - **Testi e accordi sincronizzati** — file JSON o traccia MIDI `+LYRICS` (una clip per riga), accordi ChordPro trasposti per brano
+- **Annunci vocali** — nome della sezione successiva e count-in parlato, sul dispositivo che vuoi (cuffie, in-ear)
+- **Durate reali** — dall'automazione del tempo del file `.als` o misurate mentre suoni
+- **Ridondanza a due computer** — i comandi vengono ripetuti su un secondo computer con OpenSet (stile AbleNet)
 - **Controllo remoto** — browser, tastiera e pedali Bluetooth, MIDI (Web MIDI), OSC compatibile AbleSet (TouchOSC, Bitfocus Companion), HTTP
 - **Striscia di avanzamento show** — panoramica del concerto, nell'ordine della scaletta, con playhead in tempo reale
-- **Modalità offline** — parser dei file `.als`: vedi la scaletta anche senza Live aperto
+- **Modalità offline** — parser dei file `.als`: scaletta, sezioni (anche dalla traccia `Sections`), testi `+LYRICS` e tempi anche senza Live aperto
 - **Cross-platform** — Windows, macOS (Apple Silicon nativo e Intel) e Linux; eseguibili standalone senza installare Node.js
 
 ## Download
@@ -153,10 +156,44 @@ e una clip per riga; il nome della clip è il testo. `Voce +LYRICS [+2]` traspon
   permette di riordinare (↑ ↓), saltare brani, fermarsi dopo un brano, scrivere
   note per il palco, salvare e caricare scalette diverse e stamparle.
   Tutto viene salvato in `setlist.json` accanto all'eseguibile.
-- **Palco**: la vista da mettere sul leggio o sul monitor.
+- **Palco**: la vista da mettere sul leggio o sul monitor. In Opzioni → *Questo
+  dispositivo* scegli cosa mostrare su ogni telefono o tablet (tempi, prossimo
+  brano, note, pulsanti delle sezioni, riga del testo corrente e successiva).
 - **Opzioni**: *Ferma sempre a fine brano*, *Dopo uno stop porta il cursore al
   brano successivo*, *Avvia la riproduzione quando salti*, quantizzazione di Live,
   mappature MIDI.
+
+### Durate dei brani
+
+In ordine di priorità: la durata scritta nel locator (`[3:20]`), l'automazione
+del tempo del file `.als` caricato, la durata **misurata** l'ultima volta che il
+brano è stato suonato dall'inizio alla fine senza salti né loop, e infine una
+stima a tempo costante. L'automazione del tempo vale offline e anche con Live
+connesso, se il `.als` caricato ha gli stessi locator del set aperto. Il `.als` si
+carica da Opzioni → *Progetto .als* (dal computer su cui gira OpenSet) oppure
+all'avvio: `./openset "/percorso/Progetto Project/Progetto.als"`.
+Salva il progetto in Live prima di caricarlo, così il file è aggiornato.
+
+Le durate misurate si azzerano da *Modifica scaletta*.
+
+### Annunci vocali
+
+In Opzioni → *Questo dispositivo* attiva l'annuncio del brano, della sezione
+successiva (due battute prima) e il count-in parlato sull'ultima battuta. La voce
+è quella del browser e esce dall'uscita audio di quel dispositivo: collega il
+telefono o il computer all'in-ear o al mixer.
+
+### Ridondanza a due computer
+
+1. Su entrambi i computer apri lo stesso set, avvia OpenSet e attiva **Ableton Link**
+   in Live (tiene insieme tempo e fase).
+2. Sul computer principale, Opzioni → *Ridondanza*: aggiungi `http://<ip-riserva>:39080`.
+3. Ogni comando dato al principale (browser, tastiera, MIDI, OSC, HTTP) viene
+   ripetuto sulla riserva; la lista mostra se la riserva è raggiungibile, se il
+   suo Live è connesso e lo scarto in beat. Puoi collegarli anche in entrambe le
+   direzioni.
+
+Il passaggio dell'audio da un computer all'altro resta all'interfaccia audio o al mixer.
 
 ### Tastiera, pedali e MIDI
 
@@ -217,10 +254,9 @@ La CI esegue test, build del binario e prova di avvio su Windows, macOS e Linux.
 
 ## Roadmap
 
-- Ridondanza a due computer (stile AbleNet)
-- Canvas personalizzabile, count-in parlati
-- Sezioni e testi dalle tracce anche in modalità offline (`.als`)
-- Durate che seguono l'automazione del tempo
+- Canvas libero (elementi posizionabili a piacere)
+- Annuncio Bonjour per i client OSC
+- Colori di brani e sezioni
 
 ## Licenza
 
