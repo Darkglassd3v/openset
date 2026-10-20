@@ -11,6 +11,7 @@ const net = require("net");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
+const { execFileSync } = require("child_process");
 const dgram = require("dgram");
 const express = require("express");
 const { WebSocketServer } = require("ws");
@@ -24,6 +25,7 @@ const { cuesBetween } = require("./cues");
 const { dataDir, migrateData } = require("./datadir");
 const { parseArgs, openBrowser } = require("./launch");
 const { userLibraries, installRemoteScript } = require("./install");
+const { deviceUrls, bonjourName, qrSvg } = require("./connect");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
 // live next to the binary; from source they live in the project root.
@@ -32,7 +34,8 @@ const BASE_DIR = process.pkg
   ? path.dirname(process.execPath)
   : path.join(__dirname, "..");
 
-const HTTP_PORT = process.env.PORT || 39080;
+// port 80 gives addresses without ":port"; PORT forces one
+const HTTP_PORT = process.env.PORT ? Number(process.env.PORT) : [80, 39080];
 const UDP_LISTEN = 39051; // state from Live (JSON) + OSC from controllers
 const UDP_LIVE = { host: "127.0.0.1", port: 39050 }; // commands to Live
 
@@ -113,6 +116,7 @@ function start(opts = {}) {
     now: Date.now, // injectable clock for tests
     peerPollMs: 1000,
     scriptInstall: null, // Remote Script install result, shown by the UI
+    netInfo, // platform, host name and interfaces, for /api/connect
     ...opts,
   };
   const PREFS_FILE = path.join(cfg.baseDir, "setlist.json");
@@ -689,6 +693,11 @@ function start(opts = {}) {
 
   app.get("/api/state", (_req, res) => res.json(publicState()));
 
+  app.get("/api/connect", (_req, res) => {
+    const urls = deviceUrls(cfg.netInfo(), server.address().port);
+    res.json({ urls: urls.map((url) => ({ url, qr: qrSvg(url) })) });
+  });
+
   app.get("/api/lyrics/:song", (req, res) => {
     const name = req.params.song;
     const song = setlist().find((s) => s.name === name);
@@ -794,28 +803,35 @@ function start(opts = {}) {
       udp.removeListener("error", fail);
       udp.on("error", (e) => console.error("[udp]", e.message));
       if (cfg.log) console.log(`[udp] listening on ${udp.address().port}, sending commands to ${cfg.livePort}`);
-      server.once("error", fail);
-      server.listen(cfg.httpPort, () => {
-        const httpPort = server.address().port;
-        if (cfg.log) printAddresses(httpPort);
-        resolve({ httpPort, udpPort: udp.address().port, close });
-      });
+      // try each port in turn: 80 needs root on Linux or may be taken
+      const ports = [].concat(cfg.httpPort);
+      const listen = (i) => {
+        const onError = (e) =>
+          i + 1 < ports.length && (e.code === "EADDRINUSE" || e.code === "EACCES") ? listen(i + 1) : fail(e);
+        server.once("error", onError);
+        server.listen(ports[i], () => {
+          server.removeListener("error", onError);
+          const httpPort = server.address().port;
+          if (cfg.log) printAddresses(cfg.netInfo(), httpPort);
+          resolve({ httpPort, udpPort: udp.address().port, close });
+        });
+      };
+      listen(0);
     });
   });
 }
 
-function printAddresses(port) {
-  const addrs = [];
-  for (const list of Object.values(os.networkInterfaces()))
-    for (const n of list || [])
-      if (n.family === "IPv4" && !n.internal) addrs.push(n.address);
+let bonjour;
+function netInfo() {
+  if (bonjour === undefined)
+    bonjour = bonjourName(process.platform, (cmd, args) => execFileSync(cmd, args, { encoding: "utf-8" }), os.hostname());
+  return { platform: process.platform, hostname: bonjour, interfaces: os.networkInterfaces() };
+}
+
+function printAddresses(info, port) {
   console.log(`\nOpenSet running:`);
-  console.log(`  This computer : http://localhost:${port}`);
-  // Bonjour names survive DHCP changes, so a home-screen icon keeps working
-  if (process.platform === "darwin")
-    console.log(`  Phone/tablet  : http://${os.hostname().replace(/\.local$/, "")}.local:${port}`);
-  for (const a of addrs)
-    console.log(`  Phone/tablet  : http://${a}:${port}  (same Wi-Fi network)`);
+  console.log(`  This computer : http://localhost${port === 80 ? "" : ":" + port}`);
+  for (const url of deviceUrls(info, port)) console.log(`  Phone/tablet  : ${url}  (same Wi-Fi network)`);
   console.log("");
 }
 
@@ -837,7 +853,7 @@ if (require.main === module) {
   else if (install.status === "not-found" && libs.length)
     console.log("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
   start({ baseDir: dir, alsFile: args.alsFile, scriptInstall: install }).then((srv) => {
-    if (args.open) openBrowser(`http://localhost:${srv.httpPort}`);
+    if (args.open) openBrowser(`http://localhost${srv.httpPort === 80 ? "" : ":" + srv.httpPort}`);
   }, (e) => {
     const hint = e.code === "EADDRINUSE" ? " (is OpenSet or AbleSet already running?)" : "";
     console.error(`OpenSet cannot start: ${e.message}${hint}`);

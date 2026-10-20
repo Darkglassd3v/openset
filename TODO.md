@@ -7,7 +7,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ## In corso
 
-- [ ] L — connetti un dispositivo e porta 80 (fase GREEN)
+- [ ] M — rilascio v0.4.0 (copertura, documentazione)
 
 ## Da fare
 
@@ -25,7 +25,7 @@ macOS obbligatori, Linux se costa poco. v0.4.0 = punti 1-4 della proposta
 
 ### L — Connetti un dispositivo e porta 80
 - [x] RED: `deviceUrls` (`nome.local` su macOS, IP LAN, niente `:80`), `/api/connect` con QR SVG, `httpPort` come lista (porta occupata → successiva)
-- [ ] GREEN `server/connect.js` + `qrcode-generator`; UI in Opzioni; CLI su `[80, 39080]`, `PORT` forza la porta
+- [x] GREEN `server/connect.js` + `qrcode-generator`; UI in Opzioni; CLI su `[80, 39080]`, `PORT` forza la porta
 
 ### M — Rilascio v0.4.0
 - [ ] `npm run coverage` ≥ 80% righe, test Python

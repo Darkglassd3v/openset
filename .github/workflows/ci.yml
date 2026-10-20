@@ -54,7 +54,7 @@ jobs:
       - name: Smoke test the binary
         run: |
           cp -r public lyrics build/
-          ./build/${{ matrix.bin }} --no-open > build/run.log 2>&1 &
+          PORT=39080 ./build/${{ matrix.bin }} --no-open > build/run.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:39080/api/state > build/state.json; then break; fi
             sleep 1
@@ -62,4 +62,5 @@ jobs:
           cat build/run.log
           grep -q '"connected":false' build/state.json
           curl -sf http://127.0.0.1:39080/ | grep -q Palco
+          curl -sf http://127.0.0.1:39080/api/connect | grep -q "\"urls\""
           kill %1 || true
