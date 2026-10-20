@@ -9,7 +9,9 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — U: PR #1 verso main, CI verde, merge, tag
+- [x] v0.5.0 rilasciata: PR #1 (merge `547a100`), release run 39513184245
+
+(nessun lavoro in corso: prossima proposta in "Da decidere")
 
 ## Da fare
 
@@ -50,7 +52,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 ### U — Rilascio v0.5.0
 - [x] Copertura: righe 99.21%, rami 93.58%, funzioni 97.78% (168 test Node, 17 Python)
 - [x] CHANGELOG 0.5.0, guida (scorciatoie nuove), README, report TDD `docs/releases/0.5.0/`, versione 0.5.0
-- [ ] PR #1 pronta, CI verde, merge, tag `v0.5.0` su main, asset verificati
+- [x] PR #1 pronta, CI verde (run 39512958086 su Windows/macOS/Ubuntu), merge commit `547a100`, tag `v0.5.0` su main; asset: 4 zip `openset-0.5.0-*.zip` con `openset-0.5.0[.exe]` o `OpenSet 0.5.0.app`, guida PDF dentro ogni zip e come asset, nessun `__pycache__`; il binario Linux scaricato stampa `OpenSet 0.5.0`
 
 
 ### I — Cartella dati utente stabile
@@ -76,6 +78,8 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 - [x] CI verde dopo la correzione (run 39495681204: Windows/macOS/Ubuntu, copia di `lyrics/` nei 3 binari), tag `v0.4.0`
 
 ## Fatto
+
+- [x] v0.5.0 rilasciata (modalità di salto, editor, dispositivi, Safe Mode e password, versione nei nomi, icone, guida PDF): vedi `docs/releases/0.5.0/v0.5.0.tdd.md`
 
 - [x] v0.3.1 rilasciata (PWA per iPad/iPhone): vedi `docs/releases/0.3.1/v0.3.1.tdd.md`
 - [x] v0.3.0 rilasciata (sezioni e testi dal `.als`, mappa del tempo, durate misurate, annunci vocali, computer di riserva, Palco per dispositivo): vedi `docs/releases/0.3.0/v0.3.0.tdd.md`
