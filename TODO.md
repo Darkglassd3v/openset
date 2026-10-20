@@ -1,63 +1,50 @@
-# TODO — OpenSet v0.2.0
+# TODO — OpenSet v0.3.0
 
 Stato aggiornato a ogni passo. Protocollo di ripresa: vedi `CLAUDE.md`.
 Obiettivo utente: coprire il più possibile le funzioni di AbleSet; Windows e
-macOS obbligatori, Linux se costa poco.
+macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [x] Release v0.2.0 verificata: 4 zip (run 39483893592); rimossi i `__pycache__` dagli asset
-
-(nessun lavoro in corso: prossimi passi in "Rimandato")
+- [ ] A — `.als` offline: traccia Sections e tracce `+LYRICS`
 
 ## Da fare
 
-### Fase 1 — RED (`ecc:tdd-workflow`)
-- [x] `test/setlist.test.js`: notazione AbleSet (sezioni `>`/`>>`, `SONG END`/`STOP`/`AUTOSTOP`/`=END`/`=STOP`, `.Brano`, `+JUMP`/`+STAY`, `+LOOP[:N]`/`+LOOPFULL`, `+PAUSE`, `+SKIP`, `+END`, `>>> Sezione`/`>>> SONG END`, `{descrizione}`, `#tag`, `[3:20]`, `[nosong]`, `[+2]`/`[-3b]`, `[.classe]`, `*` e ClyphX ignorati), ordine/salti/stop-dopo/note, songAt/sectionAt, prev/next, timer, traccia Sections, quantizzazione
-- [x] `test/engine.test.js`: fine brano (continua/stop/autojump), transizioni con pre-roll quantizzato, `+PAUSE`, `+LOOP:N`, `+SKIP`, `+END`
-- [x] `test/lyrics.test.js`: nome file Unicode, ChordPro, trasposizione, testi da traccia `+LYRICS`
-- [x] `test/osc.test.js`: codifica/decodifica OSC, bundle
-- [x] `test/als-parser.test.js`: `<Locator Id="0">`, XML semplice, file mancante
-- [x] `test/server.test.js`: start() porte effimere, Live finto UDP (anche a pezzi), WS, `POST /api/cmd`, OSC compatibile AbleSet + `/subscribe`, autoplay, scalette salvate, `/api/load-als` solo loopback, testi
-- [x] `remote-script/tests/test_openset.py`: comandi, stato, cue solo se cambiano, clip, invio a pezzi (limite UDP 9216 B di macOS), quantizzazione
-- [x] Eseguire, verificare RED, commit `test:`
+### A — Sections e testi dal `.als` (offline)
+- [ ] RED `test/als-parser.test.js`: clip arrangement di `Sections` e `+LYRICS`, clip di sessione escluse, nomi tracce
+- [ ] GREEN `server/als-parser.js` → `tracks`; server offline usa `cuesFromLive`/`lyricsFromClips` anche col `.als`
 
-### Fase 2 — GREEN
-- [x] `server/setlist.js`
-- [x] `server/engine.js`
-- [x] `server/lyrics.js`
-- [x] `server/osc.js`
-- [x] fix `server/als-parser.js`
-- [x] `server/index.js`: start(opts), comandi condivisi WS/HTTP/OSC, prefs `setlist.json`, motore, stato pubblico
-- [x] Remote Script: cue/clip solo se cambiano, invio a pezzi, quantizzazione, fix UDP Windows (`SIO_UDP_CONNRESET`)
-- [x] Test verdi (88 Node + 14 Python), commit `feat:` per modulo
+### B — Durate con automazione del tempo (`.als`)
+- [ ] RED: mappa del tempo dal `.als` (punti FloatEvent del Tempo del Master), secondi tra due beat con rampe lineari
+- [ ] GREEN: `tempoMap` in `als-parser.js`, `beatsToSeconds` in `setlist.js`, timing/durate offline la usano
 
-### Fase 3 — UI (`public/index.html`)
-- [x] Vista "Palco" (brano/sezione, prossimo, tempi, descrizione, note, tag, sezioni rapide `>>`)
-- [x] Editor scaletta: su/giù, salta, stop dopo brano, note, salva/carica, stampa, durata totale
-- [x] Impostazioni: stop sempre, autojump, autoplay, quantizzazione, MIDI learn (Web MIDI)
-- [x] Scorciatoie tastiera/pedale; testi ChordPro trasposti; render testi solo al cambio riga
-- [x] `custom.css` opzionale; classi `[.classe]`
-- [x] Verifica nel browser con Live finto, commit `feat:`
+### C — Durate misurate dal vivo
+- [ ] RED: brano suonato dall'inizio alla fine senza salti → durata reale salvata in `setlist.json`, usata al posto della stima
+- [ ] GREEN: `server/index.js` + `songSeconds` con priorità `[m:ss]` > misurata > stima
 
-### Fase 4 — `ecc:test-coverage`
-- [x] `npm run coverage`: righe 95.18% → 99.53%, rami 85.45% → 89.92% (`index.js` rami 76.74% → 86.25%); Python 88% → 94%
+### D — Annunci vocali e count-in
+- [ ] RED `test/cues.test.js`: annuncio sezione/brano una battuta prima, numeri del count-in sull'ultima battuta, nessun annuncio su seek
+- [ ] GREEN `server/cues.js`, evento WS `cue`; UI: sintesi vocale del browser, attivabile per dispositivo
 
-### Fase 5 — Build e rilascio
-- [x] CI matrice Windows/macOS/Ubuntu: test Node + Python + build pkg + avvio binario (run 39483624099: 99/99 + 17 OK su tutti e tre)
-- [ ] Release: macOS arm64 nativo (firmato ad-hoc) + x64, Windows x64, Linux x64 (scritta in `release.yml`, da verificare col tag)
-- [x] README/INSTALL: notazione, editor, OSC, HTTP, MIDI, scorciatoie, firewall
-- [x] Versione 0.2.0, report TDD `docs/releases/0.2.0/v0.2.0.tdd.md`
-- [x] Commit, push main, CI verde, tag `v0.2.0`, push tag
+### E — Ridondanza a due computer (stile AbleNet)
+- [ ] RED: server principale inoltra i comandi ai peer (`/api/cmd` con `mirror`), niente loop, stato dei peer (online, scarto di beat)
+- [ ] GREEN: `peers` nelle opzioni, inoltro, controllo stato; UI: lista peer; README: Ableton Link per il tempo
+
+### F — Vista Palco personalizzabile per dispositivo
+- [ ] UI: scelta degli elementi (tempi, prossimo, note, sezioni rapide, testi nel Palco), salvata per dispositivo
+- [ ] Verifica nel browser con Live simulato
+
+### G — Rilascio
+- [ ] `npm run coverage` ≥ 80% righe/rami su `server/`
+- [ ] README/INSTALL, versione 0.3.0, report TDD `docs/releases/0.3.0/`
+- [ ] Push, CI verde (Windows/macOS/Ubuntu), tag `v0.3.0`, verifica asset
 
 ## Fatto
 
-- [x] Analisi gap vs AbleSet e piano v0.2.0
-- [x] `CLAUDE.md` + `TODO.md`
-- [x] Bug segnalato (v0.1.0, Linux): secondo avvio con porta occupata → crash "Unhandled 'error' event" su WebSocketServer; ora messaggio chiaro ed exit 1
+- [x] v0.2.0 rilasciata (notazione AbleSet, motore, editor, Palco, OSC/HTTP/MIDI, macOS arm64): vedi `docs/releases/0.2.0/v0.2.0.tdd.md`
 
-## Rimandato (fuori da v0.2.0)
+## Rimandato
 
-AbleNet (ridondanza), Canvas, PlayAudio12, count-in parlato/sintesi vocale,
-colori, traccia Measure, mixer/tracce, testi e Sections offline da `.als`,
-Bonjour per OSC, wake lock (serve HTTPS), durate con automazione del tempo.
+Canvas libero, Bonjour per OSC, colori, scambio automatico dell'audio tra i due
+computer (serve hardware), lettura dell'automazione del tempo da Live connesso
+(l'API di Live non la espone: si usano le durate misurate).
