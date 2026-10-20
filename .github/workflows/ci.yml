@@ -47,18 +47,37 @@ jobs:
       - name: Program name with the version
         run: echo "BIN=openset-$(node -p "require('./package.json').version")${{ matrix.ext }}" >> "$GITHUB_ENV"
 
+      - name: OpenSet icon and version in the Windows program
+        if: runner.os == 'Windows'
+        run: |
+          npx -y pkg-fetch@3.4.2 -n node18 -p win -a x64
+          npm install --no-save resedit@3.1.0
+          node scripts/win-icon.mjs
+
       - name: Build standalone binary
         run: npx pkg@5.8.1 . --targets ${{ matrix.target }} --output "build/$BIN"
+
+      - name: Check the icon and version of the Windows program
+        if: runner.os == 'Windows'
+        run: node scripts/win-icon.mjs --check "build/$BIN"
 
       - name: Ad-hoc sign (macOS arm64 refuses unsigned binaries)
         if: runner.os == 'macOS'
         run: codesign --force --sign - "build/$BIN"
 
+      - name: macOS app bundle (the smoke test runs the program inside it)
+        if: runner.os == 'macOS'
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          bash scripts/make-macos-app.sh build "$VERSION" "build/$BIN" public lyrics remote-script
+          plutil -lint "build/OpenSet $VERSION.app/Contents/Info.plist"
+          echo "RUN=build/OpenSet $VERSION.app/Contents/Resources/$BIN" >> "$GITHUB_ENV"
+
       - name: Smoke test the binary
         run: |
           cp -r public lyrics build/
           VERSION=$(node -p "require('./package.json').version")
-          PORT=39080 "./build/$BIN" --no-open > build/run.log 2>&1 &
+          PORT=39080 "./${RUN:-build/$BIN}" --no-open > build/run.log 2>&1 &
           for i in $(seq 1 30); do
             if curl -sf http://127.0.0.1:39080/api/state > build/state.json; then break; fi
             sleep 1

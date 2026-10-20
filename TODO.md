@@ -8,7 +8,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## In corso
 
-- [ ] v0.5.0 — O: icona del `.exe` Windows e `.app` macOS
+- [ ] v0.5.0 — P: guida PDF e CHANGELOG
 
 ## Da fare
 
@@ -19,8 +19,8 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ### O — Icona ovunque
 - [x] Logo nell'intestazione della UI (favicon e PWA già fatti), fatto in N
-- [ ] Icona del `.exe` Windows (risorsa PE, verificata dallo smoke test su Windows) — RED `test/packaging.test.js` scritto
-- [ ] macOS: `OpenSet <versione>.app` con icona `.icns` che apre il Terminale con il server (dove possibile)
+- [x] Icona del `.exe` Windows: `scripts/win-icon.mjs` (resedit) patcha il binario base di pkg prima dell'impacchettamento; `--check` in CI e nella release
+- [x] macOS: `OpenSet <versione>.app` (`scripts/make-macos-app.sh`, `dist-extras/Info.plist`) con icona `.icns`, apre il Terminale con il server; lo smoke test CI su macOS avvia il programma dentro il bundle
 
 ### P — Guida PDF e CHANGELOG
 - [ ] RED `test/guide.test.js`: la guida generata contiene versione, novità della versione da `CHANGELOG.md` e i passi per Windows, macOS, Linux, iPad/iPhone

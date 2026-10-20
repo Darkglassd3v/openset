@@ -50,11 +50,18 @@ jobs:
           test "$VERSION" = "$(node -p "require('./package.json').version")"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: OpenSet icon and version in the Windows program
+        run: |
+          npx -y pkg-fetch@3.4.2 -n node18 -p win -a x64
+          npm install --no-save resedit@3.1.0
+          node scripts/win-icon.mjs
+
       - name: Build standalone binaries (pkg)
         run: |
           npx pkg@5.8.1 . \
             --targets node18-linux-x64,node18-win-x64,node18-macos-x64 \
             --out-path build
+          node scripts/win-icon.mjs --check build/openset-win.exe
 
       - uses: actions/download-artifact@v4
         with:
@@ -68,18 +75,24 @@ jobs:
           for PLAT in linux-x64 win-x64 macos-x64 macos-arm64; do
             DIR="pkg-$PLAT"
             mkdir -p "$DIR"
-            # binary, named with the version
-            BIN="$DIR/openset-$VERSION"
             case "$PLAT" in
-              win-x64)     BIN="$BIN.exe"; cp build/openset-win.exe "$BIN" ;;
-              macos-arm64) cp build/openset-macos-arm64 "$BIN" ;;
-              *)           cp "build/openset-${PLAT%-x64}" "$BIN" ;;
+              win-x64)     SRC=build/openset-win.exe ;;
+              macos-arm64) SRC=build/openset-macos-arm64 ;;
+              *)           SRC="build/openset-${PLAT%-x64}" ;;
             esac
-            chmod +x "$BIN"
             # app assets (the Remote Script without its tests)
             cp -r public lyrics remote-script README.md "$DIR/"
             rm -rf "$DIR/remote-script/tests"
             find "$DIR/remote-script" -name __pycache__ -prune -exec rm -rf {} +  # left by the test step
+            # program, named with the version
+            case "$PLAT" in
+              macos-*)
+                # "OpenSet <version>.app" with the icon; the assets go inside it
+                bash scripts/make-macos-app.sh "$DIR" "$VERSION" "$SRC" "$DIR/public" "$DIR/lyrics" "$DIR/remote-script"
+                rm -rf "$DIR/public" "$DIR/lyrics" ;;
+              win-x64) cp "$SRC" "$DIR/openset-$VERSION.exe" ;;
+              *)       cp "$SRC" "$DIR/openset-$VERSION"; chmod +x "$DIR/openset-$VERSION" ;;
+            esac
             # required files: openset_<version>, version file, install guide
             echo "$VERSION" > "$DIR/openset_$VERSION"
             echo "$VERSION" > "$DIR/VERSION.txt"
@@ -114,12 +127,12 @@ jobs:
 
             ### macOS
             `openset-${{ steps.ver.outputs.version }}-macos-arm64.zip` per Apple Silicon (M1–M4),
-            `openset-${{ steps.ver.outputs.version }}-macos-x64.zip` per Mac Intel.
+            `openset-${{ steps.ver.outputs.version }}-macos-x64.zip` per Mac Intel. Estrai lo zip,
+            sposta `OpenSet ${{ steps.ver.outputs.version }}.app` in Applicazioni e, al primo avvio:
             ```bash
-            unzip openset-${{ steps.ver.outputs.version }}-macos-arm64.zip -d openset && cd openset
-            xattr -d com.apple.quarantine openset-${{ steps.ver.outputs.version }} 2>/dev/null || true
-            ./openset-${{ steps.ver.outputs.version }}
+            xattr -dr com.apple.quarantine "/Applications/OpenSet ${{ steps.ver.outputs.version }}.app"
             ```
+            poi doppio clic sull'app: si apre il Terminale con OpenSet e il browser.
 
             ### Linux
             ```bash

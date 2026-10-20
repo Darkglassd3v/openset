@@ -1,6 +1,6 @@
 # Draws the OpenSet logo (open amber ring around a play triangle) at the PWA sizes.
 # Same geometry as docs/brand/logo.svg (512 grid): ring r=150, stroke 44, gap -70..-20 deg.
-import math, sys
+import math, os, sys
 from PIL import Image, ImageDraw
 
 INK, AMBER, TEXT = (13, 13, 17), (255, 176, 58), (232, 230, 223)
@@ -21,3 +21,8 @@ for p in tri:  # rounded corners like stroke-linejoin=round
     d.ellipse([p[0] - 6 * k, p[1] - 6 * k, p[0] + 6 * k, p[1] + 6 * k], fill=TEXT)
 for size in (512, 192, 180):
     img.resize((size, size), Image.LANCZOS).save(f"{out}/icon-{size}.png", optimize=True)
+# program icons next to this script: Windows .exe and macOS .app
+here = os.path.dirname(os.path.abspath(__file__))
+big = img.resize((1024, 1024), Image.LANCZOS)
+big.save(f"{here}/openset.ico", sizes=[(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)])
+big.save(f"{here}/openset.icns")
