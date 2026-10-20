@@ -53,6 +53,7 @@ function defaultPrefs() {
     saved: {},
     setlistName: null,
     midi: [],
+    peers: [],
   };
 }
 
@@ -69,6 +70,14 @@ function cleanSetlist(src, base) {
   else if (strMap(src.notes)) out.notes = src.notes;
   else return null;
   return out;
+}
+
+// Backup computers running OpenSet: "http://host:port", up to 8
+const PEER_URL = /^https?:\/\/[\w.\-]+(:\d{1,5})?$/;
+function cleanPeers(list) {
+  if (!Array.isArray(list) || list.length > 8 || !list.every((u) => typeof u === "string")) return null;
+  const urls = list.map((u) => u.trim().replace(/\/+$/, ""));
+  return urls.every((u) => PEER_URL.test(u)) ? urls : null;
 }
 
 function cleanMidi(list) {
@@ -97,6 +106,7 @@ function start(opts = {}) {
     alsFile: null,
     log: true,
     now: Date.now, // injectable clock for tests
+    peerPollMs: 1000,
     ...opts,
   };
   const PREFS_FILE = path.join(cfg.baseDir, "setlist.json");
@@ -149,6 +159,7 @@ function start(opts = {}) {
           : {},
       setlistName: typeof saved.setlistName === "string" ? saved.setlistName : null,
       midi: cleanMidi(saved.midi) || [],
+      peers: cleanPeers(saved.peers) || [],
     };
   }
 
@@ -199,6 +210,7 @@ function start(opts = {}) {
       saved: Object.keys(prefs.saved),
       setlistName: prefs.setlistName,
       midi: prefs.midi,
+      peers: prefs.peers.map((url) => peerStatus.get(url) || { url, online: false }),
       lyricsRev,
     };
   }
@@ -320,6 +332,57 @@ function start(opts = {}) {
       changed();
     }
   }, Math.min(1000, cfg.liveTimeoutMs / 3));
+
+  // ---------------- backup computers (AbleNet-style) ----------------
+  // User commands are repeated on every peer ("mirror": true marks a repeat,
+  // which is not repeated again). Engine commands are not: each computer runs
+  // its own engine on the same set, and Ableton Link keeps the clocks together.
+
+  const LOCAL_ONLY = new Set(["peers", "midi"]);
+  const peerStatus = new Map(); // url -> { url, online, connected, playing, song, drift }
+
+  function runCommand(msg) {
+    const ok = handleCommand(msg);
+    if (ok && !msg.mirror && !LOCAL_ONLY.has(msg.cmd)) {
+      const body = JSON.stringify({ ...msg, mirror: true });
+      for (const url of prefs.peers)
+        fetch(url + "/api/cmd", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          signal: AbortSignal.timeout(1000),
+        }).catch(() => {});
+    }
+    return ok;
+  }
+
+  let polling = false;
+  async function pollPeers() {
+    const before = JSON.stringify([...peerStatus]);
+    for (const url of prefs.peers) {
+      try {
+        const res = await fetch(url + "/api/state", { signal: AbortSignal.timeout(800) });
+        const s = await res.json();
+        const song = s.setlist && s.setlist[s.current];
+        peerStatus.set(url, {
+          url,
+          online: true,
+          connected: !!s.connected,
+          playing: !!s.is_playing,
+          song: song ? song.name : "",
+          drift: Math.round((s.beat - liveState.beat) * 100) / 100, // beats ahead of this computer
+        });
+      } catch {
+        peerStatus.set(url, { url, online: false });
+      }
+    }
+    if (JSON.stringify([...peerStatus]) !== before) changed();
+  }
+  const peerTimer = setInterval(() => {
+    if (!prefs.peers.length || polling) return;
+    polling = true;
+    pollPeers().finally(() => (polling = false));
+  }, cfg.peerPollMs);
 
   // ---------------- commands (WebSocket, HTTP, OSC) ----------------
 
@@ -447,6 +510,10 @@ function start(opts = {}) {
       }
       case "clearMeasured":
         return setPrefs({ measured: {} });
+      case "peers": {
+        const peers = cleanPeers(msg.urls);
+        return !!peers && setPrefs({ peers });
+      }
     }
     return false;
   }
@@ -480,50 +547,50 @@ function start(opts = {}) {
     switch (address) {
       case "/global/play":
       case "/global/startPlaying":
-        return handleCommand({ cmd: "play" });
+        return runCommand({ cmd: "play" });
       case "/global/continuePlaying":
-        return handleCommand({ cmd: "continue" });
+        return runCommand({ cmd: "continue" });
       case "/global/stop":
       case "/global/pause":
-        return handleCommand({ cmd: "stop" });
+        return runCommand({ cmd: "stop" });
       case "/global/playPause":
       case "/global/playStop":
-        return handleCommand({ cmd: "playStop" });
+        return runCommand({ cmd: "playStop" });
       case "/global/quantization":
-        return handleCommand({ cmd: "quant", value: QUANT_NAMES.indexOf(String(a)) });
+        return runCommand({ cmd: "quant", value: QUANT_NAMES.indexOf(String(a)) });
       case "/global/tempo":
-        return handleCommand({ cmd: "tempo", bpm: a });
+        return runCommand({ cmd: "tempo", bpm: a });
       case "/global/tempo/adjust":
-        return handleCommand({ cmd: "tempoAdjust", delta: a });
+        return runCommand({ cmd: "tempoAdjust", delta: a });
       case "/setlist/jumpToTime":
-        return handleCommand({ cmd: "jump", time: a });
+        return runCommand({ cmd: "jump", time: a });
       case "/setlist/jumpToSong":
-        return handleCommand({ cmd: "song", index: pick(list, a) });
+        return runCommand({ cmd: "song", index: pick(list, a) });
       case "/setlist/jumpBySongs": {
         const steps = Math.trunc(Number(a) || 0);
-        if (steps === -1) return handleCommand({ cmd: "prev", force: args.includes("force=true") });
+        if (steps === -1) return runCommand({ cmd: "prev", force: args.includes("force=true") });
         const i = by(steps, cur, (i, d) => (d > 0 ? S.nextSong(list, i) : S.prevSong(list, i)));
-        return i !== cur && handleCommand({ cmd: "song", index: i });
+        return i !== cur && runCommand({ cmd: "song", index: i });
       }
       case "/setlist/jumpToSection":
         // clients send booleans as T, 1 or "true"
-        return !!song && handleCommand({ cmd: "section", index: pick(song.sections, a, [true, 1, "true"].includes(b)) });
+        return !!song && runCommand({ cmd: "section", index: pick(song.sections, a, [true, 1, "true"].includes(b)) });
       case "/setlist/jumpBySections": {
         if (!song) return false;
         const j = S.sectionAt(song, liveState.beat) + Math.trunc(Number(a) || 0);
-        return handleCommand({ cmd: "section", index: Math.max(0, Math.min(song.sections.length - 1, j)) });
+        return runCommand({ cmd: "section", index: Math.max(0, Math.min(song.sections.length - 1, j)) });
       }
       case "/setlist/jumpToQuickPlaySection": {
         const quick = song ? song.sections.filter((x) => x.quick) : [];
         const target = quick[pick(quick, a)];
-        return !!target && handleCommand({ cmd: "section", index: song.sections.indexOf(target) });
+        return !!target && runCommand({ cmd: "section", index: song.sections.indexOf(target) });
       }
       case "/loop/enable":
-        return handleCommand({ cmd: "loopOn" });
+        return runCommand({ cmd: "loopOn" });
       case "/loop/escape":
-        return handleCommand({ cmd: "loopOff" });
+        return runCommand({ cmd: "loopOff" });
       case "/loop/toggle":
-        return handleCommand({ cmd: "loopToggle" });
+        return runCommand({ cmd: "loopToggle" });
       case "/subscribe":
       case "/unsubscribe":
       case "/getValues": {
@@ -633,7 +700,7 @@ function start(opts = {}) {
   });
 
   app.post("/api/cmd", (req, res) => {
-    if (handleCommand(req.body)) res.json({ ok: true });
+    if (runCommand(req.body)) res.json({ ok: true });
     else res.status(400).json({ error: "Unknown or invalid command" });
   });
 
@@ -674,7 +741,7 @@ function start(opts = {}) {
       let msg;
       try { msg = JSON.parse(buf.toString()); } catch { return; }
       try {
-        handleCommand(msg);
+        runCommand(msg);
       } catch (e) {
         console.error("[ws]", e.message);
       }
@@ -698,6 +765,7 @@ function start(opts = {}) {
     if (closed) return Promise.resolve();
     closed = true;
     clearInterval(timer);
+    clearInterval(peerTimer);
     for (const c of wss.clients) c.terminate();
     wss.close();
     udp.close();
@@ -708,6 +776,7 @@ function start(opts = {}) {
   return new Promise((resolve, reject) => {
     const fail = (e) => {
       clearInterval(timer);
+      clearInterval(peerTimer);
       wss.close();
       try { udp.close(); } catch {}
       reject(e);

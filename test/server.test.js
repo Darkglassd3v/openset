@@ -478,6 +478,48 @@ test("tempo map of a loaded .als is used offline and for the same set in Live", 
   assert.equal((await c.state()).setlist[0].seconds, 16);
 });
 
+test("peers: commands are mirrored to a backup computer, once, without loops", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  await main.connect();
+  await backup.connect();
+  const base = (c) => `http://127.0.0.1:${c.srv.httpPort}`;
+  assert.equal((await main.cmd({ cmd: "peers", urls: [base(backup) + "/"] })).status, 200);
+  assert.equal((await backup.cmd({ cmd: "peers", urls: [base(main)] })).status, 200); // both ways
+  assert.deepEqual((await main.state()).peers.map((p) => p.url), [base(backup)]);
+
+  let mirrored = backup.expectCmd({ cmd: "play" });
+  assert.equal((await main.cmd({ cmd: "play" })).status, 200);
+  await mirrored;
+  // a composite command reaches the backup as one command, not as its parts
+  mirrored = backup.expectCmd({ cmd: "loop", on: true, start: 8, length: 8 });
+  await main.cmd({ cmd: "loopToggle" });
+  await mirrored;
+  await new Promise((r) => setTimeout(r, 150));
+  const count = (c, cmd) => c.cmds.filter((x) => x.cmd === cmd).length;
+  assert.equal(count(main, "play"), 1); // not echoed back by the backup
+  assert.equal(count(backup, "loop"), 1);
+
+  // setlist edits follow too
+  await main.cmd({ cmd: "setlist", order: ["Finale"] });
+  await waitFor(async () => (await backup.state()).setlist[0].name === "Finale", "mirrored setlist");
+
+  // status of the backup as seen by the main computer
+  await waitFor(async () => (await main.state()).peers[0].online, "peer online");
+  const peer = (await main.state()).peers[0];
+  assert.equal(peer.connected, true);
+  assert.equal(peer.song, "Intro Song");
+  assert.equal(peer.drift, 0);
+  await backup.srv.close();
+  await waitFor(async () => !(await main.state()).peers[0].online, "peer offline");
+});
+
+test("peers: invalid lists are rejected", async (t) => {
+  const c = await setup(t);
+  for (const urls of [["ftp://x"], ["http://a b"], [1], "http://x", Array(9).fill("http://10.0.0.1:39080")])
+    assert.equal((await c.cmd({ cmd: "peers", urls })).status, 400);
+});
+
 test("spoken cues are broadcast over WebSocket", async (t) => {
   const c = await setup(t);
   await c.connect();

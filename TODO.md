@@ -6,7 +6,7 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 ## In corso
 
-- [ ] E — ridondanza a due computer (stile AbleNet)
+- [ ] F — vista Palco personalizzabile per dispositivo
 
 ## Da fare
 
@@ -27,8 +27,8 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 - [x] GREEN `server/cues.js`, evento WS `cue`; UI: sintesi vocale del browser, attivabile per dispositivo
 
 ### E — Ridondanza a due computer (stile AbleNet)
-- [ ] RED: server principale inoltra i comandi ai peer (`/api/cmd` con `mirror`), niente loop, stato dei peer (online, scarto di beat)
-- [ ] GREEN: `peers` nelle opzioni, inoltro, controllo stato; UI: lista peer; README: Ableton Link per il tempo
+- [x] RED: server principale inoltra i comandi ai peer (`/api/cmd` con `mirror`), niente loop, stato dei peer (online, scarto di beat)
+- [x] GREEN: `peers` nelle opzioni, inoltro, controllo stato; UI: lista peer (README in G)
 
 ### F — Vista Palco personalizzabile per dispositivo
 - [ ] UI: scelta degli elementi (tempi, prossimo, note, sezioni rapide, testi nel Palco), salvata per dispositivo

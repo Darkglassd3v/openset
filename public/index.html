@@ -123,6 +123,12 @@
     background: var(--ink); color: var(--text); font-size: 14px; min-width: 0;
   }
   .edit-bar input { flex: 1 1 140px; }
+  .field {
+    flex: 1 1 220px; min-width: 0; padding: 9px 10px; border: 1px solid var(--line); border-radius: 8px;
+    background: var(--ink); color: var(--text); font-size: 14px;
+  }
+  .on-dot { color: var(--green); }
+  .off-dot { color: var(--red); }
 
   /* ---- stage ---- */
   .stage { padding: 18px 16px 28px; display: flex; flex-direction: column; gap: 14px; }
@@ -293,6 +299,15 @@
     <div class="row">
       <select id="midiAction" aria-label="Azione da assegnare"></select>
       <button class="btn" id="midiLearn">Impara da MIDI</button>
+    </div>
+
+    <h2>Ridondanza (secondo computer)</h2>
+    <p>Su entrambi i computer: stesso set, OpenSet avviato e <b>Ableton Link</b> attivo in Live.
+      I comandi dati da questo computer vengono ripetuti su quelli elencati.</p>
+    <ul id="peerList"></ul>
+    <div class="row">
+      <input class="field" id="peerUrl" placeholder="http://192.168.1.20:39080" aria-label="Indirizzo del computer di riserva">
+      <button class="btn" id="peerAdd">Aggiungi</button>
     </div>
 
     <h2>Scorciatoie (tastiera e pedali Bluetooth)</h2>
@@ -679,7 +694,7 @@ $("quant").innerHTML = QUANT.map((q, i) => `<option value="${i}">${q}</option>`)
 $("midiAction").innerHTML = Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
 
 function renderSettings() {
-  const key = JSON.stringify([state.settings, state.quant, state.midi, midi.status, midi.learning]);
+  const key = JSON.stringify([state.settings, state.quant, state.midi, state.peers, midi.status, midi.learning]);
   if (key === settingsKey) return;
   settingsKey = key;
   document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });
@@ -693,7 +708,25 @@ function renderSettings() {
       → ${esc(ACTIONS[m.action] || m.action)}
       <button class="btn" data-del="${i}" aria-label="Elimina mappatura">✕</button></li>`).join("") ||
     "<li>Nessuna mappatura.</li>";
+  $("peerList").innerHTML = state.peers.map((p, i) => `
+    <li><span class="${p.online ? "on-dot" : "off-dot"}" aria-hidden="true">●</span>
+      <span class="mono">${esc(p.url)}</span>
+      ${p.online
+        ? `· ${p.connected ? "Live connesso" : "Live non connesso"}${p.song ? " · " + esc(p.song) : ""} · scarto ${p.drift} beat`
+        : "· non raggiungibile"}
+      <button class="btn" data-peer-del="${i}" aria-label="Rimuovi ${esc(p.url)}">✕</button></li>`).join("") ||
+    "<li>Nessun computer di riserva.</li>";
 }
+$("peerAdd").onclick = () => {
+  const url = $("peerUrl").value.trim();
+  if (!url || !state) return;
+  send({ cmd: "peers", urls: [...state.peers.map((p) => p.url), url] });
+  $("peerUrl").value = "";
+};
+$("peerList").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-peer-del]");
+  if (b) send({ cmd: "peers", urls: state.peers.filter((_, i) => i !== +b.dataset.peerDel).map((p) => p.url) });
+});
 $("settings").addEventListener("change", (e) => {
   if (e.target.dataset.set) send({ cmd: "settings", [e.target.dataset.set]: e.target.checked });
   if (e.target.dataset.dev) {
