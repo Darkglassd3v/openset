@@ -61,6 +61,7 @@ jobs:
           done
           cat build/run.log
           grep -q '"connected":false' build/state.json
+          grep -q "\[data\] copied lyrics" build/run.log
           curl -sf http://127.0.0.1:39080/ | grep -q Palco
           curl -sf http://127.0.0.1:39080/api/connect | grep -q "\"urls\""
           kill %1 || true

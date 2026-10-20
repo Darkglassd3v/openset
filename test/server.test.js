@@ -796,8 +796,17 @@ test("CLI: a busy port prints a hint and exits with 1", async (t) => {
   const blocker = http.createServer();
   await new Promise((r) => blocker.listen(0, r));
   t.after(() => blocker.close());
-  const child = spawn(process.execPath, [path.join(__dirname, "..", "server", "index.js")], {
-    env: { ...process.env, PORT: String(blocker.address().port) },
+  // a throw-away home: the CLI writes its data folder and installs the Remote Script there
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "openset-home-"));
+  const child = spawn(process.execPath, [path.join(__dirname, "..", "server", "index.js"), "--no-open"], {
+    env: {
+      ...process.env,
+      PORT: String(blocker.address().port),
+      HOME: home,
+      USERPROFILE: home,
+      APPDATA: home,
+      XDG_CONFIG_HOME: home,
+    },
   });
   let stderr = "";
   child.stderr.on("data", (d) => (stderr += d));
