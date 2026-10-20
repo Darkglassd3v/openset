@@ -49,6 +49,25 @@ macOS obbligatori, Linux se costa poco. v0.3.0 = funzioni rimandate in v0.2.0.
 
 - Brani aggiunti a mano dalla UI, senza progetto Live (solo scaletta e testi):
   proposto il 2026-10-20, in attesa di risposta.
+- v0.4.0 "facile da avviare e da usare su tutti i dispositivi" (da
+  https://ableset.com/docs/all, proposta del 2026-10-20, in attesa di conferma):
+  1. Dati in una cartella utente stabile (macOS `~/Library/Application Support/OpenSet`,
+     Windows `%APPDATA%\OpenSet`, Linux `~/.config/openset`), con migrazione del
+     `setlist.json` che oggi sta accanto al binario.
+  2. Doppio clic che apre da solo il browser (`open`/`start`/`xdg-open`, `--no-open`).
+  3. Installazione automatica del Remote Script nella User Library di Live, più
+     una schermata "In attesa di Live" con i passi da seguire.
+  4. "Connetti un dispositivo": indirizzo `nome.local` e IP con QR code nella UI;
+     porta 80 se libera, altrimenti 39080.
+  5. Schermo sempre acceso (Wake Lock) e PWA a schermo intero sui tablet.
+  6. Nome per dispositivo, vista predefinita, blocco (⇧L), lista dei dispositivi
+     connessi; OSC `/devices/showPage` e `/devices/reload`.
+  7. Modalità di salto (Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale)
+     con coda: J, ⇧J, C.
+  8. Editor: trascinamento anche touch, Ctrl+K per cercare (iniziali, tag),
+     copia/incolla della scaletta come testo con match approssimato, backup a
+     ogni sovrascrittura.
+  9. Safe Mode e password facoltativa per le modifiche.
 
 ## Rimandato
 
