@@ -23,7 +23,7 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 - [x] macOS: `OpenSet <versione>.app` (`scripts/make-macos-app.sh`, `dist-extras/Info.plist`) con icona `.icns`, apre il Terminale con il server; lo smoke test CI su macOS avvia il programma dentro il bundle
 
 ### P — Guida PDF e CHANGELOG
-- [ ] RED `test/guide.test.js`: la guida generata contiene versione, novità della versione da `CHANGELOG.md` e i passi per Windows, macOS, Linux, iPad/iPhone
+- [x] RED `test/guide.test.js`: la guida generata contiene versione, novità della versione da `CHANGELOG.md` e i passi per Windows, macOS, Linux, iPad/iPhone
 - [ ] GREEN `scripts/build-guide.js` (HTML con logo → PDF con Chrome headless), `CHANGELOG.md`
 - [ ] Release CI: `OpenSet-<versione>-Guida.pdf` dentro ogni zip e tra gli asset
 
