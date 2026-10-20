@@ -12,7 +12,10 @@ senza internet.
 - **Scaletta automatica** — legge i locator dell'Arrangement di Live (stessa notazione di AbleSet) e costruisce brani e sezioni navigabili, anche da una traccia MIDI `Sections`
 - **Fine brano intelligente** — `SONG END` passa al brano successivo della scaletta, `STOP` ferma e prepara il successivo; i salti sono quantizzati e arrivano esattamente sul confine
 - **Automazioni** — loop di sezione (`+LOOP`, `+LOOP:4`), pause (`+PAUSE`), sezioni saltate (`+SKIP`), transizioni (`Intro >>> Strofa 2`)
-- **Editor della scaletta** — riordina, salta brani, stop dopo un brano, note per il palco, salva/carica più scalette, stampa, durata totale
+- **Editor della scaletta** — trascina i brani (anche col dito), Ctrl+K per cercare e aggiungere, copia/incolla la scaletta come testo, salta brani, stop dopo un brano, note per il palco, scalette salvate con le versioni precedenti, stampa, durata totale
+- **Modalità di salto** — subito, a fine sezione, a fine brano, dinamica o manuale, con la coda (`J`, `⇧J`, `C`) come in AbleSet
+- **Dispositivi** — nome e tag per ogni telefono o tablet, vista all'apertura, blocco (`⇧L`), lista dei collegati, comandi OSC `/devices/...`
+- **Safe Mode e password** — niente cambi di brano per errore mentre suona; password facoltativa per comandare dagli altri dispositivi
 - **Vista Palco** — brano e sezione in grande, prossimo brano, tempo rimanente nel brano e nello show, battiti, sezioni rapide
 - **Testi e accordi sincronizzati** — file JSON o traccia MIDI `+LYRICS` (una clip per riga), accordi ChordPro trasposti per brano
 - **Annunci vocali** — nome della sezione successiva e count-in parlato, sul dispositivo che vuoi (cuffie, in-ear)
@@ -29,23 +32,30 @@ Scarica lo zip della tua piattaforma dall'ultima [**Release**](../../releases/la
 
 | Piattaforma | File |
 |---|---|
-| Windows x64 | `openset-win-x64.zip` |
-| macOS Apple Silicon (M1–M4) | `openset-macos-arm64.zip` |
-| macOS Intel | `openset-macos-x64.zip` |
-| Linux x64 | `openset-linux-x64.zip` |
+| Windows x64 | `openset-<versione>-win-x64.zip` |
+| macOS Apple Silicon (M1–M4) | `openset-<versione>-macos-arm64.zip` |
+| macOS Intel | `openset-<versione>-macos-x64.zip` |
+| Linux x64 | `openset-<versione>-linux-x64.zip` |
 
-Ogni zip contiene l'eseguibile, il Remote Script per Live, l'interfaccia web,
-il file `openset_<versione>`, `VERSION.txt` e la guida `INSTALL.txt`.
+Ogni zip contiene il programma con la versione nel nome (`openset-0.5.0.exe`,
+`OpenSet 0.5.0.app`, `openset-0.5.0`), il Remote Script per Live, l'interfaccia
+web, `VERSION.txt`, la guida `INSTALL.txt` e **`OpenSet-<versione>-Guida.pdf`**
+con le novità e i passi per ogni piattaforma. Le novità di ogni versione sono in
+[CHANGELOG.md](CHANGELOG.md). La versione è stampata all'avvio e mostrata
+nell'intestazione dell'app.
+
+Negli esempi qui sotto sostituisci `0.5.0` con la versione che hai scaricato.
 
 ## Installazione
 
 ### Windows
 
 ```powershell
-Expand-Archive openset-win-x64.zip -DestinationPath C:\OpenSet
+Expand-Archive openset-0.5.0-win-x64.zip -DestinationPath C:\OpenSet
 ```
 
-1. Doppio clic su `C:\OpenSet\openset.exe`: il browser si apre da solo.
+1. Doppio clic su `C:\OpenSet\openset-0.5.0.exe` (ha l'icona di OpenSet): il browser si apre da solo.
+   Se compare SmartScreen: *Ulteriori informazioni → Esegui comunque*.
    Al primo avvio consenti l'accesso alla **rete privata** nel firewall.
 2. OpenSet copia da solo il Remote Script nella User Library di Live
    (`Documents\Ableton\User Library\Remote Scripts\OpenSet`).
@@ -54,14 +64,16 @@ Expand-Archive openset-win-x64.zip -DestinationPath C:\OpenSet
 
 ### macOS
 
+Estrai `openset-0.5.0-macos-arm64.zip` (Mac Intel: `openset-0.5.0-macos-x64.zip`)
+e sposta **`OpenSet 0.5.0.app`** in Applicazioni. L'app non è firmata da Apple:
+al primo avvio togli la quarantena (oppure tasto destro → Apri):
+
 ```bash
-unzip openset-macos-arm64.zip -d openset && cd openset   # Mac Intel: openset-macos-x64.zip
-chmod +x openset
-xattr -d com.apple.quarantine openset 2>/dev/null || true
-./openset
+xattr -dr com.apple.quarantine "/Applications/OpenSet 0.5.0.app"
 ```
 
-1. Il browser si apre da solo. Se macOS chiede di accettare connessioni in
+1. Doppio clic sull'app: si apre il Terminale con OpenSet (Ctrl+C o chiudere la
+   finestra lo ferma) e il browser. Se macOS chiede di accettare connessioni in
    entrata, consenti: servono a telefono, tablet e controller OSC.
 2. OpenSet copia da solo il Remote Script in
    `~/Music/Ableton/User Library/Remote Scripts/OpenSet`.
@@ -74,16 +86,16 @@ a mano: la cartella `remote-script/OpenSet` dello zip va in `Remote Scripts`.
 ### Linux
 
 ```bash
-unzip openset-linux-x64.zip -d openset && cd openset
-chmod +x openset
-./openset
+unzip openset-0.5.0-linux-x64.zip -d openset && cd openset
+chmod +x openset-0.5.0
+./openset-0.5.0
 ```
 
 Ableton Live non esiste per Linux: usa la macchina Linux come postazione di
 controllo remoto, oppure carica un progetto offline:
 
 ```bash
-./openset "/percorso/Progetto Project/Progetto.als"
+./openset-0.5.0 "/percorso/Progetto Project/Progetto.als"
 ```
 
 Se all'avvio compare `OpenSet cannot start: ... (is OpenSet or AbleSet already running?)`,
@@ -95,7 +107,7 @@ c'è già un'istanza aperta (o AbleSet, che usa la stessa porta 39051): chiudila
 OpenSet usa la porta **80** se è libera, così l'indirizzo non ha numeri:
 `http://localhost` sul computer, `http://<ip>` o `http://<nome-mac>.local`
 da telefono e tablet sulla stessa rete. Se la porta 80 è occupata (o su Linux,
-dove serve root) usa la **39080**. `PORT=39080 ./openset` forza una porta.
+dove serve root) usa la **39080**. `PORT=39080 ./openset-0.5.0` forza una porta.
 
 In **Opzioni → Connetti un dispositivo** ci sono gli indirizzi con il loro
 **QR code**: inquadralo con la fotocamera del telefono e si apre OpenSet.
@@ -198,15 +210,37 @@ e una clip per riga; il nome della clip è il testo. `Voce +LYRICS [+2]` traspon
 ### Scaletta, Palco e Opzioni
 
 - **Scaletta**: tocca un brano o una sezione per saltarci. **Modifica scaletta**
-  permette di riordinare (↑ ↓), saltare brani, fermarsi dopo un brano, scrivere
-  note per il palco, salvare e caricare scalette diverse e stamparle.
+  permette di riordinare (trascinando la maniglia ⠿ o con ↑ ↓), saltare brani,
+  fermarsi dopo un brano, scrivere note per il palco, salvare e caricare scalette
+  diverse (sovrascrivendo, la versione precedente resta tra i backup) e stamparle.
+  **+ Aggiungi** o `Ctrl+K` cerca un brano per titolo, iniziali o `#tag` e lo
+  aggiunge in fondo a quelli da suonare; *Togli tutti* parte da una scaletta vuota.
+  **Copia** / **Incolla** (o `Ctrl+C` / `Ctrl+V` nell'editor) scambiano la
+  scaletta come testo, un brano per riga: `{nota}` accanto al titolo, una riga
+  `-- stop --` per fermarsi dopo il brano sopra; i titoli scritti male vengono
+  riconosciuti lo stesso.
   Tutto viene salvato in `setlist.json` nella [cartella dei dati](#dove-sono-i-dati).
+- **Modalità di salto** (Opzioni → *Quando saltare mentre suona*): *Subito* salta
+  con la quantizzazione di Live; *A fine sezione*, *A fine brano*, *Dinamico*
+  (sezioni a fine sezione, brani a fine brano) e *Manuale* (allo stop) mettono
+  in **coda** il brano o la sezione che tocchi mentre suona: la barra «In coda»
+  ha *Salta* (`J`), *Subito* (`⇧J`) e *Annulla* (`C`).
 - **Palco**: la vista da mettere sul leggio o sul monitor. In Opzioni → *Questo
   dispositivo* scegli cosa mostrare su ogni telefono o tablet (tempi, prossimo
   brano, note, pulsanti delle sezioni, riga del testo corrente e successiva).
 - **Opzioni**: *Ferma sempre a fine brano*, *Dopo uno stop porta il cursore al
   brano successivo*, *Avvia la riproduzione quando salti*, quantizzazione di Live,
-  mappature MIDI.
+  modalità di salto, mappature MIDI.
+- **Questo dispositivo**: nome (anche più tag separati da virgola, es.
+  `ipad-1, palco`), vista all'apertura e **blocco** (`⇧L` o *Blocca questo
+  dispositivo*): un dispositivo bloccato ignora tocchi e tasti, si sblocca tenendo
+  premuto il lucchetto. In *Dispositivi collegati* vedi tutti i browser aperti.
+- **Sicurezza**: il **Safe Mode** impedisce di cambiare brano dalla web app mentre
+  suona e chiede conferma prima dello stop (MIDI e OSC non sono limitati). Con una
+  **password** gli altri dispositivi restano in sola lettura finché non toccano
+  *Sblocca*; il computer con Live non la chiede mai. Non protegge l'OSC: per
+  quello usa il firewall. I computer di riserva con password non ricevono i
+  comandi ripetuti dal principale.
 
 ### Durate dei brani
 
@@ -216,7 +250,7 @@ brano è stato suonato dall'inizio alla fine senza salti né loop, e infine una
 stima a tempo costante. L'automazione del tempo vale offline e anche con Live
 connesso, se il `.als` caricato ha gli stessi locator del set aperto. Il `.als` si
 carica da Opzioni → *Progetto .als* (dal computer su cui gira OpenSet) oppure
-all'avvio: `./openset "/percorso/Progetto Project/Progetto.als"`.
+all'avvio: `./openset-0.5.0 "/percorso/Progetto Project/Progetto.als"`.
 Salva il progetto in Live prima di caricarlo, così il file è aggiornato.
 
 Le durate misurate si azzerano da *Modifica scaletta*.
@@ -249,6 +283,10 @@ Il passaggio dell'audio da un computer all'altro resta all'interfaccia audio o a
 | `←` `PagSu` | Inizio brano, poi brano precedente |
 | `↓` `↑` | Sezione successiva / precedente |
 | `L` | Loop della sezione corrente |
+| `J` / `⇧J` / `C` | Salta al brano o alla sezione in coda / subito / annulla |
+| `⇧L` | Blocca o sblocca questo dispositivo |
+| `Ctrl+K` | Aggiungi brani alla scaletta |
+| `Ctrl+C` / `Ctrl+V` | Nell'editor: copia / incolla la scaletta come testo |
 
 I pedali Bluetooth "volta pagina" inviano proprio questi tasti.
 Per il **MIDI** apri OpenSet (`http://localhost`) in Chrome o Edge sul computer con
@@ -261,16 +299,21 @@ Le mappature (note, CC, program change) restano salvate.
 `/global/playStop`, `/global/continuePlaying`, `/global/tempo`, `/global/tempo/adjust`,
 `/global/quantization`, `/setlist/jumpToSong` (numero, negativo, nome o `RANDOM`),
 `/setlist/jumpBySongs`, `/setlist/jumpToSection`, `/setlist/jumpBySections`,
-`/setlist/jumpToQuickPlaySection`, `/setlist/jumpToTime`, `/loop/enable`,
-`/loop/escape`, `/loop/toggle`.
+`/setlist/jumpToQuickPlaySection`, `/setlist/jumpToTime`, `/setlist/jumpToQueued`,
+`/setlist/clearQueuedJump`, `/loop/enable`, `/loop/escape`, `/loop/toggle`,
+`/devices/showPage`, `/devices/reload`, `/devices/lock`, `/devices/unlock`,
+`/devices/toggleLock` (con `all`, un nome o tag, o un IP).
 Con `/subscribe [host] <porta>` OpenSet invia gli aggiornamenti
 (`/global/isPlaying`, `/global/tempo`, `/setlist/activeSongName`,
-`/setlist/activeSectionName`, `/setlist/songs`, `/setlist/nextSongName`, …);
+`/setlist/activeSectionName`, `/setlist/songs`, `/setlist/nextSongName`,
+`/setlist/queuedName`, `/devices/names`, `/settings/safeMode`, …);
 `/getValues <porta>` li invia una volta.
 
 **HTTP**: `POST /api/cmd` con JSON, ad esempio `{"cmd":"next"}`,
 `{"cmd":"song","index":2}`, `{"cmd":"section","name":"Ritornello"}`,
-`{"cmd":"loopToggle"}`. Lo stato completo è in `GET /api/state`.
+`{"cmd":"loopToggle"}`. Lo stato completo è in `GET /api/state`. Con una
+password impostata, da un altro computer aggiungi l'header
+`X-OpenSet-Password: <password>` (5 tentativi sbagliati bloccano l'indirizzo per 30 s).
 
 **Stile**: un file `custom.css` nella [cartella dei dati](#dove-sono-i-dati) viene caricato dall'interfaccia.
 

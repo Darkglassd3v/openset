@@ -147,7 +147,12 @@ ${cmd(`unzip openset-${v}-linux-x64.zip -d openset && cd openset`, `chmod +x ope
   <tr><td><code>←</code> <code>PagSu</code></td><td>Inizio brano / brano precedente</td></tr>
   <tr><td><code>↓</code> <code>↑</code></td><td>Sezione successiva / precedente</td></tr>
   <tr><td><code>L</code></td><td>Loop della sezione corrente</td></tr>
+  <tr><td><code>J</code> · <code>⇧ J</code> · <code>C</code></td><td>Salta al brano o alla sezione in coda · subito · annulla la coda</td></tr>
+  <tr><td><code>⇧ L</code></td><td>Blocca o sblocca questo dispositivo</td></tr>
+  <tr><td><code>Ctrl K</code></td><td>Aggiungi brani alla scaletta (titolo, iniziali o #tag)</td></tr>
+  <tr><td><code>Ctrl C</code> · <code>Ctrl V</code></td><td>Nell'editor: copia o incolla la scaletta come testo</td></tr>
 </table>
+<p class="note">I pedali Bluetooth «volta pagina» inviano le frecce e PagSu/PagGiù.</p>
 
 <h2>Risoluzione dei problemi</h2>
 <ul>
@@ -156,6 +161,8 @@ ${cmd(`unzip openset-${v}-linux-x64.zip -d openset && cd openset`, `chmod +x ope
   <li><b>Il telefono non apre l'indirizzo</b>: stessa rete del computer, firewall che consente le reti private, oppure prova l'indirizzo IP invece di <code>.local</code>.</li>
   <li><b>Lo schermo del tablet si spegne</b>: Blocco automatico su Mai (il browser non può impedirlo senza HTTPS).</li>
   <li><b>macOS dice che l'app è danneggiata o non verificata</b>: esegui il comando <code>xattr</code> del passo 2.</li>
+  <li><b>Sul telefono compare «Sola lettura»</b>: è impostata una password (Opzioni → Sicurezza). Tocca <b>Sblocca</b> e inseriscila.</li>
+  <li><b>Toccando un brano non succede niente mentre suona</b>: è attivo il Safe Mode, oppure il brano è in coda (modalità di salto): guarda la barra «In coda».</li>
 </ul>
 
 <h2>Versioni precedenti</h2>

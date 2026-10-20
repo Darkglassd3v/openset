@@ -3,6 +3,19 @@
 Tutte le novità di OpenSet, dalla versione più recente. La guida PDF di ogni
 rilascio riporta la sezione della sua versione.
 
+## 0.5.0 — 2026-10-21
+
+- **Modalità di salto con coda** (come AbleSet): in Opzioni scegli *Subito*, *A fine sezione*, *A fine brano*, *Dinamico* o *Manuale*. Mentre suona, il brano o la sezione che tocchi vanno **in coda** (evidenziati, con la barra «In coda»): `J` salta, `⇧J` salta subito, `C` annulla. Via OSC: `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`.
+- **Editor della scaletta più veloce**: trascina i brani (anche col dito), **Ctrl+K** cerca per titolo, iniziali o `#tag` e aggiunge il brano in fondo a quelli da suonare, *Togli tutti* / *Rimetti tutti*, **copia e incolla la scaletta come testo** (un brano per riga, `{nota}`, `-- stop --`) con riconoscimento dei titoli scritti male.
+- **Versioni precedenti delle scalette salvate**: sovrascrivendo una scaletta, la versione vecchia resta tra i backup e si ripristina dall'editor.
+- **Dispositivi con nome**: ogni telefono o tablet ha un nome (anche più tag, es. `ipad-1, palco`) e una vista all'apertura; in Opzioni la lista dei dispositivi collegati con la latenza. Via OSC: `/devices/showPage`, `/devices/reload`, `/devices/lock`, `/devices/unlock`, `/devices/toggleLock`.
+- **Blocco del dispositivo**: `⇧L` o *Blocca questo dispositivo* ignora tocchi e tasti; si sblocca tenendo premuto il lucchetto.
+- **Safe Mode**: mentre suona, dalla web app non si cambia brano per errore e lo Stop chiede conferma. MIDI e OSC non sono limitati.
+- **Password della web app** (facoltativa): gli altri dispositivi la chiedono per comandare e altrimenti restano in sola lettura; il computer con Live non la chiede mai. Salvata solo come hash.
+- **Versione sempre visibile**: nel nome dello zip e del programma (`openset-0.5.0.exe`, `OpenSet 0.5.0.app`), all'avvio e nell'intestazione dell'app, con il logo.
+- **Icona di OpenSet** sul programma Windows e sull'app macOS, che ora si apre con un doppio clic (Terminale con il registro e il browser).
+- **Guida PDF** in ogni zip, con le novità e i passi per Windows, macOS, Linux, iPad e iPhone.
+
 ## 0.4.0 — 2026-10-20
 
 - **Dati al sicuro**: scaletta (`setlist.json`), testi (`lyrics/`) e `custom.css` stanno in una cartella dell'utente (macOS `~/Library/Application Support/OpenSet`, Windows `%APPDATA%\OpenSet`, Linux `~/.config/openset`). Al primo avvio OpenSet ci copia i file delle versioni precedenti, senza cancellare gli originali.
