@@ -9,7 +9,24 @@ permissions:
   contents: write
 
 jobs:
+  # Apple Silicon binaries must be signed, so they are built on a Mac
+  build-macos-arm64:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx pkg@5.8.1 . --targets node18-macos-arm64 --output build/openset-macos-arm64
+      - run: codesign --force --sign - build/openset-macos-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openset-macos-arm64
+          path: build/openset-macos-arm64
+
   build-release:
+    needs: build-macos-arm64
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +36,12 @@ jobs:
           node-version: 20
 
       - name: Install dependencies
-        run: npm install
+        run: npm ci
+
+      - name: Tests
+        run: |
+          npm test
+          python3 -m unittest discover -s remote-script/tests
 
       - name: Read version
         id: ver
@@ -31,31 +53,37 @@ jobs:
             --targets node18-linux-x64,node18-win-x64,node18-macos-x64 \
             --out-path build
 
+      - uses: actions/download-artifact@v4
+        with:
+          name: openset-macos-arm64
+          path: build
+
       - name: Assemble platform packages
         run: |
           VERSION="${{ steps.ver.outputs.version }}"
           mkdir -p release
-          for PLAT in linux win macos; do
+          for PLAT in linux-x64 win-x64 macos-x64 macos-arm64; do
             DIR="pkg-$PLAT"
             mkdir -p "$DIR"
             # binary
-            if [ "$PLAT" = "win" ]; then
-              cp build/openset-win.exe "$DIR/openset.exe"
-            else
-              cp "build/openset-$PLAT" "$DIR/openset"
-              chmod +x "$DIR/openset"
-            fi
-            # app assets
+            case "$PLAT" in
+              win-x64)     cp build/openset-win.exe "$DIR/openset.exe" ;;
+              macos-arm64) cp build/openset-macos-arm64 "$DIR/openset" ;;
+              *)           cp "build/openset-${PLAT%-x64}" "$DIR/openset" ;;
+            esac
+            [ -f "$DIR/openset" ] && chmod +x "$DIR/openset"
+            # app assets (the Remote Script without its tests)
             cp -r public lyrics remote-script README.md "$DIR/"
+            rm -rf "$DIR/remote-script/tests"
             # required files: openset_<version>, version file, install guide
             echo "$VERSION" > "$DIR/openset_$VERSION"
             echo "$VERSION" > "$DIR/VERSION.txt"
             case "$PLAT" in
-              linux)  cp dist-extras/INSTALL-linux.txt   "$DIR/INSTALL.txt" ;;
-              win)    cp dist-extras/INSTALL-windows.txt "$DIR/INSTALL.txt" ;;
-              macos)  cp dist-extras/INSTALL-macos.txt   "$DIR/INSTALL.txt" ;;
+              linux-*) cp dist-extras/INSTALL-linux.txt   "$DIR/INSTALL.txt" ;;
+              win-*)   cp dist-extras/INSTALL-windows.txt "$DIR/INSTALL.txt" ;;
+              macos-*) cp dist-extras/INSTALL-macos.txt   "$DIR/INSTALL.txt" ;;
             esac
-            ( cd "$DIR" && zip -rq "../release/openset-$PLAT-x64.zip" . )
+            ( cd "$DIR" && zip -rq "../release/openset-$PLAT.zip" . )
           done
           ls -la release/
 
@@ -90,8 +118,9 @@ jobs:
             nelle preferenze Link/Tempo/MIDI di Live.
 
             ### macOS
+            `openset-macos-arm64.zip` per Apple Silicon (M1–M4), `openset-macos-x64.zip` per Mac Intel.
             ```bash
-            unzip openset-macos-x64.zip -d openset && cd openset
+            unzip openset-macos-arm64.zip -d openset && cd openset
             chmod +x openset
             xattr -d com.apple.quarantine openset 2>/dev/null || true
             ./openset
