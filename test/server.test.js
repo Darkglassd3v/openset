@@ -1877,3 +1877,24 @@ test("A4: the HTTP port of the last run is tried first, so saved addresses keep 
   const b = await setup(t, { baseDir, httpPort: [p2, p1] });
   assert.equal(b.srv.httpPort, p1);
 });
+
+test("A4: a peer removed while its poll is still running is not brought back", async (t) => {
+  let answer;
+  const answered = new Promise((r) => (answer = r));
+  // a backup that answers late: its poll is still running when it is removed from the list
+  const peer = http.createServer(async (_q, res) => {
+    await answered;
+    res.end(JSON.stringify({ connected: true, is_playing: true, beat: 8, tempo: 120, sig_num: 4, sig_den: 4, setlist: [], current: -1, settings: { scene: "main" } }));
+  });
+  await new Promise((r) => peer.listen(0, "127.0.0.1", r));
+  t.after(() => peer.close());
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect();
+  await c.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${peer.address().port}`] });
+  await pause(120);
+  await c.cmd({ cmd: "peers", urls: [] });
+  answer();
+  await pause(150);
+  assert.deepEqual((await c.state()).peers, []);
+  assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400);
+});
