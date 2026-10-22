@@ -14,7 +14,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ## In corso
 
-- [ ] v0.5.1 su `hotfix/v0.5.1` (da `main` 533df7a = tag v0.5.0 + TODO): V2 RED
+- [ ] v0.5.1 su `hotfix/v0.5.1` (da `main` 533df7a = tag v0.5.0 + TODO): V2 GREEN
 
 ## Da fare
 
@@ -25,7 +25,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] GREEN: `server/index.js`, `remote-script/OpenSet/OpenSet.py`, messaggio di avvio (`[live] state on …`, `[osc] port … busy … Is AbleSet open?`)
 
 #### V2 — La scaletta non sparisce e si vede perché Live non è collegato
-- [ ] RED: dopo il silenzio di Live restano brani e sezioni (salvo progetto `.als` caricato); `liveIssues` nello stato: `no-live`, `live-silent`, `script-updated`, `script-old`, `cmd-port-busy`, `osc-busy`
+- [x] RED: dopo il silenzio di Live restano brani e sezioni (salvo progetto `.als` caricato); `liveIssues` nello stato: `no-live`, `live-silent`, `script-updated`, `script-old`, `cmd-port-busy`, `osc-busy`
 - [ ] GREEN: server + UI (etichetta «Live non risponde», motivi nella schermata vuota e in Opzioni)
 
 #### V3 — Debug Logs e Create Log Package (AbleSet: Debug → Debug Logs, menu → Create Log Package)

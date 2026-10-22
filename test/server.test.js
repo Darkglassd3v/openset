@@ -21,6 +21,8 @@ const LIVE = {
   loop_start: 0,
   loop_length: 4,
   quant: 4,
+  script_version: require("../package.json").version,
+  cmd_port: true,
   cues: [
     { name: "Intro Song", time: 0 },
     { name: ">Verse", time: 8 },
@@ -112,6 +114,7 @@ test("state before Live connects", async (t) => {
   assert.equal(s.connected, false);
   assert.deepEqual(s.setlist, []);
   assert.equal(s.current, -1);
+  assert.deepEqual(s.liveIssues, ["no-live"]);
 });
 
 test("Live state builds the setlist with current, next and timing", async (t) => {
@@ -151,10 +154,25 @@ test("chunked messages from the Remote Script are reassembled", async (t) => {
   await waitFor(async () => (await c.state()).current === 1, "chunked state");
 });
 
-test("Live is marked offline after a silence", async (t) => {
+test("Live is marked offline after a silence, the setlist stays", async (t) => {
   const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();
+  assert.deepEqual((await c.state()).liveIssues, []);
   await waitFor(async () => !(await c.state()).connected, "disconnect", 3000);
+  const s = await c.state();
+  assert.deepEqual(s.setlist.map((x) => x.name), ["Intro Song", "Perché", "Finale"]);
+  assert.deepEqual(s.liveIssues, ["live-silent"]);
+});
+
+test("liveIssues explain why Live is not working with OpenSet", async (t) => {
+  const c = await setup(t, { scriptInstall: { status: "updated", path: "/x/Remote Scripts/OpenSet" } });
+  assert.deepEqual((await c.state()).liveIssues, ["script-updated", "no-live"]);
+  const { script_version, cmd_port, ...oldScript } = LIVE; // a Remote Script older than 0.5.1
+  await c.connect(oldScript);
+  assert.deepEqual((await c.state()).liveIssues, ["script-old"]);
+  c.sendLive({ ...LIVE, cmd_port: false });
+  await waitFor(async () => (await c.state()).cmd_port === false, "cmd_port");
+  assert.deepEqual((await c.state()).liveIssues, ["cmd-port-busy"]);
 });
 
 test("WebSocket: initial state and commands", async (t) => {
@@ -871,6 +889,7 @@ test("a busy OSC port (e.g. AbleSet on 39051) leaves OpenSet running with OSC of
   assert.equal(srv.udpPort, null);
   const s = await (await fetch(`http://127.0.0.1:${srv.httpPort}/api/state`)).json();
   assert.equal(s.oscPort, null);
+  assert.deepEqual(s.liveIssues, ["osc-busy", "no-live"]);
   assert.equal((await c.state()).oscPort, c.srv.udpPort);
 });
 
