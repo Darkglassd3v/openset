@@ -2,17 +2,22 @@
 
 const qrcode = require("qrcode-generator");
 
-function lanAddresses(interfaces) {
+function lanInterfaces(interfaces) {
   const out = [];
-  for (const list of Object.values(interfaces))
-    for (const n of list || []) if (n.family === "IPv4" && !n.internal) out.push(n.address);
+  for (const [name, list] of Object.entries(interfaces))
+    for (const n of list || []) if (n.family === "IPv4" && !n.internal) out.push({ name, address: n.address });
   return out;
 }
 
-// Bonjour name first: it survives DHCP changes, so a home-screen icon keeps working
-function deviceUrls({ platform, hostname, interfaces }, port) {
+const lanAddresses = (interfaces) => lanInterfaces(interfaces).map((n) => n.address);
+
+// Bonjour name first: it survives DHCP changes, so a home-screen icon keeps working.
+// network: AbleSet's Preferred Network (an interface name); all of them when it is gone.
+function deviceUrls({ platform, hostname, interfaces }, port, network = "") {
   const url = (host) => `http://${host}${port === 80 ? "" : ":" + port}`;
-  const urls = lanAddresses(interfaces).map(url);
+  const all = lanInterfaces(interfaces);
+  const picked = all.some((n) => n.name === network) ? all.filter((n) => n.name === network) : all;
+  const urls = picked.map((n) => url(n.address));
   if (platform === "darwin" && hostname) urls.unshift(url(hostname + ".local"));
   return urls;
 }
@@ -34,4 +39,4 @@ function qrSvg(text) {
   return qr.createSvgTag({ cellSize: 1, margin: 4, scalable: true });
 }
 
-module.exports = { lanAddresses, deviceUrls, bonjourName, qrSvg };
+module.exports = { lanAddresses, lanInterfaces, deviceUrls, bonjourName, qrSvg };

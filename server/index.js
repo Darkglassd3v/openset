@@ -26,7 +26,7 @@ const { cuesBetween } = require("./cues");
 const { dataDir, migrateData } = require("./datadir");
 const { parseArgs, openBrowser, liveRunning } = require("./launch");
 const { userLibraries, installRemoteScript } = require("./install");
-const { deviceUrls, bonjourName, qrSvg } = require("./connect");
+const { deviceUrls, lanInterfaces, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
 const { validAuth, hashPassword, checkPassword, createLimiter } = require("./auth");
@@ -65,8 +65,30 @@ const SETTING_VALUES = {
   defaultView: ["setlist", "stage", "lyrics", "settings"],
   openBrowser: ["start", "live", "off"], // AbleSet: Open AbleSet on Start (when Live connects)
   scene: ["main", "backup"], // AbleNet: Connected Scene
+  network: (v) => typeof v === "string" && v.length <= 64, // Preferred Network: an interface name, "" for all
 };
-const validSetting = (k, v) => (SETTING_VALUES[k] ? SETTING_VALUES[k].includes(v) : typeof v === "boolean");
+const validSetting = (k, v) => {
+  const rule = SETTING_VALUES[k];
+  return typeof rule === "function" ? rule(v) : rule ? rule.includes(v) : typeof v === "boolean";
+};
+
+// "0.10.1" > "0.9.3", for Check for Updates
+function newerVersion(a, b) {
+  const pa = String(a).split(".").map(Number);
+  const pb = String(b).split(".").map(Number);
+  for (let i = 0; i < 3; i++) if ((pa[i] || 0) !== (pb[i] || 0)) return (pa[i] || 0) > (pb[i] || 0);
+  return false;
+}
+
+async function latestRelease() {
+  const r = await fetch("https://api.github.com/repos/Darkglassd3v/openset/releases/latest", {
+    headers: { Accept: "application/vnd.github+json", "User-Agent": "OpenSet" },
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!r.ok) throw new Error(`GitHub answered ${r.status}`);
+  const j = await r.json();
+  return { tag: j.tag_name, url: j.html_url };
+}
 
 function defaultPrefs() {
   return {
@@ -102,6 +124,7 @@ function defaultPrefs() {
       // AbleNet (this computer)
       scene: "main",
       driftCorrection: false,
+      network: "",
     },
     saved: {},
     backups: [], // saved setlists replaced by a newer save: { name, at, data }, newest first
@@ -171,6 +194,10 @@ function start(opts = {}) {
     openBrowser: null, // (url, { app }) => void: the CLI's, null with --no-open
     openFile: (file) => openBrowser(file), // the last .als, opened with Live
     liveRunning: () => liveRunning(),
+    installScript: null, // () => install result: the CLI's, for "Reinstalla il Remote Script"
+    quit: null, // the CLI's process exit, for "Esci da OpenSet"
+    latestRelease, // Check for Updates
+    platform: process.platform,
     liveLogFiles: () => liveLogFiles(process.platform, process.env, os.homedir()),
     ...opts,
   };
@@ -1068,8 +1095,53 @@ function start(opts = {}) {
   });
 
   app.get("/api/connect", (_req, res) => {
-    const urls = deviceUrls(cfg.netInfo(), server.address().port);
-    res.json({ urls: urls.map((url) => ({ url, qr: qrSvg(url) })) });
+    const info = cfg.netInfo();
+    const urls = deviceUrls(info, server.address().port, prefs.settings.network);
+    res.json({ urls: urls.map((url) => ({ url, qr: qrSvg(url) })), networks: lanInterfaces(info.interfaces) });
+  });
+
+  app.get("/api/update", async (_req, res) => {
+    try {
+      const { tag, url } = await cfg.latestRelease();
+      const latest = String(tag).replace(/^v/, "");
+      // only a GitHub page becomes a link in the UI
+      res.json({ current: VERSION, latest, newer: newerVersion(latest, VERSION), url: /^https:\/\/github\.com\//.test(url) ? url : null });
+    } catch (e) {
+      res.json({ current: VERSION, error: String(e.message || e) });
+    }
+  });
+
+  // AbleSet's menu bar items: only for the computer running OpenSet
+  const HOSTNAME_SETTINGS = { darwin: "x-apple.systempreferences:com.apple.Sharing-Settings.extension", win32: "ms-settings:about" };
+  app.post("/api/host/:action", (req, res) => {
+    if (!isLoopback(req.socket.remoteAddress)) return res.status(403).json({ error: "Only allowed from this computer" });
+    const unavailable = () => res.status(501).json({ error: "Not available here" });
+    switch (req.params.action) {
+      case "open":
+        if (!cfg.openBrowser || !uiUrl) return unavailable();
+        cfg.openBrowser(uiUrl, { app: !!(req.body && req.body.app) });
+        return res.json({ ok: true });
+      case "folder":
+        cfg.openFile(cfg.baseDir);
+        return res.json({ ok: true });
+      case "hostname":
+        if (!HOSTNAME_SETTINGS[cfg.platform]) return unavailable();
+        cfg.openFile(HOSTNAME_SETTINGS[cfg.platform]);
+        return res.json({ ok: true });
+      case "installScript":
+        if (!cfg.installScript) return unavailable();
+        cfg.scriptInstall = cfg.installScript();
+        log.info(`[live] Remote Script ${cfg.scriptInstall.status} ${cfg.scriptInstall.path || ""} (from the web app)`);
+        changed();
+        return res.json(cfg.scriptInstall);
+      case "quit":
+        log.info("[start] quit from the web app");
+        res.json({ ok: true });
+        setTimeout(() => cfg.quit && cfg.quit(), 100); // after the answer reaches the browser
+        return undefined;
+      default:
+        return res.status(404).json({ error: "Unknown action" });
+    }
   });
 
   app.get("/api/lyrics/:song", (req, res) => {
@@ -1375,7 +1447,15 @@ if (require.main === module) {
     log.info("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
   else if (install.path) log.info(`[live] Remote Script ${install.status} in ${install.path}`);
   const openUrl = (url, opts) => openBrowser(url, process.platform, undefined, opts);
-  start({ baseDir: dir, alsFile: args.alsFile, scriptInstall: install, logger: log, openBrowser: args.open ? openUrl : null }).catch((e) => {
+  start({
+    baseDir: dir,
+    alsFile: args.alsFile,
+    scriptInstall: install,
+    logger: log,
+    openBrowser: args.open ? openUrl : null,
+    installScript: () => installRemoteScript(path.join(BASE_DIR, "remote-script", "OpenSet"), libs),
+    quit: () => process.exit(0),
+  }).catch((e) => {
     const hint = e.code === "EADDRINUSE" ? " (is OpenSet already running?)" : "";
     log.error(`OpenSet cannot start: ${e.message}${hint}`);
     process.exit(1);

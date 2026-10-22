@@ -353,6 +353,7 @@
     <h2>Connetti un dispositivo</h2>
     <p>Telefono o tablet sulla stessa rete del computer: inquadra il codice con la fotocamera o apri l'indirizzo nel browser.</p>
     <div class="connect" id="connectList"></div>
+    <label>Rete da usare <select id="network"></select></label>
 
     <h2>Generale</h2>
     <label>Vista all'apertura <select id="defaultView">
@@ -449,6 +450,22 @@
       <span class="mono">+CLIPCOLORS</span> la clip «Strofa [blue]» diventa blu e si chiama «Strofa».
       I locator <span class="mono">&gt;</span> sulle clip delle sezioni permettono di saltarci anche mentre suona:
       dopo averli messi salva e riapri il progetto in Live.</p>
+
+    <h2>OpenSet</h2>
+    <p>Versione <span id="appVersion" class="mono"></span> ·
+      <a href="https://github.com/Darkglassd3v/openset#readme" target="_blank" rel="noopener">Documentazione</a> ·
+      <a href="https://github.com/Darkglassd3v/openset/issues/new" target="_blank" rel="noopener">Invia un feedback</a></p>
+    <div class="row">
+      <button class="btn" id="checkUpdate">Controlla aggiornamenti</button>
+      <button class="btn" data-host="open">Apri nel browser</button>
+      <button class="btn" data-host="open" data-app="1">Apri in una finestra</button>
+      <button class="btn" data-host="folder">Cartella dei dati (custom.css, log)</button>
+      <button class="btn" data-host="installScript">Reinstalla il Remote Script</button>
+      <button class="btn" data-host="hostname">Cambia il nome del computer</button>
+      <button class="btn" data-host="quit">Esci da OpenSet</button>
+    </div>
+    <p id="hostStatus" class="dim" role="status"></p>
+    <p class="dim">Questi pulsanti funzionano solo sul computer su cui gira OpenSet.</p>
 
     <h2>Debug</h2>
     <p>Se qualcosa non funziona: subito dopo il problema premi <b>Crea pacchetto log</b>. Il file
@@ -1031,6 +1048,36 @@ async function debugFetch(url) {
 }
 document.querySelectorAll("[data-tool]").forEach((b) => (b.onclick = () => send({ cmd: b.dataset.tool })));
 $("syncPlayback").onclick = () => send({ cmd: "syncPlayback" });
+// AbleSet's menu bar items; quitting asks for a second tap (no browser dialogs on stage)
+document.querySelectorAll("[data-host]").forEach((b) => (b.onclick = async () => {
+  const action = b.dataset.host;
+  if (action === "quit" && b.dataset.armed !== "1") {
+    b.dataset.armed = "1";
+    b.textContent = "Conferma: esci da OpenSet";
+    setTimeout(() => { b.dataset.armed = ""; b.textContent = "Esci da OpenSet"; }, 3000);
+    return;
+  }
+  try {
+    const r = await fetch("/api/host/" + action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app: !!b.dataset.app }) });
+    const j = await r.json();
+    $("hostStatus").textContent = r.status === 403 ? "Solo dal computer su cui gira OpenSet."
+      : !r.ok ? "Non disponibile su questo sistema."
+      : action === "installScript" ? `Remote Script: ${j.status}${j.path ? " in " + j.path : ""}. Riavvia Live.`
+      : action === "quit" ? "OpenSet si sta chiudendo." : "Fatto.";
+  } catch {
+    $("hostStatus").textContent = "OpenSet non risponde.";
+  }
+}));
+$("checkUpdate").onclick = async () => {
+  try {
+    const u = await (await fetch("/api/update")).json();
+    $("hostStatus").innerHTML = u.error ? "Controllo non riuscito: " + esc(u.error)
+      : u.newer ? `Disponibile OpenSet ${esc(u.latest)}${u.url ? `: <a href="${esc(u.url)}" target="_blank" rel="noopener">scarica</a>` : ""}`
+      : `OpenSet ${esc(u.current)} è aggiornato.`;
+  } catch {
+    $("hostStatus").textContent = "Controllo non riuscito.";
+  }
+};
 $("logShow").onclick = async () => {
   try {
     const { lines } = await (await debugFetch("/api/logs")).json();
@@ -1272,6 +1319,7 @@ function renderSettings() {
   $("countInBars").value = String(state.settings.countInBars);
   $("defaultView").value = state.settings.defaultView;
   $("scene").value = state.settings.scene;
+  $("appVersion").textContent = state.version;
   $("openBrowser").value = state.settings.openBrowser;
   $("lastProject").textContent = state.lastProjectName ? `(${state.lastProjectName})` : "(prima carica un .als in «Progetto .als»)";
   $("midiStatus").textContent = midi.status;
@@ -1344,6 +1392,7 @@ $("settings").addEventListener("change", (e) => {
   if (e.target.id === "jumpMode") send({ cmd: "settings", jumpMode: e.target.value });
   if (e.target.id === "countInBars") send({ cmd: "settings", countInBars: Number(e.target.value) });
   if (["defaultView", "openBrowser", "scene"].includes(e.target.id)) send({ cmd: "settings", [e.target.id]: e.target.value });
+  if (e.target.id === "network") { send({ cmd: "settings", network: e.target.value }); setTimeout(loadConnect, 300); }
   if (e.target.id === "devName") { device.name = e.target.value.trim(); saveDevice(); sendDevice(); }
   if (e.target.id === "devView") { device.view = e.target.value; saveDevice(); }
 });
@@ -1438,7 +1487,11 @@ document.addEventListener("keydown", (e) => {
 
 async function loadConnect() {
   try {
-    const { urls } = await (await fetch("/api/connect")).json();
+    const { urls, networks } = await (await fetch("/api/connect")).json();
+    // AbleSet's Preferred Network
+    const cur = state ? state.settings.network : "";
+    $("network").innerHTML = `<option value="">Tutte</option>` +
+      networks.map((n) => `<option value="${esc(n.name)}"${n.name === cur ? " selected" : ""}>${esc(n.name)} · ${esc(n.address)}</option>`).join("");
     $("connectList").innerHTML = urls.map((u) => `<figure>${u.qr}<figcaption class="mono">${esc(u.url)}</figcaption></figure>`).join("") ||
       "<p>Nessuna rete trovata: collega il computer al Wi-Fi o a un cavo di rete.</p>";
   } catch {}

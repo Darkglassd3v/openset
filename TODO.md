@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W7 GREEN
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8)
 
 ## Da fare
 
@@ -81,7 +81,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### W7 — Voci del menu di AbleSet in Opzioni (solo da questo computer)
 - [x] RED: `connect.test.js` (rete preferita, `lanInterfaces`), `server.test.js` (`/api/host/*` da loopback: apri, cartella, nome del computer, Remote Script, esci; `/api/update`; `network` e `/api/connect`)
-- [ ] GREEN: `server/connect.js`, server, CLI, UI (sezione «OpenSet»)
+- [x] GREEN: `server/connect.js` (`lanInterfaces`, rete preferita), server (`/api/host/:action` solo da loopback, `/api/update` con link solo GitHub, `network`), CLI (`installScript`, `quit`), UI (sezione «OpenSet», rete da usare in «Connetti un dispositivo», uscita con doppio tocco)
 - Voci: Documentazione, reinstalla Remote Script, apri cartella dati / custom.css, Change Hostname, Preferred Network, Check for Updates, Submit Feedback, Quit
 
 #### W8 — Rilascio v0.6.0
