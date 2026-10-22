@@ -1213,6 +1213,16 @@ test("lyrics: JSON files with accented names and Live +LYRICS tracks", async (t)
   res = await fetch(c.url("/api/lyrics/Intro%20Song"));
   assert.equal(res.status, 200);
   assert.deepEqual((await res.json()).lines[0].segments, [{ chord: "Bm", text: "Ciao" }]);
+
+  // the Remote Script resends the same clips every ~10 s: the lyrics on screen must not reload
+  const same = (await c.state()).lyricsRev;
+  c.sendLive({
+    type: "clips",
+    tracks: [{ name: "Vox +LYRICS [+2]", clips: [{ name: "[Am]Ciao", start: 0, end: 4 }] }],
+  });
+  c.sendLive({ ...LIVE, tempo: 97 });
+  await waitFor(async () => (await c.state()).tempo === 97, "state after the clips");
+  assert.equal((await c.state()).lyricsRev, same);
 });
 
 test("a busy HTTP or Live state port rejects start() instead of crashing", async (t) => {
