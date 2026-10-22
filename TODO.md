@@ -14,15 +14,15 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ## In corso
 
-- [ ] v0.5.1 su `hotfix/v0.5.1` (da `main` 533df7a = tag v0.5.0 + TODO): V1
+- [ ] v0.5.1 su `hotfix/v0.5.1` (da `main` 533df7a = tag v0.5.0 + TODO): V2 RED
 
 ## Da fare
 
 ### v0.5.1 — feedback all'avvio e convivenza con AbleSet (hotfix)
 
 #### V1 — Porta riservata a Live
-- [ ] RED: lo stato di Live arriva su `127.0.0.1:39061` (`statePort`); il vecchio Remote Script sulla 39051 è ancora accettato; porta OSC occupata → OpenSet parte con OSC spento (`oscPort: null`); porta di stato occupata → `start()` rifiuta (istanza doppia); Remote Script: invia a 39061, `script_version` e `cmd_port` (bind della 39050 riuscito) nello stato
-- [ ] GREEN: `server/index.js`, `remote-script/OpenSet/OpenSet.py`, messaggio di avvio
+- [x] RED: lo stato di Live arriva su `127.0.0.1:39061` (`statePort`); il vecchio Remote Script sulla 39051 è ancora accettato; porta OSC occupata → OpenSet parte con OSC spento (`oscPort: null`); porta di stato occupata → `start()` rifiuta (istanza doppia); Remote Script: invia a 39061, `script_version` e `cmd_port` (bind della 39050 riuscito) nello stato
+- [x] GREEN: `server/index.js`, `remote-script/OpenSet/OpenSet.py`, messaggio di avvio (`[live] state on …`, `[osc] port … busy … Is AbleSet open?`)
 
 #### V2 — La scaletta non sparisce e si vede perché Live non è collegato
 - [ ] RED: dopo il silenzio di Live restano brani e sezioni (salvo progetto `.als` caricato); `liveIssues` nello stato: `no-live`, `live-silent`, `script-updated`, `script-old`, `cmd-port-busy`, `osc-busy`
@@ -33,7 +33,8 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [ ] GREEN: `server/log.js`, server, UI in Opzioni → Debug
 
 #### V4 — Rilascio v0.5.1
-- [ ] Copertura ≥ 80%, CHANGELOG 0.5.1, guida PDF e `INSTALL-*.txt` («OpenSet e AbleSet insieme», «Diagnostica»), README, report TDD `docs/releases/0.5.1/`, versione 0.5.1, PR, CI verde, merge, tag
+- [ ] Copertura ≥ 80%, CHANGELOG 0.5.1, guida PDF e `INSTALL-*.txt` («OpenSet e AbleSet insieme», «Diagnostica»), README, report TDD `docs/releases/0.5.1/`, versione 0.5.1 (anche `VERSION` in `OpenSet.py`), PR, CI verde (le build), merge
+- Spazio GitHub per gli artefatti esaurito (utente, 2026-10-22): niente tag che avvia `release.yml`; la CI deve solo provare le build; zip e PDF si producono in locale (`build/release-<versione>/`) e l'utente li distribuisce a mano
 
 ### v0.6.0 — impostazioni di AbleSet (branch `release/v0.6.0` da `main` dopo la 0.5.1)
 
@@ -60,7 +61,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [ ] Documentazione, reinstalla Remote Script, apri cartella dati / custom.css, Change Hostname, Preferred Network, Check for Updates, Submit Feedback, Quit
 
 #### W8 — Rilascio v0.6.0
-- [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI, merge, tag
+- [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI verde (le build), merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
 
 ### Esclusi (con motivo)
 Show in Dock e licenze (non applicabili); Multi-File Project, Delay Before

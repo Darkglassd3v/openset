@@ -7,7 +7,8 @@ AbleSet (https://ableset.com). Leggi `TODO.md` prima di iniziare qualsiasi lavor
 
 ```
 Ableton Live ── Remote Script Python (remote-script/OpenSet/OpenSet.py)
-                   │ UDP JSON: comandi → :39050, stato ~10 Hz → :39051
+                   │ UDP JSON: comandi → :39050, stato ~10 Hz → 127.0.0.1:39061
+                   │ (OSC su :39051, la porta di AbleSet: facoltativa)
                    ▼
 Server Node (server/index.js) ── HTTP + WebSocket :39080 ── public/index.html
    ├─ server/setlist.js     logica pura: scaletta, ordine, fine brano, timer

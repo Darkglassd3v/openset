@@ -14,7 +14,8 @@ except ImportError:
     # Legacy fallback
     from _Framework.ControlSurface import ControlSurface
 
-SERVER_ADDR = ("127.0.0.1", 39051)   # where the Node server listens
+VERSION = "0.5.0"                    # OpenSet version, same as package.json (checked by the tests)
+SERVER_ADDR = ("127.0.0.1", 39061)   # where the Node server listens; 39051 is AbleSet's OSC port
 LISTEN_PORT = 39050                  # where this script listens for commands
 TICK_MS = 100                        # state broadcast interval
 MAX_DATAGRAM = 8000                  # macOS caps loopback UDP datagrams at 9216 bytes
@@ -42,9 +43,11 @@ class OpenSet(ControlSurface):
                 self._sock.ioctl(socket.SIO_UDP_CONNRESET, False)
             except Exception:
                 pass
+        self._cmd_port = True     # False: commands from OpenSet cannot reach this script
         try:
             self._sock.bind(("127.0.0.1", LISTEN_PORT))
         except OSError:
+            self._cmd_port = False
             self.log_message("OpenSet: port %d busy" % LISTEN_PORT)
         self._song = self.song if not callable(self.song) else self.song()
         self._alive = True
@@ -118,6 +121,8 @@ class OpenSet(ControlSurface):
                 "loop_start": s.loop_start,
                 "loop_length": s.loop_length,
                 "quant": int(s.clip_trigger_quantization),
+                "script_version": VERSION,
+                "cmd_port": self._cmd_port,
             }
             key = json.dumps(cues)
             if key != self._cues_sent:

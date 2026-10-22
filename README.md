@@ -99,7 +99,9 @@ controllo remoto, oppure carica un progetto offline:
 ```
 
 Se all'avvio compare `OpenSet cannot start: ... (is OpenSet or AbleSet already running?)`,
-c'è già un'istanza aperta (o AbleSet, che usa la stessa porta 39051): chiudila.
+c'è già un'istanza di OpenSet aperta: chiudila. OpenSet e AbleSet possono restare
+aperti insieme: se AbleSet occupa la porta OSC 39051, OpenSet parte con l'OSC spento
+e lo segnala.
 `--no-open` avvia OpenSet senza aprire il browser.
 
 ### Indirizzo e altri dispositivi
@@ -328,7 +330,8 @@ Ableton Live 12
 Telefono / Tablet  ──Wi-Fi──▶  http://<ip>  (QR in Opzioni)
 ```
 
-Porte: `39050` (comandi → Live), `39051` (stato ← Live e OSC), `80` o `39080` (web).
+Porte: `39050` (comandi → Live), `39061` (stato ← Live, solo da questo computer),
+`39051` (OSC, la stessa di AbleSet), `80` o `39080` (web).
 
 ## Sviluppo
 

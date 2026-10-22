@@ -41,7 +41,8 @@ const BASE_DIR = process.pkg
 
 // port 80 gives addresses without ":port"; PORT forces one
 const HTTP_PORT = process.env.PORT ? Number(process.env.PORT) : [80, 39080];
-const UDP_LISTEN = 39051; // state from Live (JSON) + OSC from controllers
+const UDP_LISTEN = 39051; // OSC from controllers (AbleSet's port) + Live state from old Remote Scripts
+const UDP_STATE = 39061; // state from Live (JSON), loopback only: AbleSet cannot take it
 const UDP_LIVE = { host: "127.0.0.1", port: 39050 }; // commands to Live
 
 // AbleSet's OSC names for Live's global quantization values
@@ -118,6 +119,7 @@ function start(opts = {}) {
     publicDir: path.join(BASE_DIR, "public"),
     httpPort: HTTP_PORT,
     udpPort: UDP_LISTEN,
+    statePort: UDP_STATE,
     liveHost: UDP_LIVE.host,
     livePort: UDP_LIVE.port,
     liveTimeoutMs: 3000,
@@ -226,6 +228,7 @@ function start(opts = {}) {
     return {
       ...liveState,
       version: VERSION,
+      oscPort,
       tempo,
       offline: !liveState.connected && !!offlineProject,
       setlist: list.map((s) => ({ ...s, seconds: S.songSeconds(s, tempo, map) })),
@@ -263,10 +266,12 @@ function start(opts = {}) {
 
   // ---------------- UDP: Live bridge + OSC ----------------
 
-  const udp = dgram.createSocket("udp4");
+  const udp = dgram.createSocket("udp4"); // OSC
+  const stateUdp = dgram.createSocket("udp4"); // Live state in, commands out
+  let oscPort = null; // null while another app (AbleSet) holds the OSC port
 
   function sendToLive(obj) {
-    udp.send(Buffer.from(JSON.stringify(obj)), cfg.livePort, cfg.liveHost);
+    stateUdp.send(Buffer.from(JSON.stringify(obj)), cfg.livePort, cfg.liveHost);
   }
 
   function handleLive(msg) {
@@ -348,13 +353,17 @@ function start(opts = {}) {
     } catch {}
   }
 
+  function liveJson(buf) {
+    try {
+      handleLive(JSON.parse(buf.toString("utf-8")));
+    } catch {}
+  }
+  stateUdp.on("message", liveJson);
+
   udp.on("message", (buf, rinfo) => {
     if (buf[0] === 0x7b) {
-      // "{": JSON from the Remote Script; only Live on this computer may drive the state
-      if (!isLoopback(rinfo.address)) return;
-      try {
-        handleLive(JSON.parse(buf.toString("utf-8")));
-      } catch {}
+      // "{": JSON from a Remote Script older than 0.5.1; only Live on this computer may drive the state
+      if (isLoopback(rinfo.address)) liveJson(buf);
       return;
     }
     let msgs;
@@ -1017,7 +1026,7 @@ function start(opts = {}) {
     clearInterval(pingTimer);
     for (const c of wss.clients) c.terminate();
     wss.close();
-    udp.close();
+    for (const u of [udp, stateUdp]) try { u.close(); } catch {} // the OSC socket is closed when its port was busy
     server.closeAllConnections();
     return new Promise((resolve) => server.close(() => resolve()));
   }
@@ -1028,29 +1037,46 @@ function start(opts = {}) {
       clearInterval(peerTimer);
       clearInterval(pingTimer);
       wss.close();
-      try { udp.close(); } catch {}
+      for (const u of [udp, stateUdp]) try { u.close(); } catch {}
       reject(e);
     };
-    udp.once("error", fail);
-    // all interfaces for OSC; JSON state is accepted from loopback only
-    udp.bind(cfg.udpPort, "0.0.0.0", () => {
-      udp.removeListener("error", fail);
-      udp.on("error", (e) => console.error("[udp]", e.message));
-      if (cfg.log) console.log(`[udp] listening on ${udp.address().port}, sending commands to ${cfg.livePort}`);
-      // try each port in turn: 80 needs root on Linux or may be taken
-      const ports = [].concat(cfg.httpPort);
-      const listen = (i) => {
-        const onError = (e) =>
-          i + 1 < ports.length && (e.code === "EADDRINUSE" || e.code === "EACCES") ? listen(i + 1) : fail(e);
-        server.once("error", onError);
-        server.listen(ports[i], () => {
-          server.removeListener("error", onError);
-          const httpPort = server.address().port;
-          if (cfg.log) printAddresses(cfg.netInfo(), httpPort);
-          resolve({ httpPort, udpPort: udp.address().port, close });
-        });
+    // try each port in turn: 80 needs root on Linux or may be taken
+    const ports = [].concat(cfg.httpPort);
+    const listen = (i) => {
+      const onError = (e) =>
+        i + 1 < ports.length && (e.code === "EADDRINUSE" || e.code === "EACCES") ? listen(i + 1) : fail(e);
+      server.once("error", onError);
+      server.listen(ports[i], () => {
+        server.removeListener("error", onError);
+        const httpPort = server.address().port;
+        if (cfg.log) printAddresses(cfg.netInfo(), httpPort);
+        resolve({ httpPort, udpPort: oscPort, statePort: stateUdp.address().port, close });
+      });
+    };
+    // OSC is optional: AbleSet listens on the same port, OpenSet runs without it
+    const bindOsc = () => {
+      const busy = (e) => {
+        try { udp.close(); } catch {}
+        if (cfg.log) console.error(`[osc] port ${cfg.udpPort} busy (${e.code}): OSC is off. Is AbleSet open?`);
+        listen(0);
       };
-      listen(0);
+      udp.once("error", busy);
+      // all interfaces for OSC; JSON state is accepted from loopback only
+      udp.bind(cfg.udpPort, "0.0.0.0", () => {
+        udp.removeListener("error", busy);
+        udp.on("error", (e) => console.error("[udp]", e.message));
+        oscPort = udp.address().port;
+        if (cfg.log) console.log(`[osc] listening on ${oscPort}`);
+        listen(0);
+      });
+    };
+    // the Live state port is private to this computer and to one OpenSet: busy means already running
+    stateUdp.once("error", fail);
+    stateUdp.bind(cfg.statePort, "127.0.0.1", () => {
+      stateUdp.removeListener("error", fail);
+      stateUdp.on("error", (e) => console.error("[udp]", e.message));
+      if (cfg.log) console.log(`[live] state on 127.0.0.1:${stateUdp.address().port}, commands to ${cfg.livePort}`);
+      bindOsc();
     });
   });
 }
