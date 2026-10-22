@@ -1990,3 +1990,22 @@ test("C2: Remove Played Songs takes out only the reprise that was played", async
   await waitFor(async () => (await c.state()).setlist.find((s) => s.key === "A#2")?.skip, "the reprise removed");
   assert.equal((await c.state()).setlist.find((s) => s.key === "A").skip, false);
 });
+
+test("C3: one address cannot open connections without limit, nor everyone together", async (t) => {
+  const c = await setup(t, { wsPerIp: 2, wsMax: 3 });
+  // resolves with the open socket, or with the HTTP status of a refusal
+  const open = (host = "127.0.0.1") =>
+    new Promise((resolve) => {
+      const ws = new WebSocket(`ws://${host}:${c.srv.httpPort}`);
+      ws.once("open", () => resolve(ws));
+      ws.once("unexpected-response", (_req, res) => resolve(res.statusCode));
+      ws.on("error", () => {});
+      t.after(() => ws.terminate());
+    });
+  assert.ok((await open()) instanceof WebSocket);
+  assert.ok((await open()) instanceof WebSocket);
+  assert.equal(await open(), 503);
+  if (!LAN_IP) return;
+  assert.ok((await open(LAN_IP)) instanceof WebSocket);
+  assert.equal(await open(LAN_IP), 503); // 3 connections in all
+});
