@@ -98,6 +98,14 @@ class FakeSong(object):
     def re_enable_automation(self):
         self.calls.append("re_enable_automation")
 
+    def set_or_delete_cue(self):
+        # like Live: toggles a cue point at the current position
+        same = [c for c in self.cue_points if abs(c.time - self.current_song_time) < 1e-6]
+        if same:
+            self.cue_points.remove(same[0])
+        else:
+            self.cue_points.append(FakeCue("", self.current_song_time))
+
     def add_is_playing_listener(self, cb):
         self.listeners.append(cb)
 
@@ -219,6 +227,35 @@ class OpenSetTest(unittest.TestCase):
             clips[0]["tracks"],
             [{"name": "Markers +SECTIONS +CC", "clips": [{"name": "Verse", "start": 0.0, "end": 8.0, "color": 23}]}],
         )
+
+    def test_set_clip_colors_from_names(self):
+        def clip(name, start, color):
+            c = FakeClip(name, start, start + 8.0)
+            c.color_index = color
+            return c
+
+        a, b, c = clip("Verse [blue]", 0.0, 0), clip("Chorus", 8.0, 5), clip("Solo [Orange] x", 16.0, 0)
+        other = clip("Pad [red]", 0.0, 3)
+        self.song.tracks = [FakeTrack("Sections +CC", [a, b, c]), FakeTrack("Keys", [other])]
+        self.os._handle({"cmd": "setClipColorsFromNames"})
+        self.assertEqual([(x.name, x.color_index) for x in (a, b, c)], [("Verse", 9), ("Chorus", 5), ("Solo x", 1)])
+        self.assertEqual((other.name, other.color_index), ("Pad [red]", 3))  # no +CC/+CLIPCOLORS: untouched
+
+    def test_place_and_remove_section_locators(self):
+        self.song.cue_points = [FakeCue("Song A", 0.0), FakeCue(">Chorus", 8.0)]
+        clips = [FakeClip("Verse", 0.0, 8.0), FakeClip("Chorus", 8.0, 16.0), FakeClip("Bridge", 16.0, 24.0)]
+        self.song.tracks = [FakeTrack("Sections", clips)]
+        self.song.current_song_time = 40.0
+        self.os._handle({"cmd": "placeSectionLocators"})
+        # clips without a locator get a ">" one; existing locators are never toggled away
+        cues = lambda: sorted((c.time, c.name) for c in self.song.cue_points)
+        self.assertEqual(cues(), [(0.0, "Song A"), (8.0, ">Chorus"), (16.0, ">")])
+        self.assertEqual(self.song.current_song_time, 40.0)  # playhead put back
+        self.os._handle({"cmd": "removeSectionLocators"})
+        self.assertEqual(cues(), [(0.0, "Song A"), (8.0, ">Chorus")])
+        self.song.is_playing = True  # moving the playhead while playing: refused
+        self.os._handle({"cmd": "placeSectionLocators"})
+        self.assertEqual(cues(), [(0.0, "Song A"), (8.0, ">Chorus")])
 
     def test_cues_are_resent_only_when_they_change(self):
         self.received()

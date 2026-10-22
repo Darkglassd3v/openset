@@ -306,6 +306,22 @@ test("Remove Played Songs Automatically: a song played to its end leaves the set
   assert.ok(!c.cmds.some((x) => x.cmd === "played")); // OpenSet's own marker, never sent to Live
 });
 
+test("Tools (AbleSet): clip colors from names, place and remove section locators", async (t) => {
+  const c = await setup(t);
+  const tools = ["setClipColorsFromNames", "placeSectionLocators", "removeSectionLocators"];
+  assert.equal((await c.cmd({ cmd: tools[0] })).status, 400); // Live is not connected
+  await c.connect();
+  for (const cmd of tools) {
+    const got = c.expectCmd({ cmd });
+    assert.equal((await c.cmd({ cmd })).status, 200);
+    await got;
+  }
+  // the locator tools move Live's playhead: not while playing
+  await c.at(10, { is_playing: true });
+  assert.equal((await c.cmd({ cmd: "placeSectionLocators" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "removeSectionLocators" })).status, 400);
+});
+
 test("debug logs: Live connection events, file log and log package", async (t) => {
   const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();

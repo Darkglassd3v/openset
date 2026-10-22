@@ -4,6 +4,7 @@ const {
   parseName,
   buildSetlist,
   cuesFromLive,
+  CLIP_COLORS,
   applyOrder,
   songAt,
   sectionAt,
@@ -262,7 +263,12 @@ test("cuesFromLive: any track with the +SECTIONS flag is the sections track", ()
 test("cuesFromLive: a '>' locator on a section clip takes the clip's name and color", () => {
   const clips = [{ name: "Verse", start: 0, end: 8, color: 0 }, { name: "Chorus", start: 8, end: 16, color: 9 }];
   const [s] = buildSetlist(cuesFromLive([{ name: "A", time: 0 }, { name: ">", time: 8 }], [{ name: "Sections +CC", clips }]));
-  assert.deepEqual(s.sections.map((x) => [x.name, x.color, x.time]), [["Verse", "rose", 0], ["Chorus", "blue", 8]]);
+  assert.deepEqual(s.sections.map((x) => [x.name, x.color, x.time]), [["Verse", "red", 0], ["Chorus", "blue", 8]]);
+});
+
+test("CLIP_COLORS: one AbleSet color per column of Live's palette, by hue", () => {
+  // column 0 holds Live's pure red (second row), column 6 its teal
+  assert.deepEqual(CLIP_COLORS, ["red", "orange", "amber", "yellow", "lime", "green", "teal", "cyan", "sky", "blue", "indigo", "purple", "pink", "gray"]);
 });
 
 test("cuesFromLive: no tracks returns the cues unchanged", () => {
