@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), audit fatto (A1-A4), prossimo W8 (rilascio)
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), audit fatto (A1-A4), guida PDF strutturata (G1), poi W8 (rilascio)
 
 ## Da fare
 
@@ -83,6 +83,10 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] RED: `connect.test.js` (rete preferita, `lanInterfaces`), `server.test.js` (`/api/host/*` da loopback: apri, cartella, nome del computer, Remote Script, esci; `/api/update`; `network` e `/api/connect`)
 - [x] GREEN: `server/connect.js` (`lanInterfaces`, rete preferita), server (`/api/host/:action` solo da loopback, `/api/update` con link solo GitHub, `network`), CLI (`installScript`, `quit`), UI (sezione «OpenSet», rete da usare in «Connetti un dispositivo», uscita con doppio tocco)
 - Voci: Documentazione, reinstalla Remote Script, apri cartella dati / custom.css, Change Hostname, Preferred Network, Check for Updates, Submit Feedback, Quit
+
+#### G1 — Guida PDF strutturata (richiesta dell'utente, 2026-10-22)
+- [x] RED `guide.test.js`: copertina (logo grande, nome, versione), indice cliccabile, capitoli in ordine (prima le funzioni di base: installazione, Live, dispositivi, uso, opzioni, log, problemi; ultime novità e correzioni), intestazione del capitolo ripetuta su ogni pagina, numeri di pagina; CHANGELOG con `### Novità` e `### Correzioni`
+- [ ] GREEN: `scripts/build-guide.js` (HTML stampato da Chrome), PDF controllato a occhio
 
 #### W8 — Rilascio v0.6.0
 - [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI verde (le build), merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
