@@ -65,6 +65,7 @@ class OpenSet(ControlSurface):
         self._chunk_id = int(time.time() * 1000) % 1000000000
         self._cues_sent = None    # last cues sent, resent only when they change
         self._clips_sent = None
+        self._soloed = []         # tracks soloed for a count-in, unsoloed after it
         self._log("OpenSet script %s started (Live %s)" % (VERSION, self._live_version or "unknown"))
         if not self._cmd_port:
             self._log("OpenSet: port %d busy" % LISTEN_PORT)
@@ -224,6 +225,8 @@ class OpenSet(ControlSurface):
             s.tempo = float(msg.get("bpm", s.tempo))
         elif cmd == "quant":
             s.clip_trigger_quantization = _quantization(int(msg.get("value", 4)))
+        elif cmd == "clickSolo":
+            self._click_solo(bool(msg.get("on")))
         elif cmd == "reEnableAutomation":
             s.re_enable_automation()
         elif cmd == "backToArrangement":
@@ -233,6 +236,21 @@ class OpenSet(ControlSurface):
             self._clips_sent = None
         elif cmd == "ping":
             self._send({"type": "pong"})
+
+
+    def _click_solo(self, on):
+        # AbleSet: the first track or group with "click", +CLICK tracks and Lifesine
+        for t in self._soloed:
+            t.solo = False
+        self._soloed = []
+        if not on:
+            return
+        tracks = list(self._song.tracks)
+        first = next((t for t in tracks if "click" in t.name.lower()), None)
+        for t in tracks:
+            if (t is first or "+CLICK" in t.name or t.name.strip().lower() == "lifesine") and not t.solo:
+                t.solo = True
+                self._soloed.append(t)
 
 
 def create_instance(c_instance):

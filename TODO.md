@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W2 GREEN
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W3 RED
 
 ## Da fare
 
@@ -49,7 +49,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### W2 — Section Count-In
 - [x] RED: `server.test.js` (impostazioni, seek e play N battute prima, solo del click fino alla sezione o allo stop, niente count-in mentre suona, mai prima di 0), `test_openset.py` (`clickSolo`)
-- [ ] GREEN: server, Remote Script, UI
+- [x] GREEN: server (`startCountIn`, `countIn.until`), Remote Script (`_click_solo` ripristina solo le tracce che ha messo in solo), UI (Opzioni → Riproduzione)
 - Voci: Count-in prima della sezione scelta (1, 2 o 4 battute); solo della traccia click (prima traccia o gruppo con «click», tracce `+CLICK`, «Lifesine») durante il count-in
 
 #### W3 — Setlist

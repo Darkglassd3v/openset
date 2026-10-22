@@ -57,7 +57,8 @@ const strMap = (o) =>
   !!o && typeof o === "object" && !Array.isArray(o) && Object.values(o).every((x) => typeof x === "string");
 const isLoopback = (a) => typeof a === "string" && (a === "::1" || /^(::ffff:)?127\./.test(a));
 const validName = (n) => typeof n === "string" && n.trim().length > 0 && n.length <= 64;
-const validSetting = (k, v) => (k === "jumpMode" ? JUMP_MODES.includes(v) : typeof v === "boolean");
+const validSetting = (k, v) =>
+  k === "jumpMode" ? JUMP_MODES.includes(v) : k === "countInBars" ? [1, 2, 4].includes(v) : typeof v === "boolean";
 
 function defaultPrefs() {
   return {
@@ -79,6 +80,10 @@ function defaultPrefs() {
       reEnableAutomation: false,
       backToArrangement: false,
       keepPlayingQueued: false,
+      // Section Count-In
+      countIn: false,
+      countInBars: 1,
+      countInSoloClick: false,
     },
     saved: {},
     backups: [], // saved setlists replaced by a newer save: { name, at, data }, newest first
@@ -363,6 +368,15 @@ function start(opts = {}) {
           `command port ${liveState.cmd_port === false ? "busy" : "ok"}`
       );
     if (Array.isArray(newCues)) cues = newCues;
+    // count-in: the click goes back to normal at the section, or when playback stops
+    if (countIn) {
+      if (liveState.is_playing && liveState.beat < countIn.until - S.EPS) countIn.started = true;
+      const done = countIn.started && liveState.beat >= countIn.until - S.EPS;
+      if (done || (wasPlaying && !liveState.is_playing)) {
+        countIn = null;
+        sendToLive({ cmd: "clickSolo", on: false });
+      }
+    }
     const list = setlist();
     if (!wasConnected) sendToLive({ cmd: "resync" }); // ask for cues and clips again
     else {
@@ -527,10 +541,25 @@ function start(opts = {}) {
 
   // ---------------- commands (WebSocket, HTTP, OSC) ----------------
 
+  // AbleSet's Section Count-In: from a section chosen while stopped, playback
+  // starts a few bars earlier, with the click soloed until the section starts
+  let countIn = null; // { until: beat of the section, started }
+  function startCountIn(time) {
+    const bar = ((liveState.sig_num || 4) * 4) / (liveState.sig_den || 4);
+    sendToLive({ cmd: "seek", time: Math.max(0, time - prefs.settings.countInBars * bar) });
+    if (prefs.settings.countInSoloClick) {
+      sendToLive({ cmd: "clickSolo", on: true });
+      countIn = { until: time, started: false };
+    }
+    sendToLive({ cmd: "play" });
+    return true;
+  }
+
   // A jump from the user. In the queued jump modes, while playing, it waits
   // for the engine (end of section/song) or for J / Shift+J / a stop.
   function jumpTo(time, type = "section") {
     if (prefs.settings.disableLoopOnJump && liveState.loop) sendToLive({ cmd: "loop", on: false });
+    if (type === "section" && prefs.settings.countIn && !liveState.is_playing) return startCountIn(time);
     if (prefs.settings.jumpMode !== "quantized" && liveState.is_playing) {
       queued = { time, type };
       changed();

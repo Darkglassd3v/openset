@@ -361,6 +361,10 @@
     <label><input type="checkbox" data-set="disableLoopOnJump"> Disattiva il loop quando salti a un brano o a una sezione</label>
     <label><input type="checkbox" data-set="reEnableAutomation"> Riattiva l'automazione di Live a ogni salto di brano</label>
     <label><input type="checkbox" data-set="backToArrangement"> Riporta le tracce all'Arrangement (Back to Arrangement) a ogni salto di brano</label>
+    <label><input type="checkbox" data-set="countIn"> Count-in: da fermo, la sezione scelta parte qualche battuta prima (per provare)</label>
+    <label>Durata del count-in <select id="countInBars">
+      <option value="1">1 battuta</option><option value="2">2 battute</option><option value="4">4 battute</option></select></label>
+    <label><input type="checkbox" data-set="countInSoloClick"> Solo del click durante il count-in (prima traccia o gruppo con «click», tracce <span class="mono">+CLICK</span>, «Lifesine»)</label>
 
     <h2>Sicurezza</h2>
     <label><input type="checkbox" data-set="safeMode"> Safe Mode: mentre suona, niente cambi di brano dalla web app e conferma prima dello stop</label>
@@ -1199,6 +1203,7 @@ function renderSettings() {
   if (!("speechSynthesis" in window)) $("speechStatus").textContent = "Sintesi vocale non disponibile in questo browser.";
   $("quant").value = String(state.quant);
   $("jumpMode").value = state.settings.jumpMode;
+  $("countInBars").value = String(state.settings.countInBars);
   $("midiStatus").textContent = midi.status;
   $("midiLearn").textContent = midi.learning ? "Premi un tasto MIDI… (annulla)" : "Impara da MIDI";
   $("midiList").innerHTML = state.midi.map((m, i) => `
@@ -1266,6 +1271,7 @@ $("settings").addEventListener("change", (e) => {
   }
   if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
   if (e.target.id === "jumpMode") send({ cmd: "settings", jumpMode: e.target.value });
+  if (e.target.id === "countInBars") send({ cmd: "settings", countInBars: Number(e.target.value) });
   if (e.target.id === "devName") { device.name = e.target.value.trim(); saveDevice(); sendDevice(); }
   if (e.target.id === "devView") { device.view = e.target.value; saveDevice(); }
 });
