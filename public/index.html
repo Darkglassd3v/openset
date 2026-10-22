@@ -439,9 +439,10 @@
       dopo averli messi salva e riapri il progetto in Live.</p>
 
     <h2>Debug</h2>
-    <p>Il registro di OpenSet: avvio, porte, collegamento con Live, errori del Remote Script.
-      Se qualcosa non va, crea il pacchetto log e invialo: contiene anche le righe di OpenSet
-      dal <span class="mono">Log.txt</span> di Live.</p>
+    <p>Se qualcosa non funziona: subito dopo il problema premi <b>Crea pacchetto log</b>. Il file
+      <span class="mono">openset-&lt;versione&gt;-log-&lt;data&gt;.txt</span> finisce nella cartella <b>Download</b>:
+      invialo con due righe su cosa stavi facendo e cosa è successo. Contiene versione, porte, stato di Live,
+      il registro di OpenSet e le sue righe dal <span class="mono">Log.txt</span> di Live.</p>
     <div class="row">
       <button class="btn" id="logShow">Mostra log</button>
       <button class="btn" id="logPackage">Crea pacchetto log</button>
@@ -1014,7 +1015,7 @@ $("logPackage").onclick = async () => {
     a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    $("logStatus").textContent = "Salvato " + name + ": invialo insieme alla descrizione del problema.";
+    $("logStatus").textContent = "Salvato nella cartella Download: " + name + ". Invialo con due righe su cosa è successo.";
   } catch (err) {
     $("logStatus").textContent = "Pacchetto log non disponibile: " + err.message;
   }

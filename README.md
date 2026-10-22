@@ -147,10 +147,20 @@ tenevano accanto al programma (gli originali restano dove sono). Il percorso è
 stampato all'avvio (`[data] ...`).
 
 Nella stessa cartella c'è il registro `openset.log` (oltre 1 MB il precedente
-diventa `openset.old.log`). Se qualcosa non va, Opzioni → Debug → **Crea pacchetto
-log** scarica `openset-<versione>-log-<data>.txt` con versione, sistema, porte,
-stato di Live, registro e le righe di OpenSet dal `Log.txt` di Live: invialo con
-due righe su cosa è successo.
+diventa `openset.old.log`).
+
+**Esportare i log** (se qualcosa non funziona):
+
+1. Subito dopo il problema lascia aperti OpenSet e Live.
+2. Nella pagina di OpenSet apri **Opzioni** e scorri fino a **Debug**.
+3. Premi **Crea pacchetto log**: il browser salva `openset-<versione>-log-<data>.txt`
+   nella cartella **Download** (versione, sistema, porte, stato di Live, registro e
+   righe di OpenSet dal `Log.txt` di Live).
+4. Invia il file con due righe: cosa stavi facendo e cosa è successo.
+
+Se la pagina non si apre, invia `openset.log` dalla cartella dei dati:
+macOS `open ~/Library/Application\ Support/OpenSet`, Windows `Win+R` →
+`explorer %APPDATA%\OpenSet`, Linux `xdg-open ~/.config/openset`.
 
 ### Da sorgente (tutte le piattaforme, richiede Node.js ≥ 18)
 

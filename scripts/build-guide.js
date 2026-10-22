@@ -159,16 +159,28 @@ ${cmd(`unzip openset-${v}-linux-x64.zip -d openset && cd openset`, `chmod +x ope
 <p class="note">I pedali Bluetooth «volta pagina» inviano le frecce e PagSu/PagGiù.</p>
 
 <h2>Diagnostica e log</h2>
-<p>OpenSet scrive un registro in <code>openset.log</code>, nella cartella dei dati (macOS
-<code>~/Library/Application Support/OpenSet</code>, Windows <code>%APPDATA%\\OpenSet</code>, Linux
-<code>~/.config/openset</code>): avvio, porte, quando Live si collega o smette di rispondere, errori del
-Remote Script e crash.</p>
+<p>Se qualcosa non funziona, manda il <b>pacchetto log</b>: un file di testo con tutto quello che serve per capire
+il problema (versione, sistema, porte, stato di Live, registro di OpenSet e righe di OpenSet dal <code>Log.txt</code> di Live).</p>
+<h3>Esportare il pacchetto log</h3>
 <ol>
-  <li>Opzioni → <b>Debug</b> → <b>Mostra log</b> per leggerlo.</li>
-  <li>Se qualcosa non va: <b>Crea pacchetto log</b>. Si scarica <code>openset-&lt;versione&gt;-log-&lt;data&gt;.txt</code>
-    con versione, sistema, porte, stato di Live, il registro e le righe di OpenSet dal <code>Log.txt</code> di Live.
-    Invialo con due righe su cosa è successo.</li>
+  <li>Subito dopo il problema, lascia aperti OpenSet e Live.</li>
+  <li>Nella pagina di OpenSet (sul computer, o da telefono e tablet) apri <b>Opzioni</b> e scorri fino a <b>Debug</b>.</li>
+  <li>Premi <b>Crea pacchetto log</b>. Il browser salva <code>openset-&lt;versione&gt;-log-&lt;data&gt;.txt</code>
+    nella cartella <b>Download</b>. Se è impostata una password, da telefono e tablet premi prima <b>Sblocca</b>.</li>
+  <li>Invia quel file (email, WhatsApp, Telegram) con due righe: cosa stavi facendo e cosa è successo.</li>
 </ol>
+<p><b>Mostra log</b>, accanto, fa vedere il registro sullo schermo.</p>
+<h3>Se la pagina di OpenSet non si apre</h3>
+<p>Il registro è anche nel file <code>openset.log</code> (e <code>openset.old.log</code>, se c'è) nella cartella dei dati.
+Aprila e invia quei file:</p>
+<p>macOS, nel Terminale:</p>
+${cmd("open ~/Library/Application\\ Support/OpenSet")}
+<p>Windows: premi <code>Win</code> + <code>R</code>, scrivi e premi Invio:</p>
+${cmd("explorer %APPDATA%\\OpenSet")}
+<p>Linux:</p>
+${cmd("xdg-open ~/.config/openset")}
+<p>Se OpenSet si chiude appena aperto, copia anche il testo della sua finestra (Terminale su macOS e Linux,
+finestra nera su Windows): l'errore è nelle ultime righe.</p>
 <h3>OpenSet e AbleSet insieme</h3>
 <p>Possono restare aperti insieme. Live manda lo stato a OpenSet su una porta privata (<code>127.0.0.1:39061</code>).
 La porta OSC <code>39051</code> è la stessa di AbleSet: se AbleSet la occupa, OpenSet parte con l'OSC spento e lo scrive

@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): spiegazione chiara dell'esportazione dei log (richiesta utente), poi W5
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W5 RED
 
 ## Da fare
 
@@ -59,6 +59,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### Ritocchi chiesti dall'utente
 - [x] Riquadro dei motivi (2026-10-22): testi professionali, tutto maiuscolo, titolo in ambra + indicazione
+- [x] Esportare i log spiegato passo passo (2026-10-22): guida PDF, `INSTALL-*.txt` con il comando per aprire la cartella dei dati su ogni sistema, README, Opzioni → Debug (il file va nella cartella Download)
 
 #### W4 — Colori e Tools
 - [x] RED colori: `setlist.test.js` (`[colore]`, ereditato dalle sezioni, `+CC`/`+CLIPCOLORS` per colonna, `+SECTIONS`, locator `>` sulla clip), `als-parser.test.js` (`Color`/`ColorIndex`, `+SECTIONS`), `test_openset.py` (`color` e `+SECTIONS`)
