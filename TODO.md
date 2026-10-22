@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), audit fatto (A1-A4), guida PDF strutturata (G1), poi W8 (rilascio)
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), audit (A1-A4) e guida (G1) fatti; W8: PR, merge e build locale
 
 ## Da fare
 
@@ -89,7 +89,8 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] GREEN: `scripts/build-guide.js` (HTML stampato da Chrome), PDF controllato a occhio: 17 pagine, 49 link interni
 
 #### W8 — Rilascio v0.6.0
-- [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI verde (le build), merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
+- [x] Copertura (righe 99.28%, rami 93.47%), CHANGELOG 0.6.0 (Novità e Correzioni), README, report TDD `docs/releases/0.6.0/v0.6.0.tdd.md`, versione 0.6.0 (VERSION, package.json, Remote Script)
+- [ ] PR verso `main`, CI verde (le build), revisione, merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
 
 ### Audit completo dopo W7, prima del rilascio W8 (richiesto dall'utente il 2026-10-22: i bug trovati si correggono nella 0.6.0)
 - Via libera dell'utente il 2026-10-22: audit, correzioni, commit, push, PR e merge (stato salvato anche con `/ecc:ck save`)
