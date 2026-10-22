@@ -90,6 +90,8 @@ test("guide: cover with the big logo, name and version, then a clickable index",
   assert.ok(links.length >= 9, String(links));
   for (const id of links) assert.match(html, new RegExp(`id="${id}"`), "target of #" + id);
   assert.ok(html.indexOf('class="cover"') < html.indexOf('class="toc"'), "cover, then index");
+  // the dark cover fills the whole A4 page: no white strip at the bottom (user, 2026-10-22)
+  assert.match(html, /\.cover \{ height: 297mm;/);
   // page numbers in the footer, none on the cover
   assert.match(html, /@bottom-center[^}]*counter\(page\)/);
   assert.match(html, /@page :first/);
