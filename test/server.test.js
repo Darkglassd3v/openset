@@ -291,6 +291,21 @@ test("Section Count-In: not while playing, never before the start of the set", a
   await j;
 });
 
+test("Remove Played Songs Automatically: a song played to its end leaves the setlist", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  assert.equal((await c.state()).settings.removePlayed, false);
+  await c.cmd({ cmd: "settings", removePlayed: true });
+  await c.at(31.9, { is_playing: true }); // Intro Song ends with STOP at 32
+  const stop = c.expectCmd({ cmd: "stop" });
+  const next = c.expectCmd({ cmd: "jump", time: 40 });
+  await c.at(32.1, { is_playing: true });
+  await stop;
+  await next;
+  await waitFor(async () => (await c.state()).setlist.find((s) => s.name === "Intro Song").skip, "Intro Song removed");
+  assert.ok(!c.cmds.some((x) => x.cmd === "played")); // OpenSet's own marker, never sent to Live
+});
+
 test("debug logs: Live connection events, file log and log package", async (t) => {
   const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();

@@ -242,3 +242,14 @@ test("Always Keep Playing When Jumping to Queued Songs: no stop before a queued 
   // nothing queued: a STOP still stops
   assert.deepEqual(play(stopSet, [31.9, 32.1], keep("song")), [STOP, jump(40)]);
 });
+
+test("Remove Played Songs Automatically: the song end reports the played song first", () => {
+  const removing = mode("quantized", { removePlayed: true });
+  const played = (name) => ({ cmd: "played", name });
+  assert.deepEqual(play(set(QSET), [31.9, 32.1], removing), [played("A"), jump(40)]);
+  // the next song starts right at the end: no jump, the song is still reported
+  const tight = set([{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "C", time: 16 }]);
+  assert.deepEqual(play(tight, [7.9, 8.1], removing), [played("A")]);
+  // off by default
+  assert.deepEqual(play(tight, [7.9, 8.1]), []);
+});
