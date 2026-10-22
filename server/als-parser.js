@@ -2,6 +2,7 @@
 // tempo, time signature and locators — usable offline, without Live running.
 const fs = require("fs");
 const zlib = require("zlib");
+const { isSectionsTrack } = require("./setlist");
 
 function parseAls(filePath) {
   const raw = fs.readFileSync(filePath);
@@ -30,14 +31,21 @@ function parseAls(filePath) {
   const tracks = [];
   for (const block of xml.match(/<MidiTrack[\s>][\s\S]*?<\/MidiTrack>/g) || []) {
     const name = matchAttr(block, "EffectiveName") || "";
-    if (!/^sections\b/i.test(name.trim()) && !name.includes("+LYRICS")) continue;
+    if (!isSectionsTrack(name) && !name.includes("+LYRICS")) continue;
     const arranger = block.match(/<ArrangerAutomation>[\s\S]*?<\/ArrangerAutomation>/);
     const clips = [];
     for (const clip of (arranger && arranger[0].match(/<MidiClip[\s>][\s\S]*?<\/MidiClip>/g)) || []) {
       const start = parseFloat(matchAttr(clip, "CurrentStart"));
       const end = parseFloat(matchAttr(clip, "CurrentEnd"));
+      // Live 11+ writes <Color>, Live 10 <ColorIndex>
+      const color = parseInt(matchAttr(clip, "Color") ?? matchAttr(clip, "ColorIndex"), 10);
       if (Number.isFinite(start))
-        clips.push({ name: matchAttr(clip, "Name") || "", start, end: Number.isFinite(end) ? end : start });
+        clips.push({
+          name: matchAttr(clip, "Name") || "",
+          start,
+          end: Number.isFinite(end) ? end : start,
+          ...(Number.isInteger(color) && { color }),
+        });
     }
     clips.sort((a, b) => a.start - b.start);
     tracks.push({ name, clips });

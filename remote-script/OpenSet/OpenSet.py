@@ -167,14 +167,15 @@ class OpenSet(ControlSurface):
         for t in all_tracks:
             try:
                 name = t.name
-                if not (name.strip().lower().startswith("sections") or "+LYRICS" in name):
+                sections = name.strip().lower().startswith("sections") or "+SECTIONS" in name.split()
+                if not (sections or "+LYRICS" in name):
                     continue
                 clips = getattr(t, "arrangement_clips", None)
                 if clips is None:
                     continue
                 tracks.append({
                     "name": name,
-                    "clips": [{"name": c.name, "start": c.start_time, "end": c.end_time} for c in clips],
+                    "clips": [self._clip(c) for c in clips],
                 })
             except Exception as e:
                 self._log("OpenSet clips error: %s" % e)
@@ -182,6 +183,14 @@ class OpenSet(ControlSurface):
         if key != self._clips_sent:
             self._clips_sent = key
             self._send({"type": "clips", "tracks": tracks})
+
+    @staticmethod
+    def _clip(c):
+        clip = {"name": c.name, "start": c.start_time, "end": c.end_time}
+        color = getattr(c, "color_index", None)  # Live 11+: for +CC section colors
+        if color is not None:
+            clip["color"] = color
+        return clip
 
     # ---------- server -> Live ----------
 
