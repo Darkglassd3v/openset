@@ -16,6 +16,9 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
 - [x] v0.6.0: PR #3 (merge `279f7fa`), tag `v0.6.0` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), 4 zip e guida PDF in `build/release-0.6.0/`, CI verde su Windows, macOS e Ubuntu
+- [ ] Release senza artefatti delle Actions (scelta dell'utente, 2026-10-22): `release.yml` con un solo job su macOS, provato sulle PR che toccano il rilascio, pubblica solo dal tag; poi tag `v0.6.0` spostato sul nuovo `main` e pushato (release pubblica)
+  - [x] RED `packaging.test.js`: niente `upload-artifact`/`download-artifact`, un solo job su `macos-latest`, `codesign` del programma arm64, prova sulle PR, pubblicazione solo dai tag
+  - [ ] GREEN: `.github/workflows/release.yml`
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`); scegliere dove pubblicare le release (vedi «Da decidere»)
 
 ## Da fare
@@ -192,7 +195,6 @@ for Live).
 
 ## Da decidere con l'utente
 
-- Dove pubblicare le release (chiesto il 2026-10-22): repo privato + repo pubblico solo per le release, oppure itch.io, oppure codice pubblico come ora
 - Brani aggiunti a mano dalla UI, senza progetto Live (solo scaletta e testi):
   proposto il 2026-10-20, in attesa di risposta.
 
