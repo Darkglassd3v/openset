@@ -109,7 +109,7 @@ Il programma gira sul computer con Live; gli altri dispositivi aprono il suo ind
     Riavvia Live → Impostazioni → <b>Link, Tempo e MIDI</b> → Superficie di controllo: <b>OpenSet</b>, Input e Output su Nessuno.</li>
 </ol>
 <p class="note">Dal Terminale, con opzioni:</p>
-${cmd(`APP="/Applications/${app}/Contents/Resources/openset-${v}"`, `"$APP" --no-open`, `PORT=39080 "$APP"`)}
+${cmd(`APP="/Applications/${app}/Contents/Resources/openset-${v}"`, `codesign -v "$APP" || codesign --force --sign - "$APP"`, `"$APP" --no-open`, `PORT=39080 "$APP"`)}
 
 <h2>Linux</h2>
 <p>Ableton Live non esiste per Linux: usalo come postazione di controllo, o per una scaletta da un file <code>.als</code>.</p>
