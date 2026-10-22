@@ -2,7 +2,7 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { searchSongs, setlistText, parseSetlistText } = require("../server/editor");
 
-const song = (name, extra = {}) => ({ name, description: "", tags: [], notes: "", skip: false, stopAfter: false, ...extra });
+const song = (name, extra = {}) => ({ name, key: name, description: "", tags: [], notes: "", skip: false, stopAfter: false, ...extra });
 const SONGS = [
   song("Hey Brother", { tags: ["opener"] }),
   song("Perché", { description: "Capo 2" }),
@@ -48,4 +48,13 @@ test("pasted setlist: Apple Notes line breaks and \r, long lines stay fast (audi
   const t0 = Date.now();
   parseSetlistText("a" + " ".repeat(98000) + "b\nRoads {x", SONGS);
   assert.ok(Date.now() - t0 < 300, `took ${Date.now() - t0} ms`);
+});
+
+test("C2: a pasted setlist with a reprise keeps the two songs apart", () => {
+  const list = [song("Intro"), song("B"), song("Intro", { key: "Intro#2" })];
+  const out = parseSetlistText("Intro\nIntro {ripresa}\n-- stop --\n", list);
+  assert.deepEqual(out.order, ["Intro", "Intro#2", "B"]);
+  assert.deepEqual(out.skip, ["B"]);
+  assert.deepEqual(out.stopAfter, ["Intro#2"]);
+  assert.deepEqual(out.notes, { "Intro#2": "ripresa" });
 });

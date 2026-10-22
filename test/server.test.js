@@ -1980,3 +1980,13 @@ test("A4: a backup poll that ends after OpenSet is closed does not throw", async
   await pause(150);
   assert.deepEqual(errors, []);
 });
+
+test("C2: Remove Played Songs takes out only the reprise that was played", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] });
+  await c.cmd({ cmd: "settings", removePlayed: true });
+  await c.at(23.9, { is_playing: true });
+  await c.at(24.1, { is_playing: true });
+  await waitFor(async () => (await c.state()).setlist.find((s) => s.key === "A#2")?.skip, "the reprise removed");
+  assert.equal((await c.state()).setlist.find((s) => s.key === "A").skip, false);
+});

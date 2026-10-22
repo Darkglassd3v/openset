@@ -52,7 +52,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
 - [x] C1 Computer di riserva — RED `d4c5c55`, GREEN (`server.test.js`: una riserva silenziosa non blocca le altre; risposta «rifiuta» arrivata dopo averla tolta)
   - Quando togli dalla lista un computer di riserva con password e intanto gli stava arrivando un comando, rimettendolo la lista lo segnava ancora come «rifiuta i comandi». Ora la risposta di un computer già tolto viene ignorata (`peerDenied`).
   - Con un computer di riserva spento, gli altri si aggiornavano in ritardo (fino a 0,8 s ciascuno) perché OpenSet li leggeva uno alla volta. Ora li legge tutti insieme (`pollPeers` in parallelo).
-- [ ] C2 Brani con lo stesso nome: con due brani uguali in scaletta (una ripresa), togliere, spostare o scrivere una nota su uno cambiava anche l'altro. Ora ogni brano ha una sua chiave: il secondo è «Nome#2» (ordine, tolti, stop, note, durate misurate).
+- [ ] C2 (RED fatto) Brani con lo stesso nome: con due brani uguali in scaletta (una ripresa), togliere, spostare o scrivere una nota su uno cambiava anche l'altro. Ora ogni brano ha una sua chiave: il secondo è «Nome#2» (ordine, tolti, stop, note, durate misurate).
 - [ ] C3 Password e accessi
   - Quando un iPad sblocca OpenSet, la password passava in chiaro sulla rete. Ora l'iPad manda solo una prova calcolata dalla password e da un numero nuovo a ogni volta (sfida e risposta): la password non viaggia più.
   - Un iPad sbloccato restava sbloccato fino al riavvio di OpenSet, da qualsiasi indirizzo. Ora l'accesso scade dopo 24 ore senza uso e vale solo dall'indirizzo che l'ha ottenuto.

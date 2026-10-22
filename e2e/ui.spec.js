@@ -204,3 +204,15 @@ test("A4: a connection that goes quiet (sleeping iPad, half-open Wi-Fi) is notic
   await expect(page.locator("#connLabel")).toHaveText("OpenSet non raggiungibile…", { timeout: 9000 });
   await expect(page.locator("#connLabel")).toHaveText("Live connesso", { timeout: 9000 });
 });
+
+test("C2: two songs with the same name (a reprise) are edited one at a time", async ({ page, openset }) => {
+  openset.live({ cues: [{ name: "Uno", time: 0 }, { name: "Due", time: 8 }, { name: "Uno", time: 16 }] });
+  await page.goto(openset.url());
+  await connected(page);
+  await page.click('[data-act="edit"]');
+  await page.click('#setlist [data-act="skip"][data-i="2"]');
+  await expect.poll(async () => (await openset.state()).setlist.map((s) => [s.key, s.skip])).toEqual([["Uno", false], ["Due", false], ["Uno#2", true]]);
+  await page.fill('#setlist input.note[data-i="0"]', "prima");
+  await page.press('#setlist input.note[data-i="0"]', "Enter");
+  await expect.poll(async () => (await openset.state()).setlist.map((s) => s.notes)).toEqual(["prima", "", ""]);
+});

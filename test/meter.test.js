@@ -32,12 +32,12 @@ function play(a, b, t0 = 0, bpm = 120, step = 1) {
 }
 
 test("a song played from start to end is measured in real time", () => {
-  assert.deepEqual(run([[-0.5, 0], ...play(0, 17, 0, 100)]), [{ name: "A", seconds: 9.6 }]);
+  assert.deepEqual(run([[-0.5, 0], ...play(0, 17, 0, 100)]), [{ key: "A", seconds: 9.6 }]);
 });
 
 test("the overshoot past the end is not counted", () => {
   const steps = [...play(0, 15), [15.8, 7.9], [16.2, 8.1]];
-  assert.deepEqual(run(steps), [{ name: "A", seconds: 8 }]);
+  assert.deepEqual(run(steps), [{ key: "A", seconds: 8 }]);
 });
 
 test("a jump right at the end (engine transition) completes the song", () => {
@@ -50,7 +50,7 @@ test("a jump right at the end (engine transition) completes the song", () => {
 
 test("songs are measured one after the other", () => {
   const steps = [...play(0, 15.5, 0, 120, 0.5), ...play(24, 41, 8, 120, 0.5)];
-  assert.deepEqual(run(steps).map((m) => m.name), ["A", "B"]);
+  assert.deepEqual(run(steps).map((m) => m.key), ["A", "B"]);
 });
 
 test("seeks, stops, loops and mid-song starts are not measured", () => {
@@ -64,4 +64,8 @@ test("seeks, stops, loops and mid-song starts are not measured", () => {
 test("a song without a known end is never measured", () => {
   const songs = buildSetlist([{ name: "Only", time: 0 }]);
   assert.deepEqual(run(play(0, 40), songs), []);
+});
+test("C2: a reprise is measured apart from the song with the same name", () => {
+  const songs = buildSetlist([{ name: "A", time: 0 }, { name: "SONG END", time: 16 }, { name: "A", time: 24 }, { name: "=END", time: 40 }]);
+  assert.deepEqual(run(play(24, 41, 0, 120), songs), [{ key: "A#2", seconds: 8 }]);
 });

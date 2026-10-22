@@ -450,3 +450,19 @@ test("A4: sections after the song end are ignored; a section never ends after it
   const songs = buildSetlist([{ name: "A", time: 0 }, { name: ">V +LOOP", time: 8 }, { name: "SONG END", time: 16 }, { name: ">X", time: 20 }, { name: "B", time: 32 }]);
   assert.deepEqual(songs[0].sections.map((x) => [x.name, x.time, x.end]), [["V", 8, 16]]);
 });
+
+test("C2: songs with the same name (a reprise) get their own key, the second is «Name#2»", () => {
+  const base = buildSetlist([{ name: "Intro", time: 0 }, { name: "B", time: 8 }, { name: "Intro", time: 16 }]);
+  assert.deepEqual(base.map((s) => s.key), ["Intro", "B", "Intro#2"]);
+  const songs = applyOrder(base, {
+    order: ["Intro#2", "B", "Intro"],
+    skip: ["Intro"],
+    stopAfter: ["Intro#2"],
+    notes: { "Intro#2": "ripresa" },
+    measured: { "Intro#2": 90 },
+  });
+  assert.deepEqual(
+    songs.map((s) => [s.key, s.skip, s.stopAfter, s.notes, s.measured]),
+    [["Intro#2", false, true, "ripresa", 90], ["B", false, false, "", null], ["Intro", true, false, "", null]]
+  );
+});
