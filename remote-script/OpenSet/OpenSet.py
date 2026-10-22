@@ -14,12 +14,22 @@ except ImportError:
     # Legacy fallback
     from _Framework.ControlSurface import ControlSurface
 
-SERVER_ADDR = ("127.0.0.1", 39051)   # where the Node server listens
+VERSION = "0.5.1"                    # OpenSet version, same as package.json (checked by the tests)
+SERVER_ADDR = ("127.0.0.1", 39061)   # where the Node server listens; 39051 is AbleSet's OSC port
 LISTEN_PORT = 39050                  # where this script listens for commands
 TICK_MS = 100                        # state broadcast interval
 MAX_DATAGRAM = 8000                  # macOS caps loopback UDP datagrams at 9216 bytes
 CHUNK_CHARS = 1000                   # bigger messages go in chunks; room for JSON escaping
 CLIPS_EVERY = 20                     # ticks between scans of Sections/+LYRICS clips (~2 s)
+
+
+def _live_version():
+    try:
+        import Live
+        app = Live.Application.get_application()
+        return "%d.%d.%d" % (app.get_major_version(), app.get_minor_version(), app.get_bugfix_version())
+    except Exception:
+        return None
 
 
 def _quantization(value):
@@ -42,16 +52,22 @@ class OpenSet(ControlSurface):
                 self._sock.ioctl(socket.SIO_UDP_CONNRESET, False)
             except Exception:
                 pass
+        self._cmd_port = True     # False: commands from OpenSet cannot reach this script
         try:
             self._sock.bind(("127.0.0.1", LISTEN_PORT))
         except OSError:
-            self.log_message("OpenSet: port %d busy" % LISTEN_PORT)
+            self._cmd_port = False
         self._song = self.song if not callable(self.song) else self.song()
+        self._live_version = _live_version()
+        self._last_log = None
         self._alive = True
         self._ticks = 0
         self._chunk_id = int(time.time() * 1000) % 1000000000
         self._cues_sent = None    # last cues sent, resent only when they change
         self._clips_sent = None
+        self._log("OpenSet script %s started (Live %s)" % (VERSION, self._live_version or "unknown"))
+        if not self._cmd_port:
+            self._log("OpenSet: port %d busy" % LISTEN_PORT)
         self._add_listeners()
         self._tick()
         self.log_message("OpenSet connected")
@@ -79,6 +95,14 @@ class OpenSet(ControlSurface):
 
     # ---------- Live -> server ----------
 
+    def _log(self, msg):
+        # Live's Log.txt is hard to find for users: OpenSet's log gets it too
+        if msg == self._last_log:
+            return  # an error repeated at every tick is logged once
+        self._last_log = msg
+        self.log_message(msg)
+        self._send({"type": "log", "msg": msg})
+
     def _add_listeners(self):
         s = self._song
         try:
@@ -86,7 +110,7 @@ class OpenSet(ControlSurface):
             s.add_tempo_listener(self._send_state)
             s.add_cue_points_listener(self._send_state)
         except Exception as e:
-            self.log_message("OpenSet listener error: %s" % e)
+            self._log("OpenSet listener error: %s" % e)
 
     def _send(self, obj):
         data = json.dumps(obj)  # ASCII only, so len() is the byte size
@@ -118,6 +142,9 @@ class OpenSet(ControlSurface):
                 "loop_start": s.loop_start,
                 "loop_length": s.loop_length,
                 "quant": int(s.clip_trigger_quantization),
+                "script_version": VERSION,
+                "live_version": self._live_version,
+                "cmd_port": self._cmd_port,
             }
             key = json.dumps(cues)
             if key != self._cues_sent:
@@ -125,7 +152,7 @@ class OpenSet(ControlSurface):
                 self._cues_sent = key
             self._send(state)
         except Exception as e:
-            self.log_message("OpenSet state error: %s" % e)
+            self._log("OpenSet state error: %s" % e)
 
     def _send_clips(self):
         # clips of the "Sections" track and of "+LYRICS" tracks (Live 11+ API)
@@ -134,7 +161,7 @@ class OpenSet(ControlSurface):
             all_tracks = list(self._song.tracks)
         except Exception as e:
             # never let a scan error break the _tick loop
-            self.log_message("OpenSet clips error: %s" % e)
+            self._log("OpenSet clips error: %s" % e)
             return
         for t in all_tracks:
             try:
@@ -149,7 +176,7 @@ class OpenSet(ControlSurface):
                     "clips": [{"name": c.name, "start": c.start_time, "end": c.end_time} for c in clips],
                 })
             except Exception as e:
-                self.log_message("OpenSet clips error: %s" % e)
+                self._log("OpenSet clips error: %s" % e)
         key = json.dumps(tracks)
         if key != self._clips_sent:
             self._clips_sent = key
@@ -166,7 +193,7 @@ class OpenSet(ControlSurface):
             try:
                 self._handle(json.loads(data.decode("utf-8")))
             except Exception as e:
-                self.log_message("OpenSet cmd error: %s" % e)
+                self._log("OpenSet cmd error: %s" % e)
 
     def _handle(self, msg):
         s = self._song

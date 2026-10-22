@@ -1,86 +1,82 @@
-# TODO — OpenSet v0.5.0
+# TODO — OpenSet v0.5.1 (hotfix) e v0.6.0 (parità con le impostazioni di AbleSet)
 
 Stato aggiornato a ogni passo. Protocollo di ripresa: vedi `CLAUDE.md`.
-Branch: `release/v0.5.0` (da `main` a383a08); rilascio con PR verso `main`.
-Obiettivo utente: coprire il più possibile le funzioni di AbleSet; Windows e
-macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
-2026-10-20 (confermati il 2026-10-21) + regola degli artefatti di rilascio
-(versione nei nomi e all'avvio, guida PDF, icona ovunque).
+Obiettivo utente: coprire il più possibile le funzioni di AbleSet seguendo
+fedelmente https://ableset.com/docs/settings; Windows e macOS obbligatori.
+Implementazione sempre con `ecc:tdd-workflow` (commit RED e GREEN separati).
+
+Origine (2026-10-22): due video da un Mac con Live 11, AbleSet e OpenSet 0.5.0
+aperti insieme (in Live: superficie di controllo 3 = AbleSet, 4 = OpenSet).
+OpenSet passa da «LIVE CONNESSO» a «IN ATTESA DI LIVE…» e la scaletta sparisce.
+Causa probabile: AbleSet usa la porta UDP 39051 (OSC), la stessa su cui OpenSet
+riceve lo stato da Live; quando Live tace per 3 s OpenSet butta la scaletta.
+Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ## In corso
 
-- [x] v0.5.0 rilasciata: PR #1 (merge `547a100`), release run 39513184245
-
-(nessun lavoro in corso: prossima proposta in "Da decidere")
+- [ ] v0.5.1 su `hotfix/v0.5.1` (da `main` 533df7a = tag v0.5.0 + TODO): V4 PR e CI
 
 ## Da fare
 
-### N — Versione visibile e nomi con la versione
-- [x] RED: `/api/state` espone `version`; il CLI stampa `OpenSet <versione>` all'avvio
-- [x] GREEN: banner nel terminale, versione e logo nell'intestazione della UI
-- [x] Release CI: zip `openset-<versione>-<piattaforma>.zip`, programma `openset-<versione>[.exe]`; smoke test CI aggiornato (versione nello stato e prima riga del log); `INSTALL-*.txt` con `{{VERSION}}`; la release fallisce se il tag non coincide con `package.json`
+### v0.5.1 — feedback all'avvio e convivenza con AbleSet (hotfix)
 
-### O — Icona ovunque
-- [x] Logo nell'intestazione della UI (favicon e PWA già fatti), fatto in N
-- [x] Icona del `.exe` Windows: `scripts/win-icon.mjs` (resedit) patcha il binario base di pkg prima dell'impacchettamento; `--check` in CI e nella release
-- [x] macOS: `OpenSet <versione>.app` (`scripts/make-macos-app.sh`, `dist-extras/Info.plist`) con icona `.icns`, apre il Terminale con il server; lo smoke test CI su macOS avvia il programma dentro il bundle
+#### V1 — Porta riservata a Live
+- [x] RED: lo stato di Live arriva su `127.0.0.1:39061` (`statePort`); il vecchio Remote Script sulla 39051 è ancora accettato; porta OSC occupata → OpenSet parte con OSC spento (`oscPort: null`); porta di stato occupata → `start()` rifiuta (istanza doppia); Remote Script: invia a 39061, `script_version` e `cmd_port` (bind della 39050 riuscito) nello stato
+- [x] GREEN: `server/index.js`, `remote-script/OpenSet/OpenSet.py`, messaggio di avvio (`[live] state on …`, `[osc] port … busy … Is AbleSet open?`)
 
-### P — Guida PDF e CHANGELOG
-- [x] RED `test/guide.test.js`: la guida generata contiene versione, novità della versione da `CHANGELOG.md` e i passi per Windows, macOS, Linux, iPad/iPhone
-- [x] GREEN `scripts/build-guide.js` (HTML con logo → PDF con Chrome headless), `CHANGELOG.md` (0.1.0-0.4.0; la 0.5.0 al rilascio)
-- [x] Release CI: `OpenSet-<versione>-Guida.pdf` dentro ogni zip e tra gli asset; la CI su Ubuntu genera la guida a ogni push
+#### V2 — La scaletta non sparisce e si vede perché Live non è collegato
+- [x] RED: dopo il silenzio di Live restano brani e sezioni (salvo progetto `.als` caricato); `liveIssues` nello stato: `no-live`, `live-silent`, `script-updated`, `script-old`, `cmd-port-busy`, `osc-busy`
+- [x] GREEN: server (`useLive`, `liveIssues`) + UI (etichetta «Live non risponde», banner `#issues` con i motivi)
 
-### Q — Dispositivi
-- [x] RED: nome per dispositivo, lista dei connessi (nome, IP, pagina, latenza), OSC `/devices/showPage|reload|lock|unlock|toggleLock` con `all`, nome/tag o IP
-- [x] GREEN: `server/devices.js`, server (lista, ping/latenza, comando `devices`, OSC `/devices/*`, valore `/devices/names`) + UI (nome, vista all'apertura, blocco ⇧L con sblocco a pressione lunga, lista in Opzioni)
+#### V3 — Debug Logs e Create Log Package (AbleSet: Debug → Debug Logs, menu → Create Log Package)
+- [x] RED `test/log.test.js`: registro in memoria (ultime 500 righe) e file `openset.log` nella cartella dati (oltre 1 MB → `openset.old.log`); eventi: avvio, porte, Live collegato/staccato, errori; `GET /api/logs`, `GET /api/log-package` (testo con versione, sistema, porte, problemi, log, righe OpenSet dal `Log.txt` di Live) solo da questo computer o con password; il Remote Script manda a OpenSet i suoi errori e l'avvio (con la versione di Live); i messaggi di Live illeggibili finiscono nel log invece di sparire
+- [x] GREEN: `server/log.js`, server (`/api/logs`, `/api/log-package`, eventi Live, errori invece di `catch {}` muti), CLI (log nel file, `[crash]` per eccezioni non gestite), Remote Script (`_log` verso OpenSet, una volta per errore ripetuto, `live_version`), UI Opzioni → Debug (Mostra log, Crea pacchetto log); provata nel browser con un Live simulato che tace
 
-### R — Modalità di salto e coda
-- [x] RED: modalità Quantizzato, Fine sezione, Fine brano, Dinamico, Manuale; coda; J, ⇧J, C; OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`
-- [x] GREEN motore + server: `jumpMode` nelle impostazioni, coda nello stato, `jumpToQueued`/`clearQueue`, salto in coda allo stop, OSC `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`, valori `queuedName`/`queuedIndex`
-- [x] GREEN UI: brano/sezione in coda evidenziati, barra «In coda» con salta / subito / annulla, tasti J, ⇧J, C, scelta della modalità in Opzioni
+#### V4 — Rilascio v0.5.1
+- [x] Copertura (righe 99.23%, rami 93.22%), CHANGELOG 0.5.1, guida, INSTALL, README, report TDD, versione 0.5.1
+- [x] Build locale: `scripts/build-release-local.sh` + `scripts/assemble-release.sh` (usato anche da `release.yml`); il launcher dell'app firma ad hoc il programma arm64 compilato su Linux
+- [x] CI: smoke test `curl | grep -q` falliva (23) con `index.html` oltre 64 KB: ora scarica su file
+- [ ] PR #2 verso `main`, CI verde (le build), merge commit; zip e PDF 0.5.1 in `build/release-0.5.1/` per l'utente
+- Spazio GitHub per gli artefatti esaurito (utente, 2026-10-22): niente tag che avvia `release.yml`; la CI deve solo provare le build; zip e PDF si producono in locale (`build/release-<versione>/`) e l'utente li distribuisce a mano
 
-### S — Editor della scaletta
-- [x] RED: ricerca approssimata (iniziali, parti del titolo, tag), scaletta come testo (`{nota}`, `-- stop --`) e incolla con match approssimato, backup a ogni sovrascrittura
-- [x] GREEN server: `server/editor.js` (ricerca, testo, incolla approssimato), `GET /api/search`, `GET|POST /api/setlist-text`, backup a ogni sovrascrittura e `restoreBackup`
-- [x] GREEN UI: trascinamento anche touch, Ctrl+K, copia/incolla, togli/rimetti tutti, ripristino backup
+### v0.6.0 — impostazioni di AbleSet (branch `release/v0.6.0` da `main` dopo la 0.5.1)
 
-### T — Safe Mode e password
-- [x] RED: Safe Mode (niente salti di brano dalla UI mentre suona, conferma prima della pausa; MIDI/OSC esclusi); password facoltativa (hash scrypt) per modificare e comandare dalla web app, `localhost` sempre ammesso
-- [x] GREEN server: `server/auth.js` (scrypt con salt, confronto a tempo costante, 5 tentativi poi 30 s di attesa), `safeMode` nelle impostazioni, accesso per WebSocket (`auth` con password o token) e HTTP (`X-OpenSet-Password`, `Authorization: Bearer`), `setPassword` mai ripetuto ai computer di riserva, OSC `/settings/safeMode`
-- [x] GREEN UI: Safe Mode e conferma dello stop, password in Opzioni, sola lettura con «Sblocca» (token salvato nel browser)
+#### W1 — Playback
+- [ ] Restart Song Before Jumping Back; Stop by Default Instead of Pausing (spazio = stop); Disable Loop When Jumping; Re-Enable Automation on Song Jump; Reset Tracks Back to Arrangement on Song Jump; Always Keep Playing When Jumping to Queued Songs
 
-### U — Rilascio v0.5.0
-- [x] Copertura: righe 99.21%, rami 93.58%, funzioni 97.78% (168 test Node, 17 Python)
-- [x] CHANGELOG 0.5.0, guida (scorciatoie nuove), README, report TDD `docs/releases/0.5.0/`, versione 0.5.0
-- [x] PR #1 pronta, CI verde (run 39512958086 su Windows/macOS/Ubuntu), merge commit `547a100`, tag `v0.5.0` su main; asset: 4 zip `openset-0.5.0-*.zip` con `openset-0.5.0[.exe]` o `OpenSet 0.5.0.app`, guida PDF dentro ogni zip e come asset, nessun `__pycache__`; il binario Linux scaricato stampa `OpenSet 0.5.0`
+#### W2 — Section Count-In
+- [ ] Count-in prima della sezione scelta (1, 2 o 4 battute); solo della traccia click (prima traccia o gruppo con «click», tracce `+CLICK`, «Lifesine») durante il count-in
 
+#### W3 — Setlist
+- [ ] Remove Played Songs Automatically
 
-### I — Cartella dati utente stabile
-- [x] RED `test/datadir.test.js`: `dataDir(platform, env, home)` per macOS/Windows/Linux; migrazione che copia `setlist.json`, `lyrics/`, `custom.css` dalla cartella del programma senza sovrascrivere
-- [x] GREEN `server/datadir.js`; il CLI usa la cartella dati come `baseDir`, `public/` resta nella cartella del programma
+#### W4 — Colori e Tools
+- [ ] `[colore]` nei locator (18 colori di AbleSet), sezioni con il colore del brano; traccia sezioni con `+CC`/`+CLIPCOLORS` → colore della clip (colonna della tavolozza di Live); flag `+SECTIONS`; UI colorata
+- [ ] Tools: Set Clip Colors from Names, Place Locators on Section Clips, Remove Automatically Placed Locators
 
-### J — Apertura automatica del browser
-- [x] RED `test/launch.test.js`: `openCommand(platform, url)`, `parseArgs(argv)` (`--no-open`, `.als` primo argomento non-flag), errori dello spawn ignorati
-- [x] GREEN `server/launch.js`; smoke test della CI con `--no-open`
+#### W5 — General
+- [ ] Default View; Open on Start (alla connessione di Live); Always Open in a Floating Window (Chrome/Edge `--app`); Auto-Launch the Last Live Project
 
-### K — Installazione automatica del Remote Script
-- [x] RED `test/install.test.js`: User Library per macOS/Windows, copia solo se manca o è diverso, niente `__pycache__`, nessuna eccezione; stato in `/api/state`
-- [x] GREEN `server/install.js`; UI: passi per collegare Live quando non è connesso
+#### W6 — Debug e AbleNet
+- [ ] Device Settings (impostazioni di tutti i dispositivi in una pagina); Connected Scene (principale/riserva); Automatic Drift Correction (Phase Nudge); Sync Playback Now
 
-### L — Connetti un dispositivo e porta 80
-- [x] RED: `deviceUrls` (`nome.local` su macOS, IP LAN, niente `:80`), `/api/connect` con QR SVG, `httpPort` come lista (porta occupata → successiva)
-- [x] GREEN `server/connect.js` + `qrcode-generator`; UI in Opzioni; CLI su `[80, 39080]`, `PORT` forza la porta
+#### W7 — Voci del menu di AbleSet in Opzioni (solo da questo computer)
+- [ ] Documentazione, reinstalla Remote Script, apri cartella dati / custom.css, Change Hostname, Preferred Network, Check for Updates, Submit Feedback, Quit
 
-### M — Rilascio v0.4.0
-- [x] `npm run coverage`: righe 99.79%, rami 93.48%, funzioni 98.50%; Remote Script 17 OK
-- [x] README, `dist-extras/INSTALL-*.txt`, report `docs/releases/0.4.0/`, versione 0.4.0
-- [x] CI verde (run 39495250973), ma il test del CLI scriveva nella home reale: isolato, smoke test che verifica la copia di `lyrics/`
-- [x] CI verde dopo la correzione (run 39495681204: Windows/macOS/Ubuntu, copia di `lyrics/` nei 3 binari), tag `v0.4.0`
+#### W8 — Rilascio v0.6.0
+- [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI verde (le build), merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
+
+### Esclusi (con motivo)
+Show in Dock e licenze (non applicabili); Multi-File Project, Delay Before
+Jumping to Song File, Sync Group Solos/Volumes, Mixer, Project Script, Persist
+Shared Variables (grandi: versione dedicata se richiesti); Audio Interfaces,
+LTC, Follow Current Audio Interface Scene, AbleSet Controller (hardware o Max
+for Live).
 
 ## Fatto
 
 - [x] v0.5.0 rilasciata (modalità di salto, editor, dispositivi, Safe Mode e password, versione nei nomi, icone, guida PDF): vedi `docs/releases/0.5.0/v0.5.0.tdd.md`
-
+- [x] v0.4.0 rilasciata (cartella dati, apertura automatica, installazione del Remote Script, QR, porta 80): vedi `docs/releases/0.4.0/`
 - [x] v0.3.1 rilasciata (PWA per iPad/iPhone): vedi `docs/releases/0.3.1/v0.3.1.tdd.md`
 - [x] v0.3.0 rilasciata (sezioni e testi dal `.als`, mappa del tempo, durate misurate, annunci vocali, computer di riserva, Palco per dispositivo): vedi `docs/releases/0.3.0/v0.3.0.tdd.md`
 - [x] v0.2.0 rilasciata (notazione AbleSet, motore, editor, Palco, OSC/HTTP/MIDI, macOS arm64): vedi `docs/releases/0.2.0/v0.2.0.tdd.md`
@@ -96,6 +92,6 @@ macOS obbligatori, Linux se costa poco. v0.5.0 = punti 6-9 della proposta del
 
 ## Rimandato
 
-Canvas libero, Bonjour per OSC, colori, scambio automatico dell'audio tra i due
+Canvas libero, Bonjour per OSC, scambio automatico dell'audio tra i due
 computer (serve hardware), lettura dell'automazione del tempo da Live connesso
 (l'API di Live non la espone: si usano le durate misurate).

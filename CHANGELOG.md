@@ -3,6 +3,13 @@
 Tutte le novità di OpenSet, dalla versione più recente. La guida PDF di ogni
 rilascio riporta la sezione della sua versione.
 
+## 0.5.1 — 2026-10-22
+
+- **OpenSet e AbleSet insieme**: Live manda lo stato a OpenSet su una porta privata (`127.0.0.1:39061`), quindi AbleSet aperto sulla porta OSC `39051` non porta più via i messaggi di Live. Se la `39051` è occupata, OpenSet parte con l'OSC spento e lo dice. Dopo l'aggiornamento chiudi e riapri Live.
+- **La scaletta non sparisce** quando Live smette di rispondere (set in caricamento, Live chiuso): resta l'ultima ricevuta e l'intestazione dice «Live non risponde».
+- **Il motivo è sempre scritto**: un riquadro in alto spiega perché Live non è collegato (Remote Script da aggiornare o vecchio: riavvia Live; porta 39050 occupata; porta OSC occupata; nessun messaggio da Live).
+- **Registro e pacchetto log** (come *Debug Logs* e *Create Log Package* di AbleSet): `openset.log` nella cartella dei dati; Opzioni → Debug → *Mostra log* e *Crea pacchetto log*, un file di testo con versione, sistema, porte, stato di Live, registro e le righe di OpenSet dal `Log.txt` di Live. Il Remote Script manda a OpenSet il suo avvio (con la versione di Live) e i suoi errori; anche un crash di OpenSet finisce nel registro.
+
 ## 0.5.0 — 2026-10-21
 
 - **Modalità di salto con coda** (come AbleSet): in Opzioni scegli *Subito*, *A fine sezione*, *A fine brano*, *Dinamico* o *Manuale*. Mentre suona, il brano o la sezione che tocchi vanno **in coda** (evidenziati, con la barra «In coda»): `J` salta, `⇧J` salta subito, `C` annulla. Via OSC: `/setlist/jumpToQueued`, `/setlist/clearQueuedJump`.

@@ -21,6 +21,8 @@ const LIVE = {
   loop_start: 0,
   loop_length: 4,
   quant: 4,
+  script_version: require("../package.json").version,
+  cmd_port: true,
   cues: [
     { name: "Intro Song", time: 0 },
     { name: ">Verse", time: 8 },
@@ -62,6 +64,7 @@ async function setup(t, opts = {}) {
     baseDir,
     httpPort: 0,
     udpPort: 0,
+    statePort: 0,
     livePort: live.address().port,
     log: false,
     ...opts,
@@ -71,7 +74,7 @@ async function setup(t, opts = {}) {
     srv,
     cmds,
     url: (p) => `http://127.0.0.1:${srv.httpPort}${p}`,
-    sendLive: (obj) => live.send(JSON.stringify(obj), srv.udpPort, "127.0.0.1"),
+    sendLive: (obj) => live.send(JSON.stringify(obj), srv.statePort, "127.0.0.1"),
     state: async () => (await fetch(ctx.url("/api/state"))).json(),
     cmd: (body) =>
       fetch(ctx.url("/api/cmd"), {
@@ -111,6 +114,7 @@ test("state before Live connects", async (t) => {
   assert.equal(s.connected, false);
   assert.deepEqual(s.setlist, []);
   assert.equal(s.current, -1);
+  assert.deepEqual(s.liveIssues, ["no-live"]);
 });
 
 test("Live state builds the setlist with current, next and timing", async (t) => {
@@ -150,10 +154,53 @@ test("chunked messages from the Remote Script are reassembled", async (t) => {
   await waitFor(async () => (await c.state()).current === 1, "chunked state");
 });
 
-test("Live is marked offline after a silence", async (t) => {
+test("Live is marked offline after a silence, the setlist stays", async (t) => {
+  const c = await setup(t, { liveTimeoutMs: 300 });
+  await c.connect();
+  assert.deepEqual((await c.state()).liveIssues, []);
+  await waitFor(async () => !(await c.state()).connected, "disconnect", 3000);
+  const s = await c.state();
+  assert.deepEqual(s.setlist.map((x) => x.name), ["Intro Song", "Perché", "Finale"]);
+  assert.deepEqual(s.liveIssues, ["live-silent"]);
+});
+
+test("debug logs: Live connection events, file log and log package", async (t) => {
   const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();
   await waitFor(async () => !(await c.state()).connected, "disconnect", 3000);
+  const { lines } = await (await fetch(c.url("/api/logs"))).json();
+  assert.ok(lines.some((l) => / INFO \[live\] connected/.test(l)), lines.join("\n"));
+  assert.ok(lines.some((l) => / \[live\] silent/.test(l)), lines.join("\n"));
+  assert.match(fs.readFileSync(path.join(c.baseDir, "openset.log"), "utf8"), /\[live\] connected/);
+  const res = await fetch(c.url("/api/log-package"));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-disposition"), /attachment; filename="openset-[\d.]+-log-\d{8}-\d{4}\.txt"/);
+  const text = await res.text();
+  assert.match(text, new RegExp(`^OpenSet ${require("../package.json").version.replace(/\./g, "\\.")} `));
+  assert.match(text, /liveIssues: live-silent/);
+  assert.match(text, /\[live\] connected/);
+});
+
+test("debug logs: Remote Script messages and broken Live messages are logged", async (t) => {
+  const c = await setup(t);
+  c.sendLive({ type: "log", msg: "OpenSet clips error: track gone" });
+  const raw = await udpSocket();
+  t.after(() => raw.close());
+  raw.send("{truncated datagram", c.srv.statePort, "127.0.0.1"); // was silently dropped
+  const logged = async () => (await (await fetch(c.url("/api/logs"))).json()).lines.join("\n");
+  await waitFor(async () => /\[script\] OpenSet clips error: track gone/.test(await logged()), "script log");
+  await waitFor(async () => /ERROR \[live\] /.test(await logged()), "error from a broken message");
+});
+
+test("liveIssues explain why Live is not working with OpenSet", async (t) => {
+  const c = await setup(t, { scriptInstall: { status: "updated", path: "/x/Remote Scripts/OpenSet" } });
+  assert.deepEqual((await c.state()).liveIssues, ["script-updated", "no-live"]);
+  const { script_version, cmd_port, ...oldScript } = LIVE; // a Remote Script older than 0.5.1
+  await c.connect(oldScript);
+  assert.deepEqual((await c.state()).liveIssues, ["script-old"]);
+  c.sendLive({ ...LIVE, cmd_port: false });
+  await waitFor(async () => (await c.state()).cmd_port === false, "cmd_port");
+  assert.deepEqual((await c.state()).liveIssues, ["cmd-port-busy"]);
 });
 
 test("WebSocket: initial state and commands", async (t) => {
@@ -402,6 +449,8 @@ test("password: other devices need it to give commands; wrong guesses are slowed
   assert.equal((await post("/api/setlist-text", { text: "Finale" })).status, 401);
   assert.equal((await post("/api/cmd", { cmd: "setPassword", password: "" })).status, 401);
   assert.equal((await fetch(lan("/api/state"))).status, 200); // reading is always allowed
+  assert.equal((await fetch(lan("/api/logs"))).status, 401); // logs show paths and addresses
+  assert.equal((await fetch(lan("/api/log-package"))).status, 401);
 
   // a browser on another device: read-only until it unlocks
   const ws = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
@@ -855,16 +904,43 @@ test("lyrics: JSON files with accented names and Live +LYRICS tracks", async (t)
   assert.deepEqual((await res.json()).lines[0].segments, [{ chord: "Bm", text: "Ciao" }]);
 });
 
-test("a busy port rejects start() instead of crashing", async (t) => {
+test("a busy HTTP or Live state port rejects start() instead of crashing", async (t) => {
   const c = await setup(t);
-  const base = { baseDir: c.baseDir, log: false, udpPort: 0 };
+  const base = { baseDir: c.baseDir, log: false, udpPort: 0, statePort: 0 };
   await assert.rejects(start({ ...base, httpPort: c.srv.httpPort }), { code: "EADDRINUSE" });
-  await assert.rejects(start({ ...base, httpPort: 0, udpPort: c.srv.udpPort }), { code: "EADDRINUSE" });
+  // the Live state port is private: a second OpenSet cannot share it
+  await assert.rejects(start({ ...base, httpPort: 0, statePort: c.srv.statePort }), { code: "EADDRINUSE" });
+});
+
+test("a busy OSC port (e.g. AbleSet on 39051) leaves OpenSet running with OSC off", async (t) => {
+  const c = await setup(t);
+  const srv = await start({ baseDir: c.baseDir, log: false, httpPort: 0, statePort: 0, udpPort: c.srv.udpPort });
+  t.after(() => srv.close());
+  assert.equal(srv.udpPort, null);
+  const s = await (await fetch(`http://127.0.0.1:${srv.httpPort}/api/state`)).json();
+  assert.equal(s.oscPort, null);
+  assert.deepEqual(s.liveIssues, ["osc-busy", "no-live"]);
+  assert.equal((await c.state()).oscPort, c.srv.udpPort);
+});
+
+test("Live state arrives on its own loopback port, apart from OSC", async (t) => {
+  const c = await setup(t);
+  assert.notEqual(c.srv.statePort, c.srv.udpPort);
+  await c.connect(); // sendLive targets statePort
+  assert.equal((await c.state()).connected, true);
+});
+
+test("an old Remote Script sending to the OSC port still drives the state", async (t) => {
+  const c = await setup(t);
+  const old = await udpSocket();
+  t.after(() => old.close());
+  old.send(JSON.stringify(LIVE), c.srv.udpPort, "127.0.0.1");
+  await waitFor(async () => (await c.state()).connected, "legacy Live connection");
 });
 
 test("a list of HTTP ports falls back to the next free one", async (t) => {
   const c = await setup(t);
-  const base = { baseDir: c.baseDir, log: false, udpPort: 0 };
+  const base = { baseDir: c.baseDir, log: false, udpPort: 0, statePort: 0 };
   const busy = c.srv.httpPort;
   const srv = await start({ ...base, httpPort: [busy, 0] });
   t.after(() => srv.close());

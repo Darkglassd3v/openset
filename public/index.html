@@ -54,6 +54,10 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
   .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
   .conn { font-size: 12px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
+  .issues { background: var(--amber-dim); color: var(--text); font-size: 13px; padding: 8px 16px; }
+  .issues p { margin: 2px 0; }
+  .log { max-height: 45vh; overflow: auto; font-size: 11px; line-height: 1.4; background: var(--panel);
+    border: 1px solid var(--line); padding: 8px; margin-top: 8px; white-space: pre-wrap; word-break: break-all; }
   .set-name { font-size: 12px; color: var(--amber); letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .clock-box { margin-left: auto; }
   .clock {
@@ -300,6 +304,7 @@
     <div class="bpm mono" id="bpm">— BPM</div>
   </div>
 </header>
+<div class="issues" id="issues" role="alert" hidden></div>
 
 <nav role="tablist" aria-label="Viste">
   <button role="tab" data-view="setlist">Scaletta</button>
@@ -398,6 +403,17 @@
       <span class="mono">/devices/lock</span>, <span class="mono">/devices/unlock</span>, <span class="mono">/devices/toggleLock</span>
       con <span class="mono">all</span>, un nome (o tag) o un indirizzo IP.</p>
     <ul id="deviceList"></ul>
+
+    <h2>Debug</h2>
+    <p>Il registro di OpenSet: avvio, porte, collegamento con Live, errori del Remote Script.
+      Se qualcosa non va, crea il pacchetto log e invialo: contiene anche le righe di OpenSet
+      dal <span class="mono">Log.txt</span> di Live.</p>
+    <div class="row">
+      <button class="btn" id="logShow">Mostra log</button>
+      <button class="btn" id="logPackage">Crea pacchetto log</button>
+    </div>
+    <p id="logStatus" class="dim" role="status"></p>
+    <pre class="log mono" id="logView" hidden></pre>
 
     <h2>MIDI</h2>
     <p id="midiStatus">Web MIDI funziona in Chrome o Edge aperti su questo computer (http://localhost:39080). Tieni aperta una sola scheda.</p>
@@ -636,7 +652,8 @@ function render() {
   $("dot").className = "dot" + (st.connected ? " on" : "");
   $("connLabel").textContent = st.connected
     ? "Live connesso"
-    : st.offline ? "Offline · progetto .als" : "In attesa di Live…";
+    : st.offline ? "Offline · progetto .als" : st.setlist.length ? "Live non risponde" : "In attesa di Live…";
+  renderIssues(st);
   $("setName").textContent = st.setlistName || "";
   $("version").textContent = st.version ? "v" + st.version : "";
   $("clock").textContent = beatToBBT(st.beat || 0, st.sig_num || 4, st.sig_den || 4);
@@ -685,6 +702,24 @@ function scriptNote(inst) {
   if (st === "current") return "Remote Script già installato.";
   return "Copia la cartella <b>remote-script/OpenSet</b> (accanto al programma) nella cartella " +
     "<b>Remote Scripts</b> della User Library di Live." + (st === "error" ? ` Installazione automatica fallita: ${esc(inst.error)}` : "");
+}
+
+// why Live and OpenSet are not talking (state.liveIssues from the server)
+const ISSUES = {
+  "osc-busy": "La porta OSC 39051 è occupata (AbleSet aperto?): l'OSC di OpenSet è spento. Scaletta e comandi da Live funzionano.",
+  "script-updated": "Il Remote Script di OpenSet è stato aggiornato: chiudi e riapri Live.",
+  "script-old": "Live usa ancora il vecchio Remote Script di OpenSet: chiudi e riapri Live.",
+  "cmd-port-busy": "La porta 39050 è occupata: i comandi di OpenSet non arrivano a Live. C'è un secondo Live aperto? Riavvia Live.",
+  "live-silent": "Live non risponde: resta l'ultima scaletta ricevuta. Live sta caricando un set o è stato chiuso?",
+  "no-live": "Nessun messaggio da Live: apri Live e scegli OpenSet come superficie di controllo.",
+};
+function renderIssues(st) {
+  // with an empty setlist the "Collega Ableton Live" screen already explains no-live
+  const codes = (st.liveIssues || []).filter((c) => c !== "no-live" || st.setlist.length);
+  const html = codes.map((c) => `<p>${esc(ISSUES[c] || c)}</p>`).join("");
+  const el = $("issues");
+  if (el.innerHTML !== html) el.innerHTML = html;
+  el.hidden = !html;
 }
 
 function buildSetlist() {
@@ -906,6 +941,44 @@ function openPaste(text, note = "Un brano per riga. {nota} accanto al titolo agg
   $("pasteStatus").textContent = note;
   if (!text) $("pasteText").focus();
 }
+// ---------- Debug: log and log package (password-protected on other devices) ----------
+function authHeaders() {
+  const token = store.get("openset.token", "");
+  return token ? { Authorization: "Bearer " + token } : {};
+}
+async function debugFetch(url) {
+  const r = await fetch(url, { headers: authHeaders() });
+  if (r.status === 401) throw new Error("serve la password: premi «Sblocca»");
+  if (!r.ok) throw new Error("errore " + r.status);
+  return r;
+}
+$("logShow").onclick = async () => {
+  try {
+    const { lines } = await (await debugFetch("/api/logs")).json();
+    const el = $("logView");
+    el.textContent = lines.join("\n") || "(vuoto)";
+    el.hidden = false;
+    el.scrollTop = el.scrollHeight;
+    $("logStatus").textContent = "";
+  } catch (err) {
+    $("logStatus").textContent = "Log non disponibile: " + err.message;
+  }
+};
+$("logPackage").onclick = async () => {
+  try {
+    const r = await debugFetch("/api/log-package");
+    const name = (/filename="([^"]+)"/.exec(r.headers.get("content-disposition") || "") || [])[1] || "openset-log.txt";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await r.blob());
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    $("logStatus").textContent = "Salvato " + name + ": invialo insieme alla descrizione del problema.";
+  } catch (err) {
+    $("logStatus").textContent = "Pacchetto log non disponibile: " + err.message;
+  }
+};
+
 async function applyPaste(text) {
   try {
     const r = await fetch("/api/setlist-text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });

@@ -20,7 +20,9 @@ test("macOS: the program is wrapped in 'OpenSet <version>.app' with icon and Ter
   assert.match(plist, /<key>CFBundleExecutable<\/key>\s*<string>OpenSet<\/string>/);
   assert.match(plist, /<key>CFBundleIconFile<\/key>\s*<string>OpenSet<\/string>/);
   const launcher = path.join(app, "MacOS", "OpenSet");
-  assert.match(fs.readFileSync(launcher, "utf-8"), /open -a Terminal .*openset-9\.9\.9/);
+  assert.match(fs.readFileSync(launcher, "utf-8"), /open -a Terminal .*openset-9\.9\.9|open -a Terminal "\$BIN"/);
+  // built on Linux, the arm64 program has no valid signature: the launcher signs it ad hoc once
+  assert.match(fs.readFileSync(launcher, "utf-8"), /codesign -v "\$BIN" .*\|\| codesign --force --sign - "\$BIN"/);
   assert.ok(fs.statSync(launcher).mode & 0o111, "launcher is executable");
   const bin = path.join(app, "Resources", "openset-9.9.9");
   assert.ok(fs.statSync(bin).mode & 0o111, "program is executable");
@@ -32,4 +34,27 @@ test("macOS: the program is wrapped in 'OpenSet <version>.app' with icon and Ter
 test("program icons exist for Windows (.ico) and macOS (.icns)", () => {
   assert.equal(fs.readFileSync(path.join(ROOT, "docs", "brand", "openset.ico")).readUInt16LE(2), 1); // ICO type
   assert.equal(fs.readFileSync(path.join(ROOT, "docs", "brand", "openset.icns")).toString("latin1", 0, 4), "icns");
+});
+
+test("release: one zip per platform with the versioned program, guide PDF and INSTALL.txt", { skip: process.platform === "win32" && "bash and zip" }, (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "openset-rel-"));
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }));
+  const bin = path.join(tmp, "build");
+  const out = path.join(tmp, "release");
+  fs.mkdirSync(bin);
+  fs.mkdirSync(out);
+  for (const f of ["openset-linux", "openset-win.exe", "openset-macos", "openset-macos-arm64"]) fs.writeFileSync(path.join(bin, f), "x");
+  fs.writeFileSync(path.join(out, "OpenSet-9.9.9-Guida.pdf"), "%PDF");
+  execFileSync("bash", [path.join(ROOT, "scripts", "assemble-release.sh"), "9.9.9", bin, out], { cwd: ROOT });
+  const zips = fs.readdirSync(out).filter((f) => f.endsWith(".zip")).sort();
+  assert.deepEqual(zips, ["openset-9.9.9-linux-x64.zip", "openset-9.9.9-macos-arm64.zip", "openset-9.9.9-macos-x64.zip", "openset-9.9.9-win-x64.zip"]);
+  const list = (z) => execFileSync("unzip", ["-Z1", path.join(out, z)], { encoding: "utf-8" });
+  assert.match(list("openset-9.9.9-win-x64.zip"), /^openset-9\.9\.9\.exe$/m);
+  assert.match(list("openset-9.9.9-linux-x64.zip"), /^openset-9\.9\.9$/m);
+  assert.match(list("openset-9.9.9-macos-arm64.zip"), /^OpenSet 9\.9\.9\.app\/Contents\/Resources\/openset-9\.9\.9$/m);
+  for (const z of zips) {
+    assert.match(list(z), /^OpenSet-9\.9\.9-Guida\.pdf$/m);
+    assert.match(list(z), /^INSTALL\.txt$/m);
+    assert.doesNotMatch(list(z), /__pycache__|remote-script\/tests/);
+  }
 });

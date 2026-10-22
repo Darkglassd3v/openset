@@ -7,7 +7,8 @@ AbleSet (https://ableset.com). Leggi `TODO.md` prima di iniziare qualsiasi lavor
 
 ```
 Ableton Live ── Remote Script Python (remote-script/OpenSet/OpenSet.py)
-                   │ UDP JSON: comandi → :39050, stato ~10 Hz → :39051
+                   │ UDP JSON: comandi → :39050, stato ~10 Hz → 127.0.0.1:39061
+                   │ (OSC su :39051, la porta di AbleSet: facoltativa)
                    ▼
 Server Node (server/index.js) ── HTTP + WebSocket :39080 ── public/index.html
    ├─ server/setlist.js     logica pura: scaletta, ordine, fine brano, timer
@@ -31,6 +32,7 @@ npm test                                            # test Node (node:test)
 npm run coverage                                    # test + copertura
 python3 -m unittest discover -s remote-script/tests # test del Remote Script
 npx pkg@5.8.1 . --targets node18-linux-x64 --out-path build   # binario locale
+bash scripts/build-release-local.sh   # 4 zip con la versione + guida PDF in build/release-<versione>/
 ```
 
 ## Flusso di lavoro (logica ECC)

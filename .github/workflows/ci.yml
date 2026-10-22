@@ -93,6 +93,7 @@ jobs:
           grep -q "\"version\":\"$VERSION\"" build/state.json
           head -1 build/run.log | tr -d '\r' | grep -qx "OpenSet $VERSION"
           grep -q "\[data\] copied lyrics" build/run.log
-          curl -sf http://127.0.0.1:39080/ | grep -q Palco
-          curl -sf http://127.0.0.1:39080/api/connect | grep -q "\"urls\""
+          # to files: with pipefail, grep -q closing the pipe early makes curl fail (23)
+          curl -sf http://127.0.0.1:39080/ -o build/page.html && grep -q Palco build/page.html
+          curl -sf http://127.0.0.1:39080/api/connect -o build/connect.json && grep -q "\"urls\"" build/connect.json
           kill %1 || true
