@@ -27,7 +27,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   - [x] RED `packaging.test.js`: `release.yml` la usa, solo gli zip, niente `softprops` né `release-notes`; `scripts/release-notes.js` e il suo test tolti (le note le scrive l'azione)
   - [x] GREEN: `.github/workflows/release.yml`, `CLAUDE.md`
 - [ ] v0.6.1 (branch `release/v0.6.1`): corsa in AbleNet corretta (RED + GREEN: `prunePeers()` anche alla fine di `pollPeers`); prima del rilascio: CHANGELOG, versione, PR, tag (trovata dalla CI Windows della PR #6: una lettura del computer di riserva ancora in corso quando lo si toglie dalla lista lo rimetteva nello stato)
-- [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`); scegliere dove pubblicare le release (vedi «Da decidere»)
+- [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`)
 
 ## Da fare
 
