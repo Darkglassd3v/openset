@@ -77,18 +77,15 @@ test("release workflow: one macOS job, no Actions artifacts (only release assets
   assert.equal((jobs.match(/^ {2}[\w-]+:\s*$/gm) || []).length, 1, "a single job");
   assert.match(wf, /runs-on: macos-latest/);
   assert.match(wf, /codesign --force --sign - build\/openset-macos-arm64/); // signed on a real Mac
-  // checked on pull requests that touch the release, published only from a tag
+  // checked on pull requests that touch the release; the shared action publishes only from a tag
   assert.match(wf, /pull_request:[\s\S]*paths:/);
-  assert.match(wf, /if: startsWith\(github\.ref, 'refs\/tags\/'\)/);
 });
 
-test("release workflow: only the zips are attached (the guide is inside them), with short notes", () => {
-  // user request (2026-10-22): a separate PDF may be skipped by whoever downloads; no long install text
+test("release workflow: published by the shared action, only the zips (the guide is inside them)", () => {
+  // user request (2026-10-22): one release action for all projects (Darkglassd3v/.github), no separate PDF
   const wf = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "release.yml"), "utf-8");
-  const files = wf.slice(wf.indexOf("files:"), wf.indexOf("files:") + 120);
-  assert.match(files, /release\/\*\.zip/);
-  assert.doesNotMatch(files, /\.pdf/);
-  assert.match(wf, /node scripts\/release-notes\.js/);
-  assert.match(wf, /body_path: release-notes\.md/);
+  assert.match(wf, /uses: Darkglassd3v\/\.github\/actions\/release@v1/);
+  assert.match(wf, /files: release\/\*\.zip/);
+  assert.doesNotMatch(wf, /softprops|release-notes|\.pdf\s*$/m);
   assert.doesNotMatch(wf, /Expand-Archive|xattr -dr/);
 });
