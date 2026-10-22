@@ -2060,3 +2060,15 @@ test("C3: a password saved by an older OpenSet works once and is then stored the
   assert.equal((await b.access(1)).control, true);
   await waitFor(() => JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth.key, "stored as a PBKDF2 key");
 });
+
+test("C3: commands to Live carry the key the Remote Script sent with its state", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, key: "a".repeat(32) });
+  const sent = c.expectCmd({ cmd: "play" });
+  await c.cmd({ cmd: "play" });
+  assert.equal((await sent).key, "a".repeat(32));
+  await c.at(9); // a state without the key (an older Remote Script) keeps the last one
+  const again = c.expectCmd({ cmd: "stop" });
+  await c.cmd({ cmd: "stop" });
+  assert.equal((await again).key, "a".repeat(32));
+});
