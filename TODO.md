@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 fatto, A2 (UI) in corso, poi A3 (sicurezza); in attesa dei revisori di logica e ponytail-audit
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 fatto, A2 (UI) in corso, poi A3 (sicurezza) e A4 (motore, server, AbleNet)
 
 ## Da fare
 
@@ -89,7 +89,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ### Audit completo dopo W7, prima del rilascio W8 (richiesto dall'utente il 2026-10-22: i bug trovati si correggono nella 0.6.0)
 - Via libera dell'utente il 2026-10-22: audit, correzioni, commit, push, PR e merge (stato salvato anche con `/ecc:ck save`)
-- [ ] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP: fatto, A3) + revisione della logica di riproduzione (in corso) + revisione della UI (fatta: A2)
+- [x] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP: fatto, A3) + revisione della logica di riproduzione (fatta: A4) + revisione della UI (fatta: A2)
 - [ ] `superpowers:systematic-debugging` sul bug della scaletta che sparisce, con il pacchetto log della 0.5.1 (in attesa del pacchetto)
 - [x] agente `ecc:python-reviewer` sul Remote Script (Python 3.7 di Live 11, API di Live): 13 punti, correzioni in A1
 
@@ -140,6 +140,28 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   18. `setlist.json` leggibile solo dall'utente (0600)
 - [ ] GREEN: `server/index.js`, `server/auth.js`, `server/editor.js`, `server/setlist.js`, `server/als-parser.js`, UI
 - Non corretti: password e token in chiaro su HTTP (serve HTTPS: versione dedicata); token senza scadenza; Node 18 dentro i programmi (pkg 5.8.1 arriva a Node 18: passare a Node SEA in una versione dedicata); limitatore per /64 IPv6; tetto alle connessioni WebSocket
+
+#### A4 — Motore, server e AbleNet (agenti `ponytail:ponytail-audit` e `ecc:code-reviewer`, confermati con un Live simulato)
+- [ ] RED `engine.test.js`, `server.test.js`, `setlist.test.js`, `editor.test.js`:
+  1. con il loop di Live acceso il motore non salta a fine brano o sezione mentre il loop gira (il vamp suona una volta sola)
+  2. salto in coda verso il confine naturale (sezione o brano successivo): la coda si svuota quando la testina ci arriva da sola (oggi rifà la sezione/il brano)
+  3. dopo uno stop il motore dimentica i confini già scattati (oggi STOP, +SKIP, +LOOP, SONG END non scattano più al secondo passaggio)
+  4. una sezione +LOOP raggiunta con un salto o con Play dal suo inizio va in loop
+  5. sezioni solo da clip (senza locator): salto alla fine del confine, non una quantizzazione prima (taglia l'ultima battuta)
+  6. count-in a battuta 0: niente solo del click (resterebbe acceso per tutto il brano); il pre-roll del count-in non fa scattare lo STOP del brano prima
+  7. salti di 4+ battute tra due stati (Live rallentato) non fanno perdere i confini: si decide con l'orologio
+  8. Re-Enable Automation e Back to Arrangement al confine, non una quantizzazione prima
+  9. Live in silenzio: `is_playing` falso e coda svuotata; al ritorno di Live la coda vecchia non scatta
+  10. sezioni dopo la fine del brano ignorate, fine della sezione mai oltre la fine del brano
+  11. incolla con `\r` o U+2028 (Note di Apple) non chiude il server; route async con try/catch
+  12. `setlist.json` scritto in modo atomico (`.tmp` + rename); file illeggibile copiato in `setlist.corrupt-<ora>.json` e registrato nel log
+  13. WebSocket: client che non rispondono al ping chiusi, niente invio a chi ha più di 1 MB in coda; battito ogni 2 s e la UI si ricollega se tace per 6 s; `perMessageDeflate` (stato da ~30 KB a ~2 KB)
+  14. AbleNet: impostazioni locali (`scene`, `driftCorrection`, `network`, `openBrowser`, `floatingWindow`, `autoLaunchLive`, `defaultView`) non copiate sui computer di riserva; correzione della deriva solo sulla riserva verso il principale; computer tolti dalla lista dimenticati; comandi copiati accettati dai computer di riserva configurati anche con password
+  15. OSC: con 32 iscrizioni si toglie la più vecchia; pacchetto a pezzi illeggibile registrato nel log
+  16. porta HTTP: si riusa quella dell'ultima volta (80 o 39080), così le icone sull'iPad restano valide
+  17. codice morto: `lanAddresses`, `ping`/`pong` del Remote Script
+- [ ] GREEN: `server/engine.js`, `server/index.js`, `server/setlist.js`, `server/editor.js`, `server/connect.js`, Remote Script, UI
+- Non corretti: brani con lo stesso nome (vedi A2); User Library di Live fuori da Documenti (si legge da `Library.cfg` in una versione dedicata; la guida spiega l'installazione a mano); `openset.log` ruotato solo all'avvio
 
 ### Esclusi (con motivo)
 Show in Dock e licenze (non applicabili); Multi-File Project, Delay Before
