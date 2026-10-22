@@ -12,6 +12,7 @@ on:
       - scripts/build-guide.js
       - scripts/make-macos-app.sh
       - scripts/win-icon.mjs
+      - scripts/release-notes.js
       - dist-extras/**
 
 permissions:
@@ -70,45 +71,14 @@ jobs:
       - name: Assemble platform packages
         run: bash scripts/assemble-release.sh "${{ steps.ver.outputs.version }}" build release
 
+      - name: Release notes (short changelog; the guide is inside every zip)
+        run: node scripts/release-notes.js "${{ steps.ver.outputs.version }}" > release-notes.md
+
       - name: Create GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           name: OpenSet ${{ github.ref_name }}
-          files: |
-            release/*.zip
-            release/*.pdf
-          body: |
-            ## OpenSet ${{ steps.ver.outputs.version }}
-
-            Controller di scaletta open-source per Ableton Live. Ogni zip contiene
-            il programma `openset-${{ steps.ver.outputs.version }}` (Node.js incluso),
-            il Remote Script per Live, l'interfaccia web, `VERSION.txt`, la guida
-            `INSTALL.txt` per la piattaforma e `OpenSet-${{ steps.ver.outputs.version }}-Guida.pdf`
-            (novità di questa versione e passi per ogni piattaforma, anche qui tra gli asset).
-
-            ### Windows
-            ```powershell
-            Expand-Archive openset-${{ steps.ver.outputs.version }}-win-x64.zip -DestinationPath C:\OpenSet
-            C:\OpenSet\openset-${{ steps.ver.outputs.version }}.exe
-            ```
-
-            ### macOS
-            `openset-${{ steps.ver.outputs.version }}-macos-arm64.zip` per Apple Silicon (M1–M4),
-            `openset-${{ steps.ver.outputs.version }}-macos-x64.zip` per Mac Intel. Estrai lo zip,
-            sposta `OpenSet ${{ steps.ver.outputs.version }}.app` in Applicazioni e, al primo avvio:
-            ```bash
-            xattr -dr com.apple.quarantine "/Applications/OpenSet ${{ steps.ver.outputs.version }}.app"
-            ```
-            poi doppio clic sull'app: si apre il Terminale con OpenSet e il browser.
-
-            ### Linux
-            ```bash
-            unzip openset-${{ steps.ver.outputs.version }}-linux-x64.zip -d openset && cd openset
-            chmod +x openset-${{ steps.ver.outputs.version }}
-            ./openset-${{ steps.ver.outputs.version }}
-            ```
-
-            Il browser si apre da solo; su Windows e macOS il Remote Script viene
-            installato nella User Library di Live. Riavvia Live e scegli OpenSet in
-            Impostazioni → Link, Tempo e MIDI → Superficie di controllo.
+          # only the zips: a separate PDF may be skipped, the guide is inside each zip
+          files: release/*.zip
+          body_path: release-notes.md

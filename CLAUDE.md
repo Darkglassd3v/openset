@@ -75,8 +75,13 @@ Ogni modifica segue questo ordine. Non saltare passi.
 - La versione è sempre visibile all'avvio: nel terminale e nella UI.
 - Ogni rilascio include un PDF generato (`OpenSet-<versione>-Guida.pdf`) con la
   presentazione dell'app e i comandi passo passo per ogni piattaforma; per un
-  aggiornamento elenca tutte le novità (da `CHANGELOG.md`). Va dentro ogni zip e
-  tra gli asset della release.
+  aggiornamento elenca tutte le novità (da `CHANGELOG.md`). Va **solo dentro ogni
+  zip**, non a parte tra gli asset: chi scarica solo lo zip deve averla (utente,
+  2026-10-22).
+- Le note della release su GitHub sono un changelog breve (`scripts/release-notes.js`
+  dal `CHANGELOG.md`), senza passi di installazione: quelli stanno nella guida.
+- La release non usa artefatti delle Actions (spazio esaurito): `release.yml` è un
+  solo job su macOS che allega gli zip alla release.
 - L'icona dell'app (`docs/brand/logo.svg`) va ovunque si può: UI, favicon, PDF,
   icona del programma.
 
