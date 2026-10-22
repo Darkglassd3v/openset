@@ -362,6 +362,64 @@ test("Auto-Launch the Last Live Project: the last .als opens when Live is not ru
   assert.deepEqual(busy, []);
 });
 
+test("menu (AbleSet): open, folder, hostname, Remote Script and quit, from this computer only", async (t) => {
+  const calls = [];
+  const c = await setup(t, {
+    openBrowser: (url, opts) => calls.push(["browser", url, opts]),
+    openFile: (f) => calls.push(["file", f]),
+    installScript: () => ({ status: "updated", path: "/x/Remote Scripts/OpenSet" }),
+    quit: () => calls.push(["quit"]),
+    platform: "darwin",
+  });
+  calls.length = 0; // the browser opened at start
+  const host = (action, body = {}) =>
+    fetch(c.url("/api/host/" + action), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await host("open", { app: true })).status, 200);
+  assert.equal((await host("folder")).status, 200);
+  assert.equal((await host("hostname")).status, 200);
+  const installed = await host("installScript");
+  assert.deepEqual(await installed.json(), { status: "updated", path: "/x/Remote Scripts/OpenSet" });
+  assert.deepEqual((await c.state()).scriptInstall, { status: "updated", path: "/x/Remote Scripts/OpenSet" });
+  assert.equal((await host("nope")).status, 404);
+  assert.equal((await host("quit")).status, 200);
+  await waitFor(() => calls.some((x) => x[0] === "quit"), "quit");
+  assert.deepEqual(calls, [
+    ["browser", `http://localhost:${c.srv.httpPort}`, { app: true }],
+    ["file", c.baseDir],
+    ["file", "x-apple.systempreferences:com.apple.Sharing-Settings.extension"],
+    ["quit"],
+  ]);
+  if (LAN_IP) assert.equal((await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/host/quit`, { method: "POST" })).status, 403);
+});
+
+test("Check for Updates: this version against the latest release", async (t) => {
+  const version = require("../package.json").version;
+  const url = "https://github.com/Darkglassd3v/openset/releases/tag/v99.0.0";
+  const c = await setup(t, { latestRelease: async () => ({ tag: "v99.0.0", url }) });
+  assert.deepEqual(await (await fetch(c.url("/api/update"))).json(), { current: version, latest: "99.0.0", newer: true, url });
+  const same = await setup(t, { latestRelease: async () => ({ tag: "v" + version, url }) });
+  assert.equal((await (await fetch(same.url("/api/update"))).json()).newer, false);
+  const off = await setup(t, { latestRelease: async () => { throw new Error("offline"); } });
+  assert.match((await (await fetch(off.url("/api/update"))).json()).error, /offline/);
+});
+
+test("Preferred Network: addresses and QR codes of the chosen network", async (t) => {
+  const interfaces = {
+    en0: [{ family: "IPv4", internal: false, address: "192.168.1.50" }],
+    en5: [{ family: "IPv4", internal: false, address: "10.0.0.7" }],
+  };
+  const c = await setup(t, { netInfo: () => ({ platform: "linux", hostname: null, interfaces }) });
+  const connect = async () => (await fetch(c.url("/api/connect"))).json();
+  let r = await connect();
+  assert.equal(r.urls.length, 2);
+  assert.deepEqual(r.networks, [{ name: "en0", address: "192.168.1.50" }, { name: "en5", address: "10.0.0.7" }]);
+  assert.equal((await c.state()).settings.network, "");
+  await c.cmd({ cmd: "settings", network: "en5" });
+  r = await connect();
+  assert.deepEqual(r.urls.map((u) => u.url), [`http://10.0.0.7:${c.srv.httpPort}`]);
+  assert.equal((await c.cmd({ cmd: "settings", network: 5 })).status, 400);
+});
+
 test("debug logs: Live connection events, file log and log package", async (t) => {
   const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();

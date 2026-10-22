@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W7 RED
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W7 GREEN
 
 ## Da fare
 
@@ -80,7 +80,9 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - Voci: Device Settings (impostazioni di tutti i dispositivi in una pagina); Connected Scene (principale/riserva); Automatic Drift Correction (Phase Nudge); Sync Playback Now
 
 #### W7 — Voci del menu di AbleSet in Opzioni (solo da questo computer)
-- [ ] Documentazione, reinstalla Remote Script, apri cartella dati / custom.css, Change Hostname, Preferred Network, Check for Updates, Submit Feedback, Quit
+- [x] RED: `connect.test.js` (rete preferita, `lanInterfaces`), `server.test.js` (`/api/host/*` da loopback: apri, cartella, nome del computer, Remote Script, esci; `/api/update`; `network` e `/api/connect`)
+- [ ] GREEN: `server/connect.js`, server, CLI, UI (sezione «OpenSet»)
+- Voci: Documentazione, reinstalla Remote Script, apri cartella dati / custom.css, Change Hostname, Preferred Network, Check for Updates, Submit Feedback, Quit
 
 #### W8 — Rilascio v0.6.0
 - [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI verde (le build), merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
