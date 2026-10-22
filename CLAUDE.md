@@ -78,10 +78,12 @@ Ogni modifica segue questo ordine. Non saltare passi.
   aggiornamento elenca tutte le novità (da `CHANGELOG.md`). Va **solo dentro ogni
   zip**, non a parte tra gli asset: chi scarica solo lo zip deve averla (utente,
   2026-10-22).
-- Le note della release su GitHub sono un changelog breve (`scripts/release-notes.js`
-  dal `CHANGELOG.md`), senza passi di installazione: quelli stanno nella guida.
+- Le note della release su GitHub sono un changelog breve dal `CHANGELOG.md`, senza
+  passi di installazione: quelli stanno nella guida.
 - La release non usa artefatti delle Actions (spazio esaurito): `release.yml` è un
-  solo job su macOS che allega gli zip alla release.
+  solo job su macOS che pubblica con l'azione condivisa
+  `Darkglassd3v/.github/actions/release@v1` (controlla versione nei nomi e guida
+  dentro gli zip, scrive le note, pubblica solo dai tag).
 - L'icona dell'app (`docs/brand/logo.svg`) va ovunque si può: UI, favicon, PDF,
   icona del programma.
 

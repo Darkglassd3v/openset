@@ -12,7 +12,6 @@ on:
       - scripts/build-guide.js
       - scripts/make-macos-app.sh
       - scripts/win-icon.mjs
-      - scripts/release-notes.js
       - dist-extras/**
 
 permissions:
@@ -71,14 +70,11 @@ jobs:
       - name: Assemble platform packages
         run: bash scripts/assemble-release.sh "${{ steps.ver.outputs.version }}" build release
 
-      - name: Release notes (short changelog; the guide is inside every zip)
-        run: node scripts/release-notes.js "${{ steps.ver.outputs.version }}" > release-notes.md
-
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      # shared with the other projects: checks the names and the guide inside every zip,
+      # writes short notes from CHANGELOG.md and publishes only for tags (no artifacts)
+      - name: GitHub Release
+        uses: Darkglassd3v/.github/actions/release@v1
         with:
-          name: OpenSet ${{ github.ref_name }}
-          # only the zips: a separate PDF may be skipped, the guide is inside each zip
+          version: ${{ steps.ver.outputs.version }}
           files: release/*.zip
-          body_path: release-notes.md
+          title: OpenSet v${{ steps.ver.outputs.version }}

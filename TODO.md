@@ -25,7 +25,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   - [x] Release 0.6.0 corretta su GitHub: PDF a parte tolto (resta dentro i 4 zip), note brevi da `scripts/release-notes.js`; PR #5 unita
 - [ ] Azione di release condivisa `Darkglassd3v/.github/actions/release@v1` (creata il 2026-10-22, CI verde su Ubuntu, Windows, macOS): è un'azione e non un workflow riutilizzabile, perché deve girare nel job che costruisce (niente artefatti)
   - [x] RED `packaging.test.js`: `release.yml` la usa, solo gli zip, niente `softprops` né `release-notes`; `scripts/release-notes.js` e il suo test tolti (le note le scrive l'azione)
-  - [ ] GREEN: `.github/workflows/release.yml`
+  - [x] GREEN: `.github/workflows/release.yml`, `CLAUDE.md`
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`); scegliere dove pubblicare le release (vedi «Da decidere»)
 
 ## Da fare
