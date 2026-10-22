@@ -1905,21 +1905,60 @@ test("A4: a peer removed while its poll is still running is not brought back", a
   assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400);
 });
 
-test("A4: with more backups, a removed one is not followed while the others answer, nor asked again", async (t) => {
+test("A4: with more backups, a removed one is not followed while the others answer", async (t) => {
   const a = await gatedPeer(t, () => ({ is_playing: true, beat: 8 }));
   const b = await gatedPeer(t, () => ({ is_playing: false, beat: 0 }));
-  const gone = await gatedPeer(t, () => ({ is_playing: true, beat: 8 }));
   const c = await setup(t, { peerPollMs: 50 });
   await c.connect();
-  await c.cmd({ cmd: "peers", urls: [a.url, b.url, gone.url] });
+  await c.cmd({ cmd: "peers", urls: [a.url, b.url] });
   await a.asked;
   await c.cmd({ cmd: "peers", urls: [b.url] });
   a.release();
-  await b.asked; // the answer of the removed backup is in, the poll waits for the next one
+  await b.asked;
+  await pause(100); // the answer of the removed backup is in, the poll still waits for the other one
   assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400);
-  b.release();
-  await pause(150);
-  assert.equal(gone.hits, 0, "a backup removed during the poll is not asked");
+});
+
+test("C1: a backup that does not answer does not hold back the others", async (t) => {
+  const silent = await gatedPeer(t, () => ({ is_playing: false, beat: 0 }));
+  const other = await fakePeer(t, () => ({ is_playing: true, beat: 4 }));
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect();
+  await c.cmd({ cmd: "peers", urls: [silent.url, other] });
+  await silent.asked;
+  // one by one, the second backup would wait for the first one's 800 ms timeout
+  await waitFor(async () => (await c.state()).peers[1]?.playing, "the second backup while the first is silent", 400);
+});
+
+test("C1: a backup removed while a copied command was on its way is not shown as refusing when added again", async (t) => {
+  let release;
+  const go = new Promise((r) => (release = r));
+  let asked;
+  const cmdAsked = new Promise((r) => (asked = r));
+  // a backup with a password: it refuses the copied command, but late
+  const srv = http.createServer(async (q, res) => {
+    if (q.url === "/api/cmd") {
+      asked();
+      await go;
+      res.statusCode = 401;
+      return res.end("{}");
+    }
+    res.end(JSON.stringify({ connected: true, tempo: 120, sig_num: 4, sig_den: 4, setlist: [], current: -1, settings: { scene: "backup" } }));
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  t.after(() => (release(), srv.close()));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect();
+  await c.cmd({ cmd: "peers", urls: [url] });
+  await c.cmd({ cmd: "play" }); // copied to the backup
+  await cmdAsked;
+  await c.cmd({ cmd: "peers", urls: [] });
+  release();
+  await pause(100); // the refusal arrives after the backup left the list
+  await c.cmd({ cmd: "peers", urls: [url] });
+  await waitFor(async () => (await c.state()).peers[0]?.online, "backup polled again");
+  assert.equal((await c.state()).peers[0].denied, false);
 });
 
 test("A4: a backup poll that ends after OpenSet is closed does not throw", async (t) => {
