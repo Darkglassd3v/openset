@@ -613,6 +613,17 @@ function start(opts = {}) {
       case "backToArrangement":
         sendToLive({ cmd: msg.cmd });
         return true;
+      // AbleSet's Tools, run by the Remote Script on the open set
+      case "setClipColorsFromNames":
+        if (!liveState.connected) return false;
+        sendToLive({ cmd: msg.cmd });
+        return true;
+      case "placeSectionLocators":
+      case "removeSectionLocators":
+        // they move Live's playhead to each clip
+        if (!liveState.connected || liveState.is_playing) return false;
+        sendToLive({ cmd: msg.cmd });
+        return true;
       case "jump":
         if (safe && num(msg.time) && S.songAt(list, msg.time) !== cur) return false;
         return num(msg.time) && jumpTo(msg.time, list.some((s) => Math.abs(s.playStart - msg.time) < S.EPS) ? "song" : "section");

@@ -426,6 +426,18 @@
       con <span class="mono">all</span>, un nome (o tag) o un indirizzo IP.</p>
     <ul id="deviceList"></ul>
 
+    <h2>Strumenti</h2>
+    <p>Lavorano sul set aperto in Live (come i Tools di AbleSet). Ferma la riproduzione prima di usarli.</p>
+    <div class="row">
+      <button class="btn" data-tool="setClipColorsFromNames">Colori delle clip dai nomi</button>
+      <button class="btn" data-tool="placeSectionLocators">Metti i locator sulle sezioni</button>
+      <button class="btn" data-tool="removeSectionLocators">Togli i locator messi da OpenSet</button>
+    </div>
+    <p class="dim">«Colori delle clip dai nomi»: nelle tracce con <span class="mono">+CC</span> o
+      <span class="mono">+CLIPCOLORS</span> la clip «Strofa [blue]» diventa blu e si chiama «Strofa».
+      I locator <span class="mono">&gt;</span> sulle clip delle sezioni permettono di saltarci anche mentre suona:
+      dopo averli messi salva e riapri il progetto in Live.</p>
+
     <h2>Debug</h2>
     <p>Il registro di OpenSet: avvio, porte, collegamento con Live, errori del Remote Script.
       Se qualcosa non va, crea il pacchetto log e invialo: contiene anche le righe di OpenSet
@@ -980,6 +992,7 @@ async function debugFetch(url) {
   if (!r.ok) throw new Error("errore " + r.status);
   return r;
 }
+document.querySelectorAll("[data-tool]").forEach((b) => (b.onclick = () => send({ cmd: b.dataset.tool })));
 $("logShow").onclick = async () => {
   try {
     const { lines } = await (await debugFetch("/api/logs")).json();

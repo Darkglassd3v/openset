@@ -15,8 +15,9 @@ const EPS = 0.001;
 // AbleSet's colors, for [color] in names
 const COLORS = ["gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose"];
 // one per column of Live's clip color palette (color index = row * 14 + column), like AbleSet
-// shortcut: matched by hue, AbleSet's own table is an image in its docs; adjust if a user reports a mismatch
-const CLIP_COLORS = ["rose", "orange", "amber", "yellow", "lime", "green", "emerald", "cyan", "sky", "blue", "indigo", "purple", "pink", "gray"];
+// shortcut: matched by hue (column 0 holds Live's red, 6 its teal); AbleSet's own table is an
+// image in its docs, adjust if a user reports a mismatch
+const CLIP_COLORS = ["red", "orange", "amber", "yellow", "lime", "green", "teal", "cyan", "sky", "blue", "indigo", "purple", "pink", "gray"];
 const END_NAMES = { "SONG END": "END", STOP: "STOP", AUTOSTOP: "STOP" };
 
 function parseName(raw) {

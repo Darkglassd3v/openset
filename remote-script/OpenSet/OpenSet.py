@@ -4,6 +4,7 @@
 # then select "OpenSet" as a Control Surface in Live's Link/MIDI preferences.
 
 import json
+import re
 import socket
 import time
 
@@ -21,6 +22,19 @@ TICK_MS = 100                        # state broadcast interval
 MAX_DATAGRAM = 8000                  # macOS caps loopback UDP datagrams at 9216 bytes
 CHUNK_CHARS = 1000                   # bigger messages go in chunks; room for JSON escaping
 CLIPS_EVERY = 20                     # ticks between scans of Sections/+LYRICS clips (~2 s)
+
+
+# AbleSet color -> column of Live's palette (first row), for "Set Clip Colors from Names"
+COLOR_COLUMNS = {
+    "red": 0, "rose": 0, "orange": 1, "amber": 2, "yellow": 3, "lime": 4, "green": 5, "emerald": 6,
+    "teal": 6, "cyan": 7, "sky": 8, "blue": 9, "indigo": 10, "violet": 10, "purple": 11,
+    "fuchsia": 12, "pink": 12, "gray": 13,
+}
+COLOR_TAG = re.compile(r"\[\s*([A-Za-z]+)\s*\]")
+
+
+def _is_sections(name):
+    return name.strip().lower().startswith("sections") or "+SECTIONS" in name.split()
 
 
 def _live_version():
@@ -167,8 +181,7 @@ class OpenSet(ControlSurface):
         for t in all_tracks:
             try:
                 name = t.name
-                sections = name.strip().lower().startswith("sections") or "+SECTIONS" in name.split()
-                if not (sections or "+LYRICS" in name):
+                if not (_is_sections(name) or "+LYRICS" in name):
                     continue
                 clips = getattr(t, "arrangement_clips", None)
                 if clips is None:
@@ -234,6 +247,10 @@ class OpenSet(ControlSurface):
             s.tempo = float(msg.get("bpm", s.tempo))
         elif cmd == "quant":
             s.clip_trigger_quantization = _quantization(int(msg.get("value", 4)))
+        elif cmd == "setClipColorsFromNames":
+            self._clip_colors_from_names()
+        elif cmd in ("placeSectionLocators", "removeSectionLocators"):
+            self._section_locators(cmd == "placeSectionLocators")
         elif cmd == "clickSolo":
             self._click_solo(bool(msg.get("on")))
         elif cmd == "reEnableAutomation":
@@ -246,6 +263,42 @@ class OpenSet(ControlSurface):
         elif cmd == "ping":
             self._send({"type": "pong"})
 
+
+    def _clip_colors_from_names(self):
+        # AbleSet tool: "Verse [blue]" on a +CC/+CLIPCOLORS track becomes a blue clip named "Verse"
+        for t in list(self._song.tracks):
+            words = t.name.split()
+            if "+CC" not in words and "+CLIPCOLORS" not in words:
+                continue
+            for c in getattr(t, "arrangement_clips", None) or []:
+                tag = next((m for m in COLOR_TAG.finditer(c.name) if m.group(1).lower() in COLOR_COLUMNS), None)
+                if tag:
+                    c.color_index = COLOR_COLUMNS[tag.group(1).lower()]
+                    c.name = " ".join((c.name[:tag.start()] + c.name[tag.end():]).split())
+
+    def _section_locators(self, place):
+        # AbleSet tools: a ">" locator on each section clip (jumpable while playing), or remove them.
+        # set_or_delete_cue() toggles a cue at the playhead, so positions with other locators are left alone.
+        s = self._song
+        if s.is_playing:
+            self._log("OpenSet: stop playback before placing or removing section locators")
+            return
+        track = next((t for t in s.tracks if _is_sections(t.name)), None)
+        if track is None:
+            return
+        back = s.current_song_time
+        for start in [c.start_time for c in getattr(track, "arrangement_clips", None) or []]:
+            here = [c for c in s.cue_points if abs(c.time - start) < 1e-3]
+            if place and not here:
+                s.current_song_time = start
+                s.set_or_delete_cue()
+                for c in s.cue_points:
+                    if abs(c.time - start) < 1e-3:
+                        c.name = ">"
+            elif not place and len(here) == 1 and here[0].name == ">":
+                s.current_song_time = start
+                s.set_or_delete_cue()
+        s.current_song_time = back
 
     def _click_solo(self, on):
         # AbleSet: the first track or group with "click", +CLICK tracks and Lifesine
