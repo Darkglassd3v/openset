@@ -118,6 +118,9 @@ for Live).
 
 ## Da decidere con l'utente
 
+- Audit prima di W8: partire con `ponytail:ponytail-audit`, `security-review`, `ecc:python-reviewer`, poi `ecc:e2e-testing`? (chiesto il 2026-10-22, costa token)
+- CI bloccata su `main`: run 39825803727 resta `in_progress` con i 3 job verdi (problema di GitHub): lasciarla o cancellarla?
+
 - Brani aggiunti a mano dalla UI, senza progetto Live (solo scaletta e testi):
   proposto il 2026-10-20, in attesa di risposta.
 
