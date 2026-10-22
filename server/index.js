@@ -84,6 +84,8 @@ function defaultPrefs() {
       countIn: false,
       countInBars: 1,
       countInSoloClick: false,
+      // Setlist
+      removePlayed: false,
     },
     saved: {},
     backups: [], // saved setlists replaced by a newer save: { name, at, data }, newest first
@@ -390,7 +392,13 @@ function start(opts = {}) {
         settings: prefs.settings,
         queued,
       });
-      cmds.forEach(sendToLive);
+      for (const c of cmds) {
+        if (c.cmd !== "played") sendToLive(c);
+        else if (!prefs.skip.includes(c.name)) {
+          log.info(`[setlist] ${c.name} played to the end: removed from the setlist`);
+          setPrefs({ skip: [...prefs.skip, c.name] });
+        }
+      }
       if (queued && cmds.some((c) => c.cmd === "jump" && Math.abs(c.time - queued.time) < S.EPS)) queued = null;
       // playback stopped with a jump waiting (Manual mode waits for this): jump now
       if (queued && wasPlaying && !liveState.is_playing) {

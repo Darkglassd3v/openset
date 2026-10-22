@@ -26,7 +26,7 @@ function events(songs, idx, opts) {
     Math.abs(target - at) < EPS ? null : { at, cmds: [{ cmd: "jump", time: target }], preroll: true };
   const q = opts.queued;
   const wait = !q ? null : opts.jumpMode === "dynamic" ? (q.type === "section" ? "section" : "song") : opts.jumpMode;
-  const songEnd = (at) => {
+  const endOfSong = (at) => {
     const n = nextSong(songs, idx);
     const queuedHere = wait === "song" || wait === "section";
     const target = queuedHere ? q.time : n >= 0 ? songs[n].playStart : null;
@@ -38,6 +38,13 @@ function events(songs, idx, opts) {
       return { at, cmds };
     }
     return goto(at, target);
+  };
+  // AbleSet: Remove Played Songs Automatically. "played" is for the server, not for Live
+  const songEnd = (at) => {
+    const ev = endOfSong(at);
+    if (!opts.removePlayed) return ev;
+    const played = { cmd: "played", name: song.name };
+    return ev ? { ...ev, cmds: [played, ...ev.cmds] } : { at, cmds: [played] };
   };
 
   // queued jump at the end of the current section: added first, so it wins
