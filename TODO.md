@@ -26,7 +26,10 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] Azione di release condivisa `Darkglassd3v/.github/actions/release@v1` (creata il 2026-10-22, CI verde su Ubuntu, Windows, macOS; PR #6 unita, usata anche da dierre): è un'azione e non un workflow riutilizzabile, perché deve girare nel job che costruisce (niente artefatti)
   - [x] RED `packaging.test.js`: `release.yml` la usa, solo gli zip, niente `softprops` né `release-notes`; `scripts/release-notes.js` e il suo test tolti (le note le scrive l'azione)
   - [x] GREEN: `.github/workflows/release.yml`, `CLAUDE.md`
-- [ ] v0.6.1 (branch `release/v0.6.1`): corsa in AbleNet corretta (RED + GREEN: `prunePeers()` anche alla fine di `pollPeers`); prima del rilascio: CHANGELOG, versione, PR, tag (trovata dalla CI Windows della PR #6: una lettura del computer di riserva ancora in corso quando lo si toglie dalla lista lo rimetteva nello stato)
+- [ ] v0.6.1 (branch `release/v0.6.1`): corsa in AbleNet (trovata dalla CI Windows della PR #6: una lettura del computer di riserva ancora in corso quando lo si toglie dalla lista lo rimetteva nello stato)
+  - [x] RED `c406642` + GREEN `564e0dc`: `prunePeers()` anche alla fine di `pollPeers`
+  - [x] Copertura (righe 99.29%, rami 93.45%), report TDD `docs/releases/0.6.1/v0.6.1.tdd.md`, CHANGELOG 0.6.1 (Correzioni), README, versione 0.6.1 (VERSION, package.json e lock, Remote Script)
+  - [ ] `code-review` del branch, PR verso `main`, CI verde, merge, tag `v0.6.1` (pubblica `release.yml`)
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`)
 
 ## Da fare
@@ -79,7 +82,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] RED Tools: `test_openset.py` (Set Clip Colors from Names, Place/Remove Section Locators senza togliere locator esistenti, rifiutati mentre suona), `server.test.js` (comandi verso Live, non da scollegato o mentre suona), `setlist.test.js` (colonna 0 = red, 6 = teal)
 - [x] GREEN Tools: server (rifiutati da scollegato; locator non mentre suona), Remote Script (`_clip_colors_from_names`, `_section_locators`, `COLOR_COLUMNS`), UI (Opzioni → Strumenti), colonne 0 = red e 6 = teal
 - Voci: `[colore]` nei locator (18 colori di AbleSet), sezioni con il colore del brano; traccia sezioni con `+CC`/`+CLIPCOLORS` → colore della clip (colonna della tavolozza di Live); flag `+SECTIONS`; UI colorata
-- [ ] Tools: Set Clip Colors from Names, Place Locators on Section Clips, Remove Automatically Placed Locators
+- [x] Tools: Set Clip Colors from Names, Place Locators on Section Clips, Remove Automatically Placed Locators (RED/GREEN Tools sopra)
 
 #### W5 — General
 - [x] RED: `launch.test.js` (`appCommand`, fallback, `liveRunning`), `server.test.js` (defaultView, openBrowser start/live/off, floatingWindow, autoLaunchLive con `lastProject`)
