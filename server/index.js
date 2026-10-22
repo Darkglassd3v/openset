@@ -678,6 +678,7 @@ function start(opts = {}) {
           redirect: "error",
         })
           .then((res) => {
+            if (!prefs.peers.includes(url)) return; // removed while the command was on its way
             const denied = res.status === 401 || res.status === 429;
             if (denied !== peerDenied.has(url)) {
               if (denied) peerDenied.add(url);
@@ -700,8 +701,8 @@ function start(opts = {}) {
   async function pollPeers() {
     prunePeers();
     const before = JSON.stringify([...peerStatus]);
-    for (const url of prefs.peers) {
-      if (!prefs.peers.includes(url)) continue; // removed while this poll waited for another backup
+    // all at once: a backup that does not answer must not hold back the others
+    await Promise.all(prefs.peers.map(async (url) => {
       try {
         const t0 = Date.now();
         const res = await fetch(url + "/api/state", { signal: AbortSignal.timeout(800), redirect: "error" });
@@ -727,7 +728,7 @@ function start(opts = {}) {
         peerStatus.set(url, { url, online: false });
         peerClock.delete(url);
       }
-    }
+    }));
     // AbleSet: Automatic Drift Correction, with Live's phase nudge: a backup follows the main
     // computer, never the other way round (two computers nudging each other would wobble)
     const lead = prefs.settings.driftCorrection && prefs.settings.scene === "backup" && liveState.is_playing && leader();

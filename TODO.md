@@ -49,7 +49,7 @@ Richiesta dell'utente (2026-10-23, prima di andare a dormire): «correggi tutte 
 ### v0.6.2 — correzioni (branch `release/v0.6.2`)
 Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
 
-- [ ] C1 Computer di riserva — RED fatto (`server.test.js`: una riserva silenziosa non blocca le altre; risposta «rifiuta» arrivata dopo averla tolta)
+- [x] C1 Computer di riserva — RED `d4c5c55`, GREEN (`server.test.js`: una riserva silenziosa non blocca le altre; risposta «rifiuta» arrivata dopo averla tolta)
   - Quando togli dalla lista un computer di riserva con password e intanto gli stava arrivando un comando, rimettendolo la lista lo segnava ancora come «rifiuta i comandi». Ora la risposta di un computer già tolto viene ignorata (`peerDenied`).
   - Con un computer di riserva spento, gli altri si aggiornavano in ritardo (fino a 0,8 s ciascuno) perché OpenSet li leggeva uno alla volta. Ora li legge tutti insieme (`pollPeers` in parallelo).
 - [ ] C2 Brani con lo stesso nome: con due brani uguali in scaletta (una ripresa), togliere, spostare o scrivere una nota su uno cambiava anche l'altro. Ora ogni brano ha una sua chiave: il secondo è «Nome#2» (ordine, tolti, stop, note, durate misurate).
