@@ -87,6 +87,7 @@ class FakeSong(object):
         self.tracks = []
         self.calls = []
         self.listeners = []
+        self.watched = []
 
     def start_playing(self):
         self.calls.append("start")
@@ -111,11 +112,14 @@ class FakeSong(object):
     def add_is_playing_listener(self, cb):
         self.listeners.append(cb)
 
+    def remove_is_playing_listener(self, cb):
+        self.listeners.remove(cb)
+
     def add_tempo_listener(self, cb):
-        self.listeners.append(cb)
+        self.watched.append("tempo")
 
     def add_cue_points_listener(self, cb):
-        self.listeners.append(cb)
+        self.watched.append("cue_points")
 
 
 class OpenSetTest(unittest.TestCase):
@@ -390,6 +394,168 @@ class OpenSetTest(unittest.TestCase):
         self.os._poll_commands()
         self.assertEqual(self.song.calls, ["stop"])
         self.assertTrue(any("cmd error" in m for m in self.os.logged))
+
+    # ---------- audit 0.6.0 (A1) ----------
+
+    def test_only_play_stop_is_watched(self):
+        # the state goes out at every tick anyway; tempo automation would flood the server
+        self.assertEqual(self.song.listeners, [self.os._send_state])
+        self.assertEqual(self.song.watched, [])
+
+    def test_click_solo_off_survives_a_track_that_fails(self):
+        class Gone(FakeTrack):
+            @property
+            def solo(self):
+                return getattr(self, "_solo", False)
+
+            @solo.setter
+            def solo(self, value):
+                if not value and getattr(self, "_solo", False):
+                    raise RuntimeError("track deleted")
+                self._solo = value
+
+        self.song.tracks = [Gone("Click"), FakeTrack("Guide +CLICK"), FakeTrack("Lifesine")]
+        for t in self.song.tracks[1:]:
+            t.solo = False
+        self.os._handle({"cmd": "clickSolo", "on": True})
+        self.os._handle({"cmd": "clickSolo", "on": False})
+        self.assertEqual([t.solo for t in self.song.tracks[1:]], [False, False])
+        self.assertEqual(self.os._soloed, [])
+
+    def test_disconnect_releases_solo_nudge_and_listener(self):
+        self.song.tracks = [FakeTrack("Click")]
+        self.song.tracks[0].solo = False
+        self.os._handle({"cmd": "clickSolo", "on": True})
+        self.os._handle({"cmd": "nudge", "dir": "up", "ms": 200})
+        self.os.disconnect()
+        self.assertFalse(self.song.tracks[0].solo)
+        self.assertEqual((self.song.nudge_up, self.song.nudge_down), (False, False))
+        self.assertEqual(self.song.listeners, [])
+
+    def test_stopping_playback_releases_the_click_solo(self):
+        # the server may be gone during a count-in: stopping Live still ends the solo
+        self.song.tracks = [FakeTrack("Click")]
+        self.song.tracks[0].solo = False
+        self.os._handle({"cmd": "clickSolo", "on": True})
+        self.os._tick()  # count-in about to start
+        self.song.is_playing = True
+        self.os._tick()
+        self.assertTrue(self.song.tracks[0].solo)
+        self.song.is_playing = False
+        self.os._tick()
+        self.assertFalse(self.song.tracks[0].solo)
+
+    def test_failed_send_resends_cues_and_clips_later(self):
+        class Down(object):
+            def sendto(self, *args):
+                raise OSError(55, "No buffer space available")
+
+            def close(self):
+                pass
+
+        real = self.os._sock
+        self.os._sock = Down()
+        self.song.cue_points.append(FakeCue("Song C", 64.0))
+        self.song.tracks = [FakeTrack("Sections", [FakeClip("Verse", 0.0, 8.0)])]
+        self.os._send_state()
+        self.os._send_clips()
+        self.os._sock = real
+        self.received()
+        self.os._send_state()
+        self.os._send_clips()
+        msgs = self.received()
+        self.assertEqual(len([m for m in msgs if m.get("type") == "state"][0]["cues"]), 3)
+        self.assertEqual(len([m for m in msgs if m.get("type") == "clips"]), 1)
+
+    def test_cues_and_clips_are_resent_every_10_seconds(self):
+        # a lost chunk must not leave the server without the setlist
+        self.song.tracks = [FakeTrack("Sections", [FakeClip("Verse", 0.0, 8.0)])]
+        self.os._send_clips()
+        self.received()
+        self.os._ticks = 100
+        self.os._tick()
+        msgs = self.received()
+        self.assertIn("cues", [m for m in msgs if m.get("type") == "state"][0])
+        self.assertEqual(len([m for m in msgs if m.get("type") == "clips"]), 1)
+
+    def test_tick_reschedules_even_after_an_error(self):
+        def boom():
+            raise RuntimeError("boom")
+
+        self.os._send_state = boom
+        n = len(self.os.scheduled)
+        self.os._tick()
+        self.assertEqual(len(self.os.scheduled), n + 1)
+        self.assertTrue(any("tick error: boom" in m for m in self.os.logged))
+
+    def test_nudge_is_checked_and_capped(self):
+        self.os._handle({"cmd": "nudge", "dir": "sideways", "ms": 200})
+        self.assertEqual((self.song.nudge_up, self.song.nudge_down), (False, False))
+        self.os._handle({"cmd": "nudge", "dir": "up", "ms": 10 ** 9})
+        self.assertEqual(self.os._nudge_ticks, 10)  # held 1 s at most
+
+    def test_section_locators_put_the_playhead_back_after_an_error(self):
+        self.song.tracks = [FakeTrack("Sections", [FakeClip("Verse", 8.0, 16.0)])]
+        self.song.current_song_time = 40.0
+
+        def broken():
+            raise RuntimeError("cue failed")
+
+        self.song.set_or_delete_cue = broken
+        with self.assertRaises(RuntimeError):
+            self.os._handle({"cmd": "placeSectionLocators"})
+        self.assertEqual(self.song.current_song_time, 40.0)
+
+    def test_command_reading_skips_windows_resets_and_is_bounded(self):
+        stop = json.dumps({"cmd": "stop"}).encode("utf-8")
+
+        class Sock(object):
+            def __init__(self, items):
+                self.items = items
+
+            def recvfrom(self, size):
+                item = self.items.pop(0) if self.items else BlockingIOError()
+                if isinstance(item, Exception):
+                    raise item
+                return item, ("127.0.0.1", 39061)
+
+            def sendto(self, *args):
+                pass
+
+            def close(self):
+                pass
+
+        class Flood(Sock):
+            def recvfrom(self, size):
+                return stop, ("127.0.0.1", 39061)
+
+        self.addCleanup(self.os._sock.close)
+        self.os._sock = Sock([ConnectionResetError(10054, "reset"), stop])
+        self.os._poll_commands()
+        self.assertEqual(self.song.calls, ["stop"])
+        self.os._sock = Flood([])
+        self.os._poll_commands()  # a sender that never stops cannot freeze Live
+        self.assertEqual(len(self.song.calls), 1 + 64)
+
+    def test_same_error_is_logged_once_a_minute_even_when_alternating(self):
+        from unittest import mock
+
+        with mock.patch.object(script.time, "time", return_value=1000.0):
+            for _ in range(3):
+                self.os._log("OpenSet state error: a")
+                self.os._log("OpenSet clips error: b")
+        self.assertEqual(self.os.logged.count("OpenSet state error: a"), 1)
+        self.assertEqual(self.os.logged.count("OpenSet clips error: b"), 1)
+        with mock.patch.object(script.time, "time", return_value=1061.0):
+            self.os._log("OpenSet state error: a")
+        self.assertEqual(self.os.logged.count("OpenSet state error: a"), 2)
+
+    def test_commands_without_a_value_are_refused(self):
+        self.song.current_song_time = 12.0
+        for cmd in ("jump", "seek", "quant"):
+            with self.assertRaises(KeyError):
+                self.os._handle({"cmd": cmd})
+        self.assertEqual((self.song.current_song_time, self.song.clip_trigger_quantization), (12.0, 4))
 
     # ---------- lifecycle ----------
 
