@@ -51,6 +51,11 @@ test("guide: version, new features and step-by-step commands for every platform"
   assert.match(html, /Link, Tempo e MIDI/); // Remote Script set-up in Live
   assert.match(html, /Aggiornare da una versione precedente/);
   assert.match(html, /Risoluzione dei problemi/);
+  // diagnostics: where the log is and how to send it (Debug Logs / Create Log Package)
+  assert.match(html, /<h2>Diagnostica e log<\/h2>/);
+  assert.match(html, /Crea pacchetto log/);
+  assert.match(html, /openset\.log/);
+  assert.match(html, /OpenSet e AbleSet insieme/);
 });
 
 test("guide: a version without changelog section is refused", () => {
