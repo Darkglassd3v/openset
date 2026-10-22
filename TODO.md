@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), correzioni A1 (Remote Script)
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 fatto; in attesa degli altri revisori
 
 ## Da fare
 
@@ -96,7 +96,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 #### A1 — Remote Script (da `ecc:python-reviewer`)
 - [x] RED `test_openset.py`: solo del click tolto anche se una traccia non risponde; `disconnect()` toglie solo, nudge e listener e non manda più lo stato; lo stop di Live toglie il solo del click (server caduto durante il count-in); invio fallito → cue e clip rimandati, e comunque ogni ~10 s; `_tick` si riprogramma anche dopo un errore; `nudge` con `dir` sconosciuto ignorato e `ms` limitato a 1000; `_section_locators` rimette la testina anche dopo un errore; lettura dei comandi limitata a 64 per tick e `ConnectionResetError` (Windows) saltato; errori uguali una volta al minuto anche se alternati; `jump`/`seek`/`quant` senza valore rifiutati; niente listener del tempo e dei locator (bastano i tick, evita raffiche con l'automazione del tempo)
 - [x] RED `server.test.js`: le stesse clip rimandate dallo script ogni ~10 s non ricaricano i testi (`lyricsRev` invariato)
-- [ ] GREEN: `remote-script/OpenSet/OpenSet.py`, server (clip uguali ignorate)
+- [x] GREEN: `remote-script/OpenSet/OpenSet.py`, server (clip uguali ignorate)
 - Non corretti: lettura dei cue a ogni tick con set molto grandi (non misurato in Live, da rivedere se il pacchetto log mostra rallentamenti); comandi da altri programmi dello stesso computer (la porta 39050 è già solo su 127.0.0.1)
 - [ ] `ecc:e2e-testing` (Playwright) per i flussi principali della UI, oggi senza test automatici
 - [ ] Verificare su Safari/iPad il tempo della prima connessione WebSocket: nel Chrome di test 1-2,4 s (da Node 8 ms, HTTP 3 ms)

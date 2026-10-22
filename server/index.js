@@ -429,7 +429,9 @@ function start(opts = {}) {
     if (msg.type === "chunk") return handleChunk(msg);
     if (msg.type === "log") return log.info(`[script] ${String(msg.msg)}`);
     if (msg.type === "clips") {
-      tracks = Array.isArray(msg.tracks) ? msg.tracks : [];
+      const next = Array.isArray(msg.tracks) ? msg.tracks : [];
+      if (JSON.stringify(next) === JSON.stringify(tracks)) return; // periodic resend: lyrics stay as they are
+      tracks = next;
       lyricsRev++;
       return changed();
     }

@@ -22,6 +22,9 @@ TICK_MS = 100                        # state broadcast interval
 MAX_DATAGRAM = 8000                  # macOS caps loopback UDP datagrams at 9216 bytes
 CHUNK_CHARS = 1000                   # bigger messages go in chunks; room for JSON escaping
 CLIPS_EVERY = 20                     # ticks between scans of Sections/+LYRICS clips (~2 s)
+RESEND_EVERY = 100                   # ticks between full resends of cues and clips (~10 s): a lost chunk is not forever
+MAX_COMMANDS = 64                    # commands read per tick: a flooding sender cannot freeze Live
+LOG_EVERY = 60                       # seconds before the same message is logged again
 
 
 # AbleSet color -> column of Live's palette (first row), for "Set Clip Colors from Names"
@@ -60,12 +63,6 @@ class OpenSet(ControlSurface):
         super(OpenSet, self).__init__(c_instance)
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         self._sock.setblocking(False)
-        if hasattr(socket, "SIO_UDP_CONNRESET"):
-            # Windows: otherwise recvfrom fails after sending while the server is down
-            try:
-                self._sock.ioctl(socket.SIO_UDP_CONNRESET, False)
-            except Exception:
-                pass
         self._cmd_port = True     # False: commands from OpenSet cannot reach this script
         try:
             self._sock.bind(("127.0.0.1", LISTEN_PORT))
@@ -73,7 +70,8 @@ class OpenSet(ControlSurface):
             self._cmd_port = False
         self._song = self.song if not callable(self.song) else self.song()
         self._live_version = _live_version()
-        self._last_log = None
+        self._logged = {}         # message -> last time it was logged
+        self._was_playing = False
         self._alive = True
         self._ticks = 0
         self._chunk_id = int(time.time() * 1000) % 1000000000
@@ -93,6 +91,13 @@ class OpenSet(ControlSurface):
     def disconnect(self):
         self._alive = False
         try:
+            # nothing stays held once the script stops: click solo, phase nudge, listener
+            self._click_solo(False)
+            self._song.nudge_up = self._song.nudge_down = False
+            self._song.remove_is_playing_listener(self._send_state)
+        except Exception:
+            pass
+        try:
             self._sock.close()
         except Exception:
             pass
@@ -101,15 +106,24 @@ class OpenSet(ControlSurface):
     def _tick(self):
         if not self._alive:
             return
-        self._poll_commands()
-        if self._nudge_ticks:
-            self._nudge_ticks -= 1
-            if not self._nudge_ticks:
-                self._song.nudge_up = False
-                self._song.nudge_down = False
-        self._send_state()
-        if self._ticks % CLIPS_EVERY == 0:
-            self._send_clips()
+        try:
+            self._poll_commands()
+            if self._nudge_ticks:
+                self._nudge_ticks -= 1
+                if not self._nudge_ticks:
+                    self._song.nudge_up = False
+                    self._song.nudge_down = False
+            playing = self._song.is_playing
+            if self._soloed and self._was_playing and not playing:
+                self._click_solo(False)  # a count-in solo never outlives playback, even without the server
+            self._was_playing = playing
+            if self._ticks % RESEND_EVERY == 0:
+                self._cues_sent = self._clips_sent = None
+            self._send_state()
+            if self._ticks % CLIPS_EVERY == 0:
+                self._send_clips()
+        except Exception as e:
+            self._log("OpenSet tick error: %s" % e)
         self._ticks += 1
         # schedule_message(delay_in_ticks, callback) — ~10 Hz
         self.schedule_message(1, self._tick)
@@ -117,19 +131,22 @@ class OpenSet(ControlSurface):
     # ---------- Live -> server ----------
 
     def _log(self, msg):
-        # Live's Log.txt is hard to find for users: OpenSet's log gets it too
-        if msg == self._last_log:
-            return  # an error repeated at every tick is logged once
-        self._last_log = msg
+        # Live's Log.txt is hard to find for users: OpenSet's log gets it too.
+        # An error repeated at every tick is logged once a minute.
+        now = time.time()
+        if now - self._logged.get(msg, now - LOG_EVERY) < LOG_EVERY:
+            return
+        if len(self._logged) > 100:
+            self._logged = {}
+        self._logged[msg] = now
         self.log_message(msg)
         self._send({"type": "log", "msg": msg})
 
     def _add_listeners(self):
         s = self._song
         try:
+            # tempo and locators go out at every tick; their notifications would flood the server
             s.add_is_playing_listener(self._send_state)
-            s.add_tempo_listener(self._send_state)
-            s.add_cue_points_listener(self._send_state)
         except Exception as e:
             self._log("OpenSet listener error: %s" % e)
 
@@ -138,14 +155,15 @@ class OpenSet(ControlSurface):
         try:
             if len(data) <= MAX_DATAGRAM:
                 self._sock.sendto(data.encode("utf-8"), SERVER_ADDR)
-                return
+                return True
             self._chunk_id += 1
             parts = [data[i:i + CHUNK_CHARS] for i in range(0, len(data), CHUNK_CHARS)]
             for i, part in enumerate(parts):
                 chunk = {"type": "chunk", "id": self._chunk_id, "i": i, "n": len(parts), "data": part}
                 self._sock.sendto(json.dumps(chunk).encode("utf-8"), SERVER_ADDR)
+            return True
         except Exception:
-            pass
+            return False  # inside Live a send error must never raise
 
     def _send_state(self):
         s = self._song
@@ -170,8 +188,8 @@ class OpenSet(ControlSurface):
             key = json.dumps(cues)
             if key != self._cues_sent:
                 state["cues"] = cues
-                self._cues_sent = key
-            self._send(state)
+            if self._send(state):
+                self._cues_sent = key  # only once delivered to the socket
         except Exception as e:
             self._log("OpenSet state error: %s" % e)
 
@@ -199,9 +217,8 @@ class OpenSet(ControlSurface):
             except Exception as e:
                 self._log("OpenSet clips error: %s" % e)
         key = json.dumps(tracks)
-        if key != self._clips_sent:
+        if key != self._clips_sent and self._send({"type": "clips", "tracks": tracks}):
             self._clips_sent = key
-            self._send({"type": "clips", "tracks": tracks})
 
     @staticmethod
     def _clip(c):
@@ -214,10 +231,12 @@ class OpenSet(ControlSurface):
     # ---------- server -> Live ----------
 
     def _poll_commands(self):
-        while True:
+        for _ in range(MAX_COMMANDS):
             try:
                 data, _addr = self._sock.recvfrom(65536)
-            except (BlockingIOError, OSError):
+            except ConnectionResetError:
+                continue  # Windows: an old "port unreachable" from a send while the server was down
+            except OSError:
                 break
             try:
                 self._handle(json.loads(data.decode("utf-8")))
@@ -235,14 +254,14 @@ class OpenSet(ControlSurface):
             s.stop_playing()
         elif cmd == "jump":
             # jump to a cue point by beat time
-            t = float(msg.get("time", 0))
+            t = float(msg["time"])
             for c in s.cue_points:
                 if abs(c.time - t) < 0.001:
                     c.jump()
                     return
             s.current_song_time = t
         elif cmd == "seek":
-            s.current_song_time = float(msg.get("time", 0))
+            s.current_song_time = float(msg["time"])
         elif cmd == "loop":
             on = bool(msg.get("on", False))
             if "start" in msg and "length" in msg:
@@ -252,17 +271,19 @@ class OpenSet(ControlSurface):
         elif cmd == "tempo":
             s.tempo = float(msg.get("bpm", s.tempo))
         elif cmd == "quant":
-            s.clip_trigger_quantization = _quantization(int(msg.get("value", 4)))
+            s.clip_trigger_quantization = _quantization(int(msg["value"]))
         elif cmd == "setClipColorsFromNames":
             self._clip_colors_from_names()
         elif cmd in ("placeSectionLocators", "removeSectionLocators"):
             self._section_locators(cmd == "placeSectionLocators")
         elif cmd == "nudge":
-            # AbleNet drift correction: hold Live's phase nudge button for a moment
-            up = msg.get("dir") == "up"
+            # AbleNet drift correction: hold Live's phase nudge button for a moment (1 s at most)
+            if msg.get("dir") not in ("up", "down"):
+                return
+            up = msg["dir"] == "up"
             s.nudge_up = up
             s.nudge_down = not up
-            self._nudge_ticks = max(1, int(msg.get("ms", 200)) // TICK_MS)
+            self._nudge_ticks = max(1, min(int(msg.get("ms", 200)), 1000) // TICK_MS)
         elif cmd == "clickSolo":
             self._click_solo(bool(msg.get("on")))
         elif cmd == "reEnableAutomation":
@@ -299,24 +320,29 @@ class OpenSet(ControlSurface):
         if track is None:
             return
         back = s.current_song_time
-        for start in [c.start_time for c in getattr(track, "arrangement_clips", None) or []]:
-            here = [c for c in s.cue_points if abs(c.time - start) < 1e-3]
-            if place and not here:
-                s.current_song_time = start
-                s.set_or_delete_cue()
-                for c in s.cue_points:
-                    if abs(c.time - start) < 1e-3:
-                        c.name = ">"
-            elif not place and len(here) == 1 and here[0].name == ">":
-                s.current_song_time = start
-                s.set_or_delete_cue()
-        s.current_song_time = back
+        try:
+            for start in [c.start_time for c in getattr(track, "arrangement_clips", None) or []]:
+                here = [c for c in s.cue_points if abs(c.time - start) < 1e-3]
+                if place and not here:
+                    s.current_song_time = start
+                    s.set_or_delete_cue()
+                    for c in s.cue_points:
+                        if abs(c.time - start) < 1e-3:
+                            c.name = ">"
+                elif not place and len(here) == 1 and here[0].name == ">":
+                    s.current_song_time = start
+                    s.set_or_delete_cue()
+        finally:
+            s.current_song_time = back  # the next Play starts where the user left it
 
     def _click_solo(self, on):
         # AbleSet: the first track or group with "click", +CLICK tracks and Lifesine
-        for t in self._soloed:
-            t.solo = False
-        self._soloed = []
+        old, self._soloed = self._soloed, []
+        for t in old:
+            try:
+                t.solo = False
+            except Exception:
+                pass  # a deleted track must not keep the others soloed
         if not on:
             return
         tracks = list(self._song.tracks)
