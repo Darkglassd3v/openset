@@ -651,9 +651,9 @@ function start(opts = {}) {
   const peerDenied = new Set(); // backups that refuse the copied commands (a password)
   const peerStatus = new Map(); // url -> { url, online, connected, playing, song, scene, drift }
   const peerClock = new Map(); // url -> { beat, tempo, sigNum, sigDen, at }: where the peer was, and when
-  // the computer to follow: online, playing, the main one first
+  // the computer to follow: still in the list (a poll may answer for a removed one), online, playing, the main one first
   const leader = () =>
-    [...peerStatus.values()].filter((p) => p.online && p.connected && p.playing).sort((a, b) => (b.scene === "main") - (a.scene === "main"))[0];
+    prefs.peers.map((url) => peerStatus.get(url)).filter((p) => p && p.online && p.connected && p.playing).sort((a, b) => (b.scene === "main") - (a.scene === "main"))[0];
 
   // source: "web" (browser, HTTP) or "osc". Safe Mode only limits the web app;
   // MIDI mapped in a browser and commands repeated from the main computer pass.
@@ -701,6 +701,7 @@ function start(opts = {}) {
     prunePeers();
     const before = JSON.stringify([...peerStatus]);
     for (const url of prefs.peers) {
+      if (!prefs.peers.includes(url)) continue; // removed while this poll waited for another backup
       try {
         const t0 = Date.now();
         const res = await fetch(url + "/api/state", { signal: AbortSignal.timeout(800), redirect: "error" });
@@ -727,7 +728,6 @@ function start(opts = {}) {
         peerClock.delete(url);
       }
     }
-    prunePeers(); // a peer removed while this poll waited for it must not come back
     // AbleSet: Automatic Drift Correction, with Live's phase nudge: a backup follows the main
     // computer, never the other way round (two computers nudging each other would wobble)
     const lead = prefs.settings.driftCorrection && prefs.settings.scene === "backup" && liveState.is_playing && leader();
@@ -738,7 +738,9 @@ function start(opts = {}) {
   const peerTimer = setInterval(() => {
     if (!prefs.peers.length || polling) return;
     polling = true;
-    pollPeers().finally(() => (polling = false));
+    pollPeers()
+      .catch((e) => log.error(`[peers] poll failed: ${e.message}`)) // e.g. it ended after close(): no crash
+      .finally(() => (polling = false));
   }, cfg.peerPollMs);
 
   // ---------------- commands (WebSocket, HTTP, OSC) ----------------
