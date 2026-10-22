@@ -354,6 +354,18 @@
     <p>Telefono o tablet sulla stessa rete del computer: inquadra il codice con la fotocamera o apri l'indirizzo nel browser.</p>
     <div class="connect" id="connectList"></div>
 
+    <h2>Generale</h2>
+    <label>Vista all'apertura <select id="defaultView">
+      <option value="setlist">Scaletta</option><option value="stage">Palco</option>
+      <option value="lyrics">Testi</option><option value="settings">Opzioni</option></select></label>
+    <p class="dim">Un dispositivo con una sua vista in «Questo dispositivo» usa quella.</p>
+    <label>Apri OpenSet nel browser <select id="openBrowser">
+      <option value="start">all'avvio di OpenSet</option><option value="live">quando Live si collega</option>
+      <option value="off">mai</option></select></label>
+    <label><input type="checkbox" data-set="floatingWindow"> Apri in una finestra senza schede (Chrome o Edge; altrimenti il browser normale)</label>
+    <label><input type="checkbox" data-set="autoLaunchLive"> All'avvio di OpenSet, se Live non è aperto, aprilo con l'ultimo progetto
+      <span id="lastProject" class="mono"></span></label>
+
     <h2>Riproduzione</h2>
     <label><input type="checkbox" data-set="alwaysStop"> Ferma sempre a fine brano</label>
     <label><input type="checkbox" data-set="autoJump"> Dopo uno stop, porta il cursore al brano successivo</label>
@@ -571,7 +583,13 @@ function connect() {
   };
   ws.onmessage = (e) => {
     const msg = JSON.parse(e.data);
-    if (msg.type === "state") { state = msg.state; render(); }
+    if (msg.type === "state") {
+      const first = !state;
+      state = msg.state;
+      // AbleSet's Default View, unless this device has its own
+      if (first && !navigated && !VIEW_NAMES[device.view] && VIEW_NAMES[state.settings.defaultView]) showView(state.settings.defaultView);
+      else render();
+    }
     if (msg.type === "cue") onCue(msg.cue);
     if (msg.type === "device") onDeviceCommand(msg);
     if (msg.type === "access") onAccess(msg);
@@ -1233,6 +1251,9 @@ function renderSettings() {
   $("quant").value = String(state.quant);
   $("jumpMode").value = state.settings.jumpMode;
   $("countInBars").value = String(state.settings.countInBars);
+  $("defaultView").value = state.settings.defaultView;
+  $("openBrowser").value = state.settings.openBrowser;
+  $("lastProject").textContent = state.lastProjectName ? `(${state.lastProjectName})` : "(prima carica un .als in «Progetto .als»)";
   $("midiStatus").textContent = midi.status;
   $("midiLearn").textContent = midi.learning ? "Premi un tasto MIDI… (annulla)" : "Impara da MIDI";
   $("midiList").innerHTML = state.midi.map((m, i) => `
@@ -1301,6 +1322,7 @@ $("settings").addEventListener("change", (e) => {
   if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
   if (e.target.id === "jumpMode") send({ cmd: "settings", jumpMode: e.target.value });
   if (e.target.id === "countInBars") send({ cmd: "settings", countInBars: Number(e.target.value) });
+  if (e.target.id === "defaultView" || e.target.id === "openBrowser") send({ cmd: "settings", [e.target.id]: e.target.value });
   if (e.target.id === "devName") { device.name = e.target.value.trim(); saveDevice(); sendDevice(); }
   if (e.target.id === "devView") { device.view = e.target.value; saveDevice(); }
 });
@@ -1412,7 +1434,8 @@ function showView(v) {
   sendDevice();
   render();
 }
-document.querySelectorAll("nav button").forEach((b) => { b.onclick = () => showView(b.dataset.view); });
+let navigated = false; // a tab picked before the first state wins over the default view
+document.querySelectorAll("nav button").forEach((b) => { b.onclick = () => { navigated = true; showView(b.dataset.view); }; });
 showView(VIEW_NAMES[device.view] ? device.view : VIEW_NAMES[view] ? view : "setlist");
 
 // MIDI mappings saved on the server keep working after a reload

@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W5 GREEN
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W6 RED
 
 ## Da fare
 
@@ -71,7 +71,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### W5 — General
 - [x] RED: `launch.test.js` (`appCommand`, fallback, `liveRunning`), `server.test.js` (defaultView, openBrowser start/live/off, floatingWindow, autoLaunchLive con `lastProject`)
-- [ ] GREEN: `server/launch.js`, server, CLI, UI (Opzioni → Generale)
+- [x] GREEN: `server/launch.js` (`appCommand`, `liveRunning`), server (`SETTING_VALUES`, `openUi`, `afterListen`, `lastProject`), CLI, UI (Opzioni → Generale; vista predefinita al primo stato, salvo scheda già scelta)
 - Voci: Default View; Open on Start (alla connessione di Live); Always Open in a Floating Window (Chrome/Edge `--app`); Auto-Launch the Last Live Project
 
 #### W6 — Debug e AbleNet

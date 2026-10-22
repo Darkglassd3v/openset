@@ -24,7 +24,7 @@ const { createEngine } = require("./engine");
 const { createMeter } = require("./meter");
 const { cuesBetween } = require("./cues");
 const { dataDir, migrateData } = require("./datadir");
-const { parseArgs, openBrowser } = require("./launch");
+const { parseArgs, openBrowser, liveRunning } = require("./launch");
 const { userLibraries, installRemoteScript } = require("./install");
 const { deviceUrls, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
@@ -57,8 +57,14 @@ const strMap = (o) =>
   !!o && typeof o === "object" && !Array.isArray(o) && Object.values(o).every((x) => typeof x === "string");
 const isLoopback = (a) => typeof a === "string" && (a === "::1" || /^(::ffff:)?127\./.test(a));
 const validName = (n) => typeof n === "string" && n.trim().length > 0 && n.length <= 64;
-const validSetting = (k, v) =>
-  k === "jumpMode" ? JUMP_MODES.includes(v) : k === "countInBars" ? [1, 2, 4].includes(v) : typeof v === "boolean";
+// settings with a list of values; all the others are booleans
+const SETTING_VALUES = {
+  jumpMode: JUMP_MODES,
+  countInBars: [1, 2, 4],
+  defaultView: ["setlist", "stage", "lyrics", "settings"],
+  openBrowser: ["start", "live", "off"], // AbleSet: Open AbleSet on Start (when Live connects)
+};
+const validSetting = (k, v) => (SETTING_VALUES[k] ? SETTING_VALUES[k].includes(v) : typeof v === "boolean");
 
 function defaultPrefs() {
   return {
@@ -67,8 +73,13 @@ function defaultPrefs() {
     stopAfter: [],
     notes: {},
     measured: {}, // song name -> seconds measured during real playback
-    // AbleSet's Settings → Playback
+    lastProject: null, // the last .als loaded, for Auto-Launch the Last Live Project
+    // AbleSet's Settings: General, Playback, Section Count-In, Setlist
     settings: {
+      defaultView: "setlist",
+      openBrowser: "start",
+      floatingWindow: false,
+      autoLaunchLive: false,
       alwaysStop: false,
       autoJump: true,
       autoplay: false,
@@ -152,6 +163,9 @@ function start(opts = {}) {
     scriptInstall: null, // Remote Script install result, shown by the UI
     netInfo, // platform, host name and interfaces, for /api/connect
     logger: null, // the CLI passes its own, so a crash lands in the same file
+    openBrowser: null, // (url, { app }) => void: the CLI's, null with --no-open
+    openFile: (file) => openBrowser(file), // the last .als, opened with Live
+    liveRunning: () => liveRunning(),
     liveLogFiles: () => liveLogFiles(process.platform, process.env, os.homedir()),
     ...opts,
   };
@@ -213,6 +227,7 @@ function start(opts = {}) {
       midi: cleanMidi(saved.midi) || [],
       peers: cleanPeers(saved.peers) || [],
       auth: validAuth(saved.auth) ? { salt: saved.auth.salt, hash: saved.auth.hash } : null,
+      lastProject: typeof saved.lastProject === "string" ? saved.lastProject : null,
     };
   }
 
@@ -271,6 +286,26 @@ function start(opts = {}) {
     ].join("\n");
   }
 
+  // AbleSet: Open AbleSet on Start (once per run) and Always Open in a Floating Window
+  let uiUrl = null;
+  let uiOpened = false;
+  function openUi() {
+    if (uiOpened || !uiUrl || !cfg.openBrowser) return;
+    uiOpened = true;
+    cfg.openBrowser(uiUrl, { app: prefs.settings.floatingWindow });
+  }
+
+  function afterListen(httpPort) {
+    uiUrl = `http://localhost${httpPort === 80 ? "" : ":" + httpPort}`;
+    if (prefs.settings.openBrowser === "start") openUi();
+    // AbleSet: Auto-Launch the Last Live Project, when Live is not running
+    const file = prefs.lastProject;
+    if (prefs.settings.autoLaunchLive && file && fs.existsSync(file) && !cfg.liveRunning()) {
+      log.info(`[live] Live is not running: opening ${file}`);
+      cfg.openFile(file);
+    }
+  }
+
   // why Live and OpenSet are not talking, for the UI and the log package
   function liveIssues() {
     const out = [];
@@ -316,6 +351,7 @@ function start(opts = {}) {
       scriptInstall: cfg.scriptInstall,
       devices: [...devices.values()],
       passwordSet: !!prefs.auth,
+      lastProjectName: prefs.lastProject ? path.basename(prefs.lastProject) : null,
     };
   }
 
@@ -364,6 +400,7 @@ function start(opts = {}) {
     const prevBeat = liveState.beat;
     const { type, cues: newCues, ...rest } = msg;
     liveState = { ...liveState, ...rest, connected: true };
+    if (!wasConnected && prefs.settings.openBrowser === "live") openUi();
     if (!wasConnected)
       log.info(
         `[live] connected: Live ${liveState.live_version || "?"}, Remote Script ${liveState.script_version || "older than 0.5.1"}, ` +
@@ -1097,7 +1134,7 @@ function start(opts = {}) {
     if (typeof file !== "string" || !file) return res.status(400).json({ error: "Missing 'file' path" });
     try {
       offlineProject = parseAls(file);
-      changed();
+      setPrefs({ lastProject: path.resolve(file) });
       res.json({ ok: true, locators: offlineProject.locators.length });
     } catch (e) {
       res.status(500).json({ error: String(e.message || e) });
@@ -1171,6 +1208,8 @@ function start(opts = {}) {
   if (cfg.alsFile) {
     try {
       offlineProject = parseAls(cfg.alsFile);
+      prefs = { ...prefs, lastProject: path.resolve(cfg.alsFile) };
+      savePrefs();
       log.info(`[als] loaded ${offlineProject.locators.length} locators from ${cfg.alsFile}`);
     } catch (e) {
       log.error(`[als] parse failed: ${e.message}`);
@@ -1211,6 +1250,7 @@ function start(opts = {}) {
         const httpPort = server.address().port;
         log.info(`[http] listening on ${httpPort}`);
         if (cfg.log) printAddresses(cfg.netInfo(), httpPort);
+        afterListen(httpPort);
         resolve({ httpPort, udpPort: oscPort, statePort: stateUdp.address().port, close });
       });
     };
@@ -1288,9 +1328,8 @@ if (require.main === module) {
   else if (install.status === "not-found" && libs.length)
     log.info("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
   else if (install.path) log.info(`[live] Remote Script ${install.status} in ${install.path}`);
-  start({ baseDir: dir, alsFile: args.alsFile, scriptInstall: install, logger: log }).then((srv) => {
-    if (args.open) openBrowser(`http://localhost${srv.httpPort === 80 ? "" : ":" + srv.httpPort}`);
-  }, (e) => {
+  const openUrl = (url, opts) => openBrowser(url, process.platform, undefined, opts);
+  start({ baseDir: dir, alsFile: args.alsFile, scriptInstall: install, logger: log, openBrowser: args.open ? openUrl : null }).catch((e) => {
     const hint = e.code === "EADDRINUSE" ? " (is OpenSet already running?)" : "";
     log.error(`OpenSet cannot start: ${e.message}${hint}`);
     process.exit(1);
