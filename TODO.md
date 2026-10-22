@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): in pausa su richiesta dell'utente (scelta delle skill); audit completo in corso in background; poi W2
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W2 RED
 
 ## Da fare
 
@@ -68,6 +68,14 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### W8 — Rilascio v0.6.0
 - [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI verde (le build), merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
+
+### Dopo la v0.6.0 — audit completo (richiesto dall'utente il 2026-10-22)
+- [ ] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP)
+- [ ] `superpowers:systematic-debugging` sul bug della scaletta che sparisce, con il pacchetto log della 0.5.1
+- [ ] agente `ecc:python-reviewer` sul Remote Script (Python 3.7 di Live 11, API di Live)
+- [ ] `ecc:e2e-testing` (Playwright) per i flussi principali della UI, oggi senza test automatici
+- [ ] prima di ogni merge `code-review` sulla PR; ai rilasci grossi `ecc:orch-review`
+- Un primo audit generico era partito in background ed è stato fermato su richiesta dell'utente (si rifà con queste skill)
 
 ### Esclusi (con motivo)
 Show in Dock e licenze (non applicabili); Multi-File Project, Delay Before
