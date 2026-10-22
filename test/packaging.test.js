@@ -68,3 +68,16 @@ test("local release build: a second run starts from pkg's original Windows binar
   assert.match(script.slice(rm, fetch), /built-v18\*-win-x64/);
   assert.ok(rm >= 0 && rm < fetch, "removes the patched built-v18*-win-x64 before pkg-fetch");
 });
+
+test("release workflow: one macOS job, no Actions artifacts (only release assets)", () => {
+  // Actions artifact storage is full: the zips must reach the release without upload-artifact
+  const wf = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "release.yml"), "utf-8");
+  assert.doesNotMatch(wf, /actions\/(upload|download)-artifact/);
+  const jobs = wf.slice(wf.indexOf("\njobs:"));
+  assert.equal((jobs.match(/^ {2}[\w-]+:\s*$/gm) || []).length, 1, "a single job");
+  assert.match(wf, /runs-on: macos-latest/);
+  assert.match(wf, /codesign --force --sign - build\/openset-macos-arm64/); // signed on a real Mac
+  // checked on pull requests that touch the release, published only from a tag
+  assert.match(wf, /pull_request:[\s\S]*paths:/);
+  assert.match(wf, /if: startsWith\(github\.ref, 'refs\/tags\/'\)/);
+});
