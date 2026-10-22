@@ -755,6 +755,27 @@ test("password: other devices need it to give commands; wrong guesses are slowed
   assert.equal((await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "palco-2026" })).status, 429);
 });
 
+test("password: an old token after an OpenSet restart is not a wrong password", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const ws = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
+  const msgs = [];
+  ws.on("message", (b) => msgs.push(JSON.parse(b)));
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  const access = (n) => waitFor(() => msgs.filter((m) => m.type === "access")[n], "access message " + n);
+  await access(0);
+  // a browser reconnecting after each restart or Wi-Fi blip sends its old token again and again
+  for (let i = 1; i <= 6; i++) {
+    ws.send(JSON.stringify({ type: "auth", token: "f".repeat(64) }));
+    const a = await access(i);
+    assert.equal(a.control, false);
+    assert.equal(a.tokenRejected, true); // the browser forgets it
+  }
+  ws.send(JSON.stringify({ type: "auth", password: "palco-2026" }));
+  assert.equal((await access(7)).control, true);
+});
+
 test("HTTP /api/cmd: valid, invalid and unknown commands", async (t) => {
   const c = await setup(t);
   await c.connect();

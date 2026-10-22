@@ -105,7 +105,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### A2 — Interfaccia (revisione della UI in Chrome con un Live simulato; nessun XSS trovato)
 - Test della UI con Playwright (`@playwright/test`, Chrome di sistema `channel: "chrome"`, nessun browser scaricato), file `e2e/*.spec.js` (non presi da `node --test`), `npm run e2e`
-- [ ] RED `e2e/ui.spec.js` + `server.test.js`:
+- [x] RED `e2e/ui.spec.js` + `server.test.js` + `ui-compat.test.js`:
   1. cambio di tempo in Live (rampa): scaletta e striscia non si ricostruiscono, il tocco su sezioni/brani e la nota in scrittura non si perdono, niente `/api/setlist-text` a ogni tick
   2. WebSocket caduto: pallino spento, «OpenSet non raggiungibile…», comandi attenuati
   3. Spazio = play/pausa anche dopo un clic su una scheda o un pulsante (il pulsante non tiene il focus)
