@@ -727,6 +727,7 @@ function start(opts = {}) {
         peerClock.delete(url);
       }
     }
+    prunePeers(); // a peer removed while this poll waited for it must not come back
     // AbleSet: Automatic Drift Correction, with Live's phase nudge: a backup follows the main
     // computer, never the other way round (two computers nudging each other would wobble)
     const lead = prefs.settings.driftCorrection && prefs.settings.scene === "backup" && liveState.is_playing && leader();
