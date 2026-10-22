@@ -54,4 +54,29 @@ function createLimiter({ max = 5, ms = 30000, now = Date.now } = {}) {
   };
 }
 
-module.exports = { validAuth, hashPassword, checkPassword, createLimiter };
+// browsers unlocked with the password: a token works from the address (or IPv6 /64)
+// that got it, until 24 hours pass without use, a new password or a restart
+function createTokens({ idleMs = 24 * 3600e3, max = 200, now = Date.now } = {}) {
+  const tokens = new Map(); // token -> { key, used }
+  return {
+    issue: (ip) => {
+      const token = crypto.randomBytes(32).toString("hex");
+      if (tokens.size >= max) tokens.delete(tokens.keys().next().value);
+      tokens.set(token, { key: limitKey(ip), used: now() });
+      return token;
+    },
+    valid: (token, ip) => {
+      const t = typeof token === "string" && tokens.get(token);
+      if (!t || t.key !== limitKey(ip)) return false;
+      if (now() - t.used > idleMs) {
+        tokens.delete(token);
+        return false;
+      }
+      t.used = now();
+      return true;
+    },
+    clear: () => tokens.clear(),
+  };
+}
+
+module.exports = { validAuth, hashPassword, checkPassword, createLimiter, createTokens };

@@ -7,7 +7,6 @@
 // - Speaks AbleSet's OSC API on the same UDP port, for TouchOSC/Companion
 
 const http = require("http");
-const crypto = require("crypto");
 const net = require("net");
 const path = require("path");
 const fs = require("fs");
@@ -29,7 +28,7 @@ const { userLibraries, installRemoteScript } = require("./install");
 const { deviceUrls, lanInterfaces, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
-const { validAuth, hashPassword, checkPassword, createLimiter } = require("./auth");
+const { validAuth, hashPassword, checkPassword, createLimiter, createTokens } = require("./auth");
 const { createLog, liveLogFiles, liveLogLines } = require("./log");
 const { nudgeFor, syncTarget } = require("./ablenet");
 const { version: VERSION } = require("../package.json");
@@ -1318,7 +1317,7 @@ function start(opts = {}) {
   // ---------------- web app password ----------------
   // With a password set, only this computer and unlocked browsers give
   // commands; everyone can still read the state. OSC is not covered.
-  const tokens = new Set(); // unlocked browsers, until the next restart or password change
+  const tokens = createTokens({ now: cfg.now }); // unlocked browsers
   const limiter = createLimiter({ now: cfg.now });
   const clientIp = (req) => String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
   const canControl = (ws) => !prefs.auth || ws.local || ws.authed;
@@ -1328,17 +1327,10 @@ function start(opts = {}) {
       ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!prefs.auth, ...(token ? { token } : {}), ...extra }));
   }
 
-  function newToken() {
-    const token = crypto.randomBytes(32).toString("hex");
-    if (tokens.size >= 200) tokens.delete(tokens.values().next().value);
-    tokens.add(token);
-    return token;
-  }
-
   async function wsAuth(ws, { password, token }) {
     let ok = false;
     if (!limiter.blocked(ws.ip)) {
-      if (typeof token === "string" && tokens.has(token)) ok = true;
+      if (tokens.valid(token, ws.ip)) ok = true;
       else if (password !== undefined) {
         // counted before scrypt: guesses sent in parallel are all counted.
         // An old token alone (OpenSet restarted) is not a wrong password.
@@ -1348,7 +1340,7 @@ function start(opts = {}) {
       if (ok) limiter.ok(ws.ip);
     }
     ws.authed = ok;
-    sendAccess(ws, ok ? (tokens.has(token) ? token : newToken()) : null, !ok && token !== undefined ? { tokenRejected: true } : {});
+    sendAccess(ws, ok ? (tokens.valid(token, ws.ip) ? token : tokens.issue(ws.ip)) : null, !ok && token !== undefined ? { tokenRejected: true } : {});
   }
 
   // HTTP: X-OpenSet-Password header, or "Authorization: Bearer <token>"
@@ -1360,7 +1352,7 @@ function start(opts = {}) {
       return false;
     }
     const bearer = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "");
-    if (bearer && tokens.has(bearer)) return true;
+    if (bearer && tokens.valid(bearer, ip)) return true;
     const pw = req.get("x-openset-password");
     if (pw !== undefined || bearer) limiter.fail(ip); // before scrypt: parallel guesses are all counted
     if (pw !== undefined && (await checkPassword(prefs.auth, pw))) {
