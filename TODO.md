@@ -29,7 +29,11 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [ ] v0.6.1 (branch `release/v0.6.1`): corsa in AbleNet (trovata dalla CI Windows della PR #6: una lettura del computer di riserva ancora in corso quando lo si toglie dalla lista lo rimetteva nello stato)
   - [x] RED `c406642` + GREEN `564e0dc`: `prunePeers()` anche alla fine di `pollPeers`
   - [x] Copertura (righe 99.29%, rami 93.45%), report TDD `docs/releases/0.6.1/v0.6.1.tdd.md`, CHANGELOG 0.6.1 (Correzioni), README, versione 0.6.1 (VERSION, package.json e lock, Remote Script)
-  - [ ] `code-review` del branch, PR verso `main`, CI verde, merge, tag `v0.6.1` (pubblica `release.yml`)
+  - [x] `code-review` del branch (PR #7, CI verde): con più riserve quella tolta è ancora seguita finché si leggono le altre; `leader()` si fida di tutte le voci di `peerStatus`; i computer tolti a metà lettura sono ancora letti; una lettura che finisce dopo la chiusura di OpenSet lancia `ERR_SOCKET_DGRAM_NOT_RUNNING` (rejection non gestita: crash); test della corsa con un'attesa fissa e un controllo che passava anche in RED; CHANGELOG descriveva un sintomo mai visto
+  - [x] RED `server.test.js` (`gatedPeer`: la riserva risponde solo quando il test la lascia andare): più riserve, chiusura durante la lettura
+  - [ ] GREEN: `leader()` solo tra i computer della lista, quelli tolti non si leggono più, `.catch` sulla lettura; CHANGELOG e report
+  - [ ] PR #7 con CI verde, merge, tag `v0.6.1` (pubblica `release.yml`)
+  - Non corretti (dalla revisione): `peerDenied` di una riserva tolta mentre un comando copiato è in viaggio resta finché un comando successivo non riesce (raro, solo l'etichetta «rifiuta»); riserve lette una dopo l'altra (una spenta ritarda le altre fino a 800 ms)
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`)
 
 ## Da fare
