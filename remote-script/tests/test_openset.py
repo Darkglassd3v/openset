@@ -378,11 +378,6 @@ class OpenSetTest(unittest.TestCase):
         self.os._handle({"cmd": "quant", "value": 7})
         self.assertEqual(self.song.clip_trigger_quantization, 7)
 
-    def test_ping(self):
-        self.received()
-        self.os._handle({"cmd": "ping"})
-        self.assertIn({"type": "pong"}, self.received())
-
     def test_commands_arrive_over_udp(self):
         port = self.os._sock.getsockname()[1]
         tx = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

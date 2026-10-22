@@ -116,6 +116,7 @@ function defaultPrefs() {
     notes: {},
     measured: {}, // song name -> seconds measured during real playback
     lastProject: null, // the last .als loaded, for Auto-Launch the Last Live Project
+    httpPort: null, // the port of the last run: tried first, so saved addresses keep working
     // AbleSet's Settings: General, Playback, Section Count-In, Setlist
     settings: {
       defaultView: "setlist",
@@ -241,6 +242,7 @@ function start(opts = {}) {
   let tracks = []; // Sections / +LYRICS clips
   let lyricsRev = 0;
   let lastLiveMsg = 0;
+  let lastStateAt = 0; // when the last state arrived: tells a seek from a late report
   let offlineProject = null; // from .als parsing
   let queued = null; // { time, type: "song"|"section" }: a jump waiting for its moment
   let prefs = loadPrefs();
@@ -256,7 +258,16 @@ function start(opts = {}) {
     let saved = {};
     try {
       saved = JSON.parse(fs.readFileSync(PREFS_FILE, "utf-8")) || {};
-    } catch {}
+    } catch (e) {
+      if (e.code !== "ENOENT") {
+        // the next save would overwrite saved setlists, password and mappings: keep a copy
+        const copy = PREFS_FILE.replace(/\.json$/, `.corrupt-${Date.now()}.json`);
+        try {
+          fs.copyFileSync(PREFS_FILE, copy);
+        } catch {}
+        log.error(`[prefs] ${PREFS_FILE} unreadable (${e.message}): copied to ${copy}, starting with defaults`);
+      }
+    }
     const settings = { ...base.settings };
     for (const k of Object.keys(settings))
       if (saved.settings && validSetting(k, saved.settings[k])) settings[k] = saved.settings[k];
@@ -278,6 +289,7 @@ function start(opts = {}) {
       peers: cleanPeers(saved.peers) || [],
       auth: validAuth(saved.auth) ? { salt: saved.auth.salt, hash: saved.auth.hash } : null,
       lastProject: typeof saved.lastProject === "string" ? saved.lastProject : null,
+      httpPort: Number.isInteger(saved.httpPort) ? saved.httpPort : null,
     };
   }
 
@@ -436,14 +448,20 @@ function start(opts = {}) {
   const stateUdp = dgram.createSocket("udp4"); // Live state in, commands out
   let oscPort = null; // null while another app (AbleSet) holds the OSC port
 
-  function sendToLive(obj) {
+  let songJump = null; // song start an engine jump goes to: the extras wait for it
+  function songExtras() {
+    if (prefs.settings.reEnableAutomation) sendToLive({ cmd: "reEnableAutomation" });
+    if (prefs.settings.backToArrangement) sendToLive({ cmd: "backToArrangement" });
+  }
+  function sendToLive(obj, fromEngine = false) {
     stateUdp.send(Buffer.from(JSON.stringify(obj)), cfg.livePort, cfg.liveHost);
     // AbleSet: Re-Enable Automation / Reset Tracks Back to Arrangement on Song Jump
     const { reEnableAutomation, backToArrangement } = prefs.settings;
     if ((obj.cmd === "jump" || obj.cmd === "seek") && (reEnableAutomation || backToArrangement) &&
         setlist().some((s) => Math.abs(s.playStart - obj.time) < S.EPS)) {
-      if (reEnableAutomation) sendToLive({ cmd: "reEnableAutomation" });
-      if (backToArrangement) sendToLive({ cmd: "backToArrangement" });
+      // the engine jumps a quantization step early: the old song keeps its last bar as it was
+      if (fromEngine) songJump = obj.time;
+      else songExtras();
     }
   }
 
@@ -476,31 +494,49 @@ function start(opts = {}) {
       if (liveState.is_playing && liveState.beat < countIn.until - S.EPS) countIn.started = true;
       const done = countIn.started && liveState.beat >= countIn.until - S.EPS;
       if (done || (wasPlaying && !liveState.is_playing)) {
+        if (countIn.solo) sendToLive({ cmd: "clickSolo", on: false });
         countIn = null;
-        sendToLive({ cmd: "clickSolo", on: false });
       }
     }
+    // an engine jump to a song start has landed (or playback stopped there)
+    if (songJump !== null && (!liveState.is_playing || Math.abs(liveState.beat - songJump) < 1)) {
+      songJump = null;
+      songExtras();
+    }
+    const now = cfg.now();
+    const dt = lastStateAt ? (now - lastStateAt) / 1000 : null;
+    lastStateAt = now;
     const list = setlist();
     if (!wasConnected) sendToLive({ cmd: "resync" }); // ask for cues and clips again
     else {
-      const cmds = engine.update({
+      // during a count-in the pre-roll may cross the end of the song before: not a real pass
+      const cmds = countIn ? [] : engine.update({
         songs: list,
         prevBeat,
         beat: liveState.beat,
         playing: liveState.is_playing,
         loop: liveState.loop,
+        loopStart: liveState.loop_start,
+        loopLength: liveState.loop_length,
         quantBeats: S.quantBeats(liveState.quant, liveState.sig_num, liveState.sig_den),
         settings: prefs.settings,
         queued,
+        cueTimes: useLive() ? cues.map((c) => c.time) : null,
+        dt,
+        tempo: liveState.tempo,
       });
       for (const c of cmds) {
-        if (c.cmd !== "played") sendToLive(c);
+        if (c.cmd !== "played") sendToLive(c, true);
         else if (!prefs.skip.includes(c.name)) {
           log.info(`[setlist] ${c.name} played to the end: removed from the setlist`);
           setPrefs({ skip: [...prefs.skip, c.name] });
         }
       }
       if (queued && cmds.some((c) => c.cmd === "jump" && Math.abs(c.time - queued.time) < S.EPS)) queued = null;
+      // the playhead got to the queued target by itself (the next section or song): done
+      const t = queued && queued.time;
+      if (queued && liveState.is_playing && prevBeat < t - S.EPS && liveState.beat >= t - S.EPS && liveState.beat - prevBeat < 4)
+        queued = null;
       // playback stopped with a jump waiting (Manual mode waits for this): jump now
       if (queued && wasPlaying && !liveState.is_playing) {
         sendToLive({ cmd: "jump", time: queued.time });
@@ -547,7 +583,10 @@ function start(opts = {}) {
     chunks.id = null;
     try {
       handleLive(JSON.parse(chunks.parts.join("")));
-    } catch {}
+    } catch (e) {
+      if (e.message !== lastLiveError) log.error(`[live] bad chunked message: ${e.message}`);
+      lastLiveError = e.message;
+    }
   }
 
   let lastLiveError = null;
@@ -588,7 +627,14 @@ function start(opts = {}) {
     const connected = Date.now() - lastLiveMsg < cfg.liveTimeoutMs;
     if (connected !== liveState.connected) {
       liveState.connected = connected;
-      if (!connected) log.info(`[live] silent for ${cfg.liveTimeoutMs} ms: not connected, the last setlist stays`);
+      if (!connected) {
+        log.info(`[live] silent for ${cfg.liveTimeoutMs} ms: not connected, the last setlist stays`);
+        // whatever Live does now, nobody knows: no "playing", no queued jump left to fire later
+        liveState.is_playing = false;
+        queued = null;
+        countIn = null;
+        songJump = null;
+      }
       changed();
     }
   }, Math.min(1000, cfg.liveTimeoutMs / 3));
@@ -600,6 +646,9 @@ function start(opts = {}) {
 
   const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword"]);
   const HOST_ONLY = new Set(["peers", "setPassword"]); // the computer running OpenSet decides these
+  // settings of this computer only: a backup keeps its own scene, network, windows…
+  const LOCAL_SETTINGS = ["scene", "driftCorrection", "network", "openBrowser", "floatingWindow", "autoLaunchLive", "defaultView"];
+  const peerDenied = new Set(); // backups that refuse the copied commands (a password)
   const peerStatus = new Map(); // url -> { url, online, connected, playing, song, scene, drift }
   const peerClock = new Map(); // url -> { beat, tempo, sigNum, sigDen, at }: where the peer was, and when
   // the computer to follow: online, playing, the main one first
@@ -617,8 +666,9 @@ function start(opts = {}) {
     const safe =
       source === "web" && !!msg && !msg.midi && !msg.mirror && prefs.settings.safeMode && liveState.is_playing;
     const ok = handleCommand(msg, safe);
-    if (ok && !msg.mirror && !LOCAL_ONLY.has(msg.cmd)) {
-      const body = JSON.stringify({ ...msg, mirror: true });
+    const shared = ok && msg.cmd === "settings" ? Object.fromEntries(Object.entries(msg).filter(([k]) => !LOCAL_SETTINGS.includes(k))) : msg;
+    if (ok && !msg.mirror && !LOCAL_ONLY.has(msg.cmd) && (msg.cmd !== "settings" || Object.keys(shared).length > 1)) {
+      const body = JSON.stringify({ ...shared, mirror: true });
       for (const url of prefs.peers)
         fetch(url + "/api/cmd", {
           method: "POST",
@@ -626,13 +676,29 @@ function start(opts = {}) {
           body,
           signal: AbortSignal.timeout(1000),
           redirect: "error",
-        }).catch(() => {});
+        })
+          .then((res) => {
+            const denied = res.status === 401 || res.status === 429;
+            if (denied !== peerDenied.has(url)) {
+              if (denied) peerDenied.add(url);
+              else peerDenied.delete(url);
+              log.info(`[peers] ${url} ${denied ? "refuses" : "accepts"} the copied commands`);
+            }
+          })
+          .catch(() => {});
     }
     return ok;
   }
 
   let polling = false;
+  // a removed backup is forgotten: no ghost to sync to or to nudge towards
+  function prunePeers() {
+    for (const m of [peerStatus, peerClock]) for (const url of m.keys()) if (!prefs.peers.includes(url)) m.delete(url);
+    for (const url of peerDenied) if (!prefs.peers.includes(url)) peerDenied.delete(url);
+  }
+
   async function pollPeers() {
+    prunePeers();
     const before = JSON.stringify([...peerStatus]);
     for (const url of prefs.peers) {
       try {
@@ -654,15 +720,17 @@ function start(opts = {}) {
           song: song ? song.name : "",
           scene: s.settings && s.settings.scene === "backup" ? "backup" : "main",
           drift: Math.round(drift * 100) / 100,
+          denied: peerDenied.has(url),
         });
       } catch {
         peerStatus.set(url, { url, online: false });
         peerClock.delete(url);
       }
     }
-    // AbleSet: Automatic Drift Correction, with Live's phase nudge
-    const lead = prefs.settings.driftCorrection && liveState.is_playing && leader();
-    const dir = lead && nudgeFor(peerClock.get(lead.url).drift);
+    // AbleSet: Automatic Drift Correction, with Live's phase nudge: a backup follows the main
+    // computer, never the other way round (two computers nudging each other would wobble)
+    const lead = prefs.settings.driftCorrection && prefs.settings.scene === "backup" && liveState.is_playing && leader();
+    const dir = lead && lead.scene === "main" && nudgeFor(peerClock.get(lead.url).drift);
     if (dir) sendToLive({ cmd: "nudge", dir, ms: 200 });
     if (JSON.stringify([...peerStatus]) !== before) changed();
   }
@@ -676,13 +744,16 @@ function start(opts = {}) {
 
   // AbleSet's Section Count-In: from a section chosen while stopped, playback
   // starts a few bars earlier, with the click soloed until the section starts
-  let countIn = null; // { until: beat of the section, started }
+  let countIn = null; // { until: beat of the section, started, solo }
   function startCountIn(time) {
     const bar = ((liveState.sig_num || 4) * 4) / (liveState.sig_den || 4);
-    sendToLive({ cmd: "seek", time: Math.max(0, time - prefs.settings.countInBars * bar) });
-    if (prefs.settings.countInSoloClick) {
-      sendToLive({ cmd: "clickSolo", on: true });
-      countIn = { until: time, started: false };
+    const from = Math.max(0, time - prefs.settings.countInBars * bar);
+    sendToLive({ cmd: "seek", time: from });
+    // no room before the section (beat 0): no count-in, so no click left soloed for the song
+    if (from < time - S.EPS) {
+      const solo = prefs.settings.countInSoloClick;
+      if (solo) sendToLive({ cmd: "clickSolo", on: true });
+      countIn = { until: time, started: false, solo };
     }
     sendToLive({ cmd: "play" });
     return true;
@@ -884,7 +955,10 @@ function start(opts = {}) {
         return setPrefs({ measured: {} });
       case "peers": {
         const peers = cleanPeers(msg.urls);
-        return !!peers && setPrefs({ peers });
+        if (!peers) return false;
+        prefs = { ...prefs, peers };
+        prunePeers();
+        return setPrefs({});
       }
       case "devices":
         return deviceCommand(msg);
@@ -1312,14 +1386,21 @@ function start(opts = {}) {
 
   const server = http.createServer(app);
   // maxPayload: the biggest real message (a setlist edit) is a few KB; ws's default is 100 MB
-  const wss = new WebSocketServer({ server, maxPayload: 256 * 1024, verifyClient: ({ req }, done) => done(originOk(req), 403) });
+  // perMessageDeflate: the state shrinks from ~30 KB to ~2 KB, ten times a second, per device
+  const wss = new WebSocketServer({
+    server,
+    maxPayload: 256 * 1024,
+    perMessageDeflate: true,
+    verifyClient: ({ req }, done) => done(originOk(req), 403),
+  });
   // ws re-emits the HTTP server's errors (e.g. EADDRINUSE); start() handles them
   wss.on("error", () => {});
 
   function broadcast(obj) {
     const data = JSON.stringify(obj);
     for (const client of wss.clients) {
-      if (client.readyState === 1) client.send(data);
+      // a client that stopped reading (asleep, out of Wi-Fi) must not pile up megabytes
+      if (client.readyState === 1 && client.bufferedAmount < 1 << 20) client.send(data);
     }
   }
 
@@ -1331,6 +1412,7 @@ function start(opts = {}) {
     ws.on("error", () => ws.terminate()); // a malformed frame closes this socket, never OpenSet
     devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null, settings: {} });
     ws.on("pong", () => {
+      ws.missed = 0;
       const d = devices.get(ws);
       if (d && ws.pingAt) d.latencyMs = Date.now() - ws.pingAt; // shown with the next state update
     });
@@ -1372,9 +1454,16 @@ function start(opts = {}) {
 
   const pingTimer = setInterval(() => {
     for (const ws of wss.clients) {
+      // three pings without an answer: a half-open connection, closed so the device reconnects
+      ws.missed = (ws.missed || 0) + 1;
+      if (ws.missed > 3) {
+        ws.terminate();
+        continue;
+      }
       ws.pingAt = Date.now();
       ws.ping();
     }
+    broadcast({ type: "tick" }); // browsers reconnect when even this stops coming
   }, cfg.pingMs);
 
   // ---------------- startup ----------------
@@ -1416,6 +1505,7 @@ function start(opts = {}) {
     };
     // try each port in turn: 80 needs root on Linux or may be taken
     const ports = [].concat(cfg.httpPort);
+    if (ports.includes(prefs.httpPort)) ports.sort((a, b) => (b === prefs.httpPort) - (a === prefs.httpPort));
     const listen = (i) => {
       const onError = (e) =>
         i + 1 < ports.length && (e.code === "EADDRINUSE" || e.code === "EACCES") ? listen(i + 1) : fail(e);
@@ -1424,6 +1514,7 @@ function start(opts = {}) {
         server.removeListener("error", onError);
         const httpPort = server.address().port;
         log.info(`[http] listening on ${httpPort}`);
+        if (ports.length > 1 && httpPort !== prefs.httpPort) setPrefs({ httpPort });
         if (cfg.log) printAddresses(cfg.netInfo(), httpPort);
         afterListen(httpPort);
         resolve({ httpPort, udpPort: oscPort, statePort: stateUdp.address().port, close });

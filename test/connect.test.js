@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { lanAddresses, lanInterfaces, deviceUrls, bonjourName, qrSvg } = require("../server/connect");
+const { lanInterfaces, deviceUrls, bonjourName, qrSvg } = require("../server/connect");
 
 const IFACES = {
   lo0: [{ family: "IPv4", internal: true, address: "127.0.0.1" }],
@@ -10,11 +10,6 @@ const IFACES = {
   ],
   utun0: undefined,
 };
-
-test("lanAddresses: external IPv4 only", () => {
-  assert.deepEqual(lanAddresses(IFACES), ["192.168.1.50"]);
-  assert.deepEqual(lanAddresses({}), []);
-});
 
 test("deviceUrls: Bonjour name first on macOS, no :80", () => {
   assert.deepEqual(deviceUrls({ platform: "darwin", hostname: "Studio", interfaces: IFACES }, 39080), [

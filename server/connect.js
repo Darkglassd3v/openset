@@ -9,8 +9,6 @@ function lanInterfaces(interfaces) {
   return out;
 }
 
-const lanAddresses = (interfaces) => lanInterfaces(interfaces).map((n) => n.address);
-
 // Bonjour name first: it survives DHCP changes, so a home-screen icon keeps working.
 // network: AbleSet's Preferred Network (an interface name); all of them when it is gone.
 function deviceUrls({ platform, hostname, interfaces }, port, network = "") {
@@ -39,4 +37,4 @@ function qrSvg(text) {
   return qr.createSvgTag({ cellSize: 1, margin: 4, scalable: true });
 }
 
-module.exports = { lanAddresses, lanInterfaces, deviceUrls, bonjourName, qrSvg };
+module.exports = { lanInterfaces, deviceUrls, bonjourName, qrSvg };

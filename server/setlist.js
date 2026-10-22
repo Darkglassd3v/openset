@@ -132,6 +132,8 @@ function buildSetlist(cues) {
 
   songs.forEach((s, i) => {
     if (s.end == null && i + 1 < songs.length) s.end = songs[i + 1].time;
+    // a section after SONG END is outside the song: it would loop or jump past its end
+    if (s.end != null) s.sections = s.sections.filter((x) => x.time < s.end - EPS);
     s.sections.forEach((sec, j) => {
       sec.end = j + 1 < s.sections.length ? s.sections[j + 1].time : s.end;
     });

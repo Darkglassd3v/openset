@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1, A2, A3 fatti, prossimo A4 (motore, server, AbleNet)
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), audit fatto (A1-A4), prossimo W8 (rilascio)
 
 ## Da fare
 
@@ -160,7 +160,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   15. OSC: con 32 iscrizioni si toglie la più vecchia; pacchetto a pezzi illeggibile registrato nel log
   16. porta HTTP: si riusa quella dell'ultima volta (80 o 39080), così le icone sull'iPad restano valide
   17. codice morto: `lanAddresses`, `ping`/`pong` del Remote Script
-- [ ] GREEN: `server/engine.js`, `server/index.js`, `server/setlist.js`, `server/editor.js`, `server/connect.js`, Remote Script, UI
+- [x] GREEN: `server/engine.js`, `server/index.js`, `server/setlist.js`, `server/connect.js`, Remote Script, UI (watchdog della connessione, computer di riserva che rifiuta i comandi)
 - Non corretti: brani con lo stesso nome (vedi A2); User Library di Live fuori da Documenti (si legge da `Library.cfg` in una versione dedicata; la guida spiega l'installazione a mano); `openset.log` ruotato solo all'avvio
 
 ### Esclusi (con motivo)

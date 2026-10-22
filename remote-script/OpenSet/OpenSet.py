@@ -293,8 +293,6 @@ class OpenSet(ControlSurface):
         elif cmd == "resync":
             self._cues_sent = None
             self._clips_sent = None
-        elif cmd == "ping":
-            self._send({"type": "pong"})
 
 
     def _clip_colors_from_names(self):

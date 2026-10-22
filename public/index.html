@@ -600,7 +600,26 @@ const lyr = { cache: {}, rev: -1, song: null, line: -2 };
 
 // ---------- websocket ----------
 let ws;
+let lastMessage = 0;
+// the server speaks at least every 2 s (state or heartbeat): silence means a half-open
+// connection (iPad asleep, Wi-Fi gone), which may never report its own close
+setInterval(() => {
+  if (!ws || ws.readyState !== 1 || Date.now() - lastMessage < 6000) return;
+  // its close could take minutes on a dead link: drop it and open a new one now
+  const old = ws;
+  old.onclose = old.onmessage = null;
+  old.close();
+  connectionLost();
+}, 1000);
+function connectionLost() {
+  // a frozen "Live connesso" would hide that taps go nowhere
+  document.body.classList.add("ws-down");
+  $("dot").className = "dot";
+  $("connLabel").textContent = "OpenSet non raggiungibile…";
+  setTimeout(connect, 1500);
+}
 function connect() {
+  lastMessage = Date.now();
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host);
   ws.onopen = () => {
     document.body.classList.remove("ws-down");
@@ -609,6 +628,7 @@ function connect() {
     if (token) send({ type: "auth", token });
   };
   ws.onmessage = (e) => {
+    lastMessage = Date.now();
     const msg = JSON.parse(e.data);
     if (msg.type === "state") {
       const first = !state;
@@ -621,13 +641,7 @@ function connect() {
     if (msg.type === "device") onDeviceCommand(msg);
     if (msg.type === "access") onAccess(msg);
   };
-  ws.onclose = () => {
-    // a frozen "Live connesso" would hide that taps go nowhere
-    document.body.classList.add("ws-down");
-    $("dot").className = "dot";
-    $("connLabel").textContent = "OpenSet non raggiungibile…";
-    setTimeout(connect, 1500);
-  };
+  ws.onclose = connectionLost;
 }
 connect();
 
@@ -1388,7 +1402,8 @@ function buildSettings() {
     <li><span class="${p.online ? "on-dot" : "off-dot"}" aria-hidden="true">●</span>
       <span class="mono">${esc(p.url)}</span>
       ${p.online
-        ? (p.connected ? `· ${p.scene === "backup" ? "riserva" : "principale"} · Live connesso${p.song ? " · " + esc(p.song) : ""} · scarto <span class="drift" data-i="${i}">${p.drift}</span> beat` : "· Live non connesso")
+        ? (p.connected ? `· ${p.scene === "backup" ? "riserva" : "principale"} · Live connesso${p.song ? " · " + esc(p.song) : ""} · scarto <span class="drift" data-i="${i}">${p.drift}</span> beat` : "· Live non connesso") +
+          (p.denied ? " · <b>rifiuta i comandi: ha una password, toglila su quel computer</b>" : "")
         : "· non raggiungibile"}
       <button class="btn" data-peer-del="${i}" aria-label="Rimuovi ${esc(p.url)}">✕</button></li>`).join("") ||
     "<li>Nessun computer di riserva.</li>";
