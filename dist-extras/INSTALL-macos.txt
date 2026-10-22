@@ -35,6 +35,7 @@ Guida completa con le novita': OpenSet-{{VERSION}}-Guida.pdf
 
 Dal Terminale, senza doppio clic (opzioni: --no-open, porta, progetto .als):
      APP="/Applications/OpenSet {{VERSION}}.app/Contents/Resources/openset-{{VERSION}}"
+     codesign -v "$APP" || codesign --force --sign - "$APP"   # se il Mac lo chiude ("Killed")
      "$APP" --no-open
      PORT=39080 "$APP"
      "$APP" "/percorso/Progetto Project/Progetto.als"

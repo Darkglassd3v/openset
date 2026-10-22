@@ -74,42 +74,7 @@ jobs:
           node scripts/build-guide.js "release/OpenSet-${{ steps.ver.outputs.version }}-Guida.pdf"
 
       - name: Assemble platform packages
-        run: |
-          VERSION="${{ steps.ver.outputs.version }}"
-          for PLAT in linux-x64 win-x64 macos-x64 macos-arm64; do
-            DIR="pkg-$PLAT"
-            mkdir -p "$DIR"
-            case "$PLAT" in
-              win-x64)     SRC=build/openset-win.exe ;;
-              macos-arm64) SRC=build/openset-macos-arm64 ;;
-              *)           SRC="build/openset-${PLAT%-x64}" ;;
-            esac
-            # app assets (the Remote Script without its tests)
-            cp -r public lyrics remote-script README.md "$DIR/"
-            rm -rf "$DIR/remote-script/tests"
-            find "$DIR/remote-script" -name __pycache__ -prune -exec rm -rf {} +  # left by the test step
-            # program, named with the version
-            case "$PLAT" in
-              macos-*)
-                # "OpenSet <version>.app" with the icon; the assets go inside it
-                bash scripts/make-macos-app.sh "$DIR" "$VERSION" "$SRC" "$DIR/public" "$DIR/lyrics" "$DIR/remote-script"
-                rm -rf "$DIR/public" "$DIR/lyrics" ;;
-              win-x64) cp "$SRC" "$DIR/openset-$VERSION.exe" ;;
-              *)       cp "$SRC" "$DIR/openset-$VERSION"; chmod +x "$DIR/openset-$VERSION" ;;
-            esac
-            # required files: openset_<version>, version file, install guide
-            echo "$VERSION" > "$DIR/openset_$VERSION"
-            echo "$VERSION" > "$DIR/VERSION.txt"
-            case "$PLAT" in
-              linux-*) GUIDE=dist-extras/INSTALL-linux.txt ;;
-              win-*)   GUIDE=dist-extras/INSTALL-windows.txt ;;
-              macos-*) GUIDE=dist-extras/INSTALL-macos.txt ;;
-            esac
-            sed "s/{{VERSION}}/$VERSION/g" "$GUIDE" > "$DIR/INSTALL.txt"
-            cp "release/OpenSet-$VERSION-Guida.pdf" "$DIR/"
-            ( cd "$DIR" && zip -rq "../release/openset-$VERSION-$PLAT.zip" . )
-          done
-          ls -la release/
+        run: bash scripts/assemble-release.sh "${{ steps.ver.outputs.version }}" build release
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

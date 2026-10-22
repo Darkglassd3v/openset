@@ -22,7 +22,10 @@ sed "s/{{VERSION}}/$VERSION/g" "$HERE/dist-extras/Info.plist" > "$APP/Contents/I
 
 cat > "$APP/Contents/MacOS/OpenSet" <<EOF
 #!/bin/bash
-exec open -a Terminal "\$(cd "\$(dirname "\$0")/../Resources" && pwd)/openset-$VERSION"
+BIN="\$(cd "\$(dirname "\$0")/../Resources" && pwd)/openset-$VERSION"
+# built on Linux the arm64 program has no valid signature and Apple Silicon kills it: sign it ad hoc once
+codesign -v "\$BIN" 2>/dev/null || codesign --force --sign - "\$BIN" 2>/dev/null
+exec open -a Terminal "\$BIN"
 EOF
 chmod +x "$APP/Contents/MacOS/OpenSet"
 echo "$APP"
