@@ -57,6 +57,24 @@ const strs = (a) => Array.isArray(a) && a.length <= 1000 && a.every((x) => typeo
 const strMap = (o) =>
   !!o && typeof o === "object" && !Array.isArray(o) && Object.values(o).every((x) => typeof x === "string");
 const isLoopback = (a) => typeof a === "string" && (a === "::1" || /^(::ffff:)?127\./.test(a));
+const isAls = (f) => typeof f === "string" && /\.als$/i.test(f);
+// DNS rebinding: a name that points at 127.0.0.1 is not "this computer". Allowed: IP
+// addresses, localhost, *.local (Bonjour) and the computer's own name.
+function hostOk(req) {
+  const host = String(req.headers.host || "").replace(/:\d+$/, "").replace(/^\[|\]$/g, "").toLowerCase();
+  return !!net.isIP(host) || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local") || host === os.hostname().toLowerCase();
+}
+// a browser page from another site (CSRF, cross-site WebSocket); no Origin: not a browser page
+function originOk(req) {
+  const origin = req.headers.origin;
+  if (!origin) return true;
+  try {
+    return new URL(origin).host === req.headers.host;
+  } catch {
+    return false;
+  }
+}
+const localReq = (req) => isLoopback(req.socket.remoteAddress) && hostOk(req);
 const validName = (n) => typeof n === "string" && n.trim().length > 0 && n.length <= 64;
 // settings with a list of values; all the others are booleans
 const SETTING_VALUES = {
@@ -265,7 +283,12 @@ function start(opts = {}) {
 
   function savePrefs() {
     try {
-      fs.writeFileSync(PREFS_FILE, JSON.stringify(prefs, null, 2));
+      // written aside then swapped: a crash or a full disk never leaves half a file.
+      // 0600: the password hash is for this user only.
+      const tmp = PREFS_FILE + ".tmp";
+      fs.rmSync(tmp, { force: true });
+      fs.writeFileSync(tmp, JSON.stringify(prefs, null, 2), { mode: 0o600 });
+      fs.renameSync(tmp, PREFS_FILE);
     } catch (e) {
       log.error(`[prefs] cannot save ${PREFS_FILE}: ${e.message}`);
     }
@@ -338,7 +361,7 @@ function start(opts = {}) {
     if (prefs.settings.openBrowser === "start") openUi();
     // AbleSet: Auto-Launch the Last Live Project, when Live is not running
     const file = prefs.lastProject;
-    if (prefs.settings.autoLaunchLive && file && fs.existsSync(file) && !cfg.liveRunning()) {
+    if (prefs.settings.autoLaunchLive && isAls(file) && fs.existsSync(file) && !cfg.liveRunning()) {
       log.info(`[live] Live is not running: opening ${file}`);
       cfg.openFile(file);
     }
@@ -551,7 +574,7 @@ function start(opts = {}) {
     } catch {
       return;
     }
-    for (const m of msgs) {
+    for (const m of msgs.slice(0, 64)) { // a flood of bundled messages cannot stall the show
       try {
         handleOsc(m, rinfo);
       } catch (e) {
@@ -576,6 +599,7 @@ function start(opts = {}) {
   // its own engine on the same set, and Ableton Link keeps the clocks together.
 
   const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword"]);
+  const HOST_ONLY = new Set(["peers", "setPassword"]); // the computer running OpenSet decides these
   const peerStatus = new Map(); // url -> { url, online, connected, playing, song, scene, drift }
   const peerClock = new Map(); // url -> { beat, tempo, sigNum, sigDen, at }: where the peer was, and when
   // the computer to follow: online, playing, the main one first
@@ -584,7 +608,12 @@ function start(opts = {}) {
 
   // source: "web" (browser, HTTP) or "osc". Safe Mode only limits the web app;
   // MIDI mapped in a browser and commands repeated from the main computer pass.
-  function runCommand(msg, source = "web") {
+  // local: the request comes from this computer (a browser here, or a command line tool)
+  function runCommand(msg, source = "web", local = true) {
+    if (source === "web" && !local && msg && typeof msg === "object") {
+      if (HOST_ONLY.has(msg.cmd)) return false;
+      if (msg.midi) msg = { ...msg, midi: false }; // MIDI pedals are bound in a browser on this computer
+    }
     const safe =
       source === "web" && !!msg && !msg.midi && !msg.mirror && prefs.settings.safeMode && liveState.is_playing;
     const ok = handleCommand(msg, safe);
@@ -596,6 +625,7 @@ function start(opts = {}) {
           headers: { "Content-Type": "application/json" },
           body,
           signal: AbortSignal.timeout(1000),
+          redirect: "error",
         }).catch(() => {});
     }
     return ok;
@@ -607,7 +637,7 @@ function start(opts = {}) {
     for (const url of prefs.peers) {
       try {
         const t0 = Date.now();
-        const res = await fetch(url + "/api/state", { signal: AbortSignal.timeout(800) });
+        const res = await fetch(url + "/api/state", { signal: AbortSignal.timeout(800), redirect: "error" });
         const s = await res.json();
         const song = s.setlist && s.setlist[s.current];
         const playing = !!s.is_playing;
@@ -861,7 +891,7 @@ function start(opts = {}) {
       case "setPassword": {
         // "" removes it; only browsers that may command get here
         const pw = msg.password;
-        if (pw !== "" && (typeof pw !== "string" || pw.length < 4 || pw.length > 128)) return false;
+        if (pw !== "" && (typeof pw !== "string" || pw.length < 6 || pw.length > 128)) return false;
         prefs = { ...prefs, auth: pw ? hashPassword(pw) : null };
         savePrefs();
         tokens.clear();
@@ -995,11 +1025,17 @@ function start(opts = {}) {
         }
         const port = rest.length ? Number(rest[0]) : rinfo.port;
         if (net.isIP(host) !== 4 || !Number.isInteger(port) || port < 1 || port > 65535) return false;
-        const target = { host, port };
-        if (address === "/unsubscribe") return subscribers.delete(`${host}:${port}`);
-        if (address === "/subscribe") {
-          if (subscribers.size >= 32) return false;
-          subscribers.set(`${host}:${port}`, target);
+        // no reflection: a device on the network gets answers only at its own address
+        if (host !== rinfo.address && !isLoopback(rinfo.address)) return false;
+        const key = `${host}:${port}`;
+        const target = { host, port, from: rinfo.address };
+        if (address === "/unsubscribe") return subscribers.delete(key);
+        if (address === "/subscribe" && !subscribers.has(key)) {
+          // a controller re-subscribing from a new port pushes out its oldest entry, not someone else's
+          const mine = [...subscribers].filter(([, s]) => s.from === rinfo.address);
+          if (mine.length >= 4) subscribers.delete(mine[0][0]);
+          if (subscribers.size >= 32) subscribers.delete(subscribers.keys().next().value);
+          subscribers.set(key, target);
         }
         pushOsc(publicState(list), target);
         return true;
@@ -1070,7 +1106,15 @@ function start(opts = {}) {
   // ---------------- HTTP + WS ----------------
 
   const app = express();
+  app.use((req, res, next) => {
+    res.set("X-Frame-Options", "DENY");
+    // a page on another site posting here (CSRF): browsers always send Origin with a POST
+    if (req.method !== "GET" && req.method !== "HEAD" && !originOk(req)) return res.status(403).json({ error: "Wrong origin" });
+    next();
+  });
   app.use(express.json({ limit: "1mb" }));
+  // async handlers: an error becomes a 500, never an unhandled rejection that stops OpenSet
+  const route = (fn) => (req, res, next) => Promise.resolve(fn(req, res)).catch(next);
 
   // optional user stylesheet in the data folder, like AbleSet's custom styles
   app.get("/custom.css", (_req, res) => {
@@ -1085,16 +1129,16 @@ function start(opts = {}) {
   app.get("/api/state", (_req, res) => res.json(publicState()));
 
   // Debug → Log and "Crea pacchetto log" (AbleSet: Debug Logs, Create Log Package)
-  app.get("/api/logs", async (req, res) => {
+  app.get("/api/logs", route(async (req, res) => {
     if (await httpAllowed(req, res)) res.json({ lines: log.lines() });
-  });
-  app.get("/api/log-package", async (req, res) => {
+  }));
+  app.get("/api/log-package", route(async (req, res) => {
     if (!(await httpAllowed(req, res))) return;
     const at = new Date(cfg.now()).toISOString();
     const stamp = at.slice(0, 16).replace(/-/g, "").replace("T", "-").replace(":", "");
     res.set("Content-Disposition", `attachment; filename="openset-${VERSION}-log-${stamp}.txt"`);
     res.type("text/plain").send(logPackage(at));
-  });
+  }));
 
   app.get("/api/connect", (_req, res) => {
     const info = cfg.netInfo();
@@ -1116,7 +1160,7 @@ function start(opts = {}) {
   // AbleSet's menu bar items: only for the computer running OpenSet
   const HOSTNAME_SETTINGS = { darwin: "x-apple.systempreferences:com.apple.Sharing-Settings.extension", win32: "ms-settings:about" };
   app.post("/api/host/:action", (req, res) => {
-    if (!isLoopback(req.socket.remoteAddress)) return res.status(403).json({ error: "Only allowed from this computer" });
+    if (!localReq(req)) return res.status(403).json({ error: "Only allowed from this computer" });
     const unavailable = () => res.status(501).json({ error: "Not available here" });
     switch (req.params.action) {
       case "open":
@@ -1151,9 +1195,12 @@ function start(opts = {}) {
     const song = setlist().find((s) => s.name === name);
     let lyr = null;
     let transpose = song && song.transpose;
-    try {
-      lyr = JSON.parse(fs.readFileSync(path.join(LYRICS_DIR, L.lyricsFileName(name)), "utf-8"));
-    } catch {}
+    // only songs of the setlist: no reads of names like CON or NUL on Windows
+    if (song) {
+      try {
+        lyr = JSON.parse(fs.readFileSync(path.join(LYRICS_DIR, L.lyricsFileName(name)), "utf-8"));
+      } catch {}
+    }
     if (!lyr && song) {
       lyr = L.lyricsFromClips(song, currentTracks());
       if (lyr) transpose = L.addTranspose(song.transpose, lyr.transpose);
@@ -1172,7 +1219,7 @@ function start(opts = {}) {
 
   app.get("/api/setlist-text", (_req, res) => res.type("text/plain").send(setlistText(setlist())));
 
-  app.post("/api/setlist-text", async (req, res) => {
+  app.post("/api/setlist-text", route(async (req, res) => {
     if (!(await httpAllowed(req, res))) return;
     const { text } = req.body || {};
     if (typeof text !== "string" || text.length > 100000) return res.status(400).json({ error: "Missing 'text'" });
@@ -1180,13 +1227,13 @@ function start(opts = {}) {
     if (!runCommand({ cmd: "setlist", order, skip, stopAfter, notes: { ...prefs.notes, ...notes } }))
       return res.status(400).json({ error: "Invalid setlist" });
     res.json({ ok: true, unmatched });
-  });
+  }));
 
-  app.post("/api/cmd", async (req, res) => {
+  app.post("/api/cmd", route(async (req, res) => {
     if (!(await httpAllowed(req, res))) return;
-    if (runCommand(req.body)) res.json({ ok: true });
+    if (runCommand(req.body, "web", localReq(req))) res.json({ ok: true });
     else res.status(400).json({ error: "Unknown or invalid command" });
-  });
+  }));
 
   // ---------------- web app password ----------------
   // With a password set, only this computer and unlocked browsers give
@@ -1194,7 +1241,7 @@ function start(opts = {}) {
   const tokens = new Set(); // unlocked browsers, until the next restart or password change
   const limiter = createLimiter({ now: cfg.now });
   const clientIp = (req) => String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
-  const canControl = (ws) => !prefs.auth || isLoopback(ws.ip) || ws.authed;
+  const canControl = (ws) => !prefs.auth || ws.local || ws.authed;
 
   function sendAccess(ws, token, extra = {}) {
     if (ws.readyState === 1)
@@ -1211,9 +1258,14 @@ function start(opts = {}) {
   async function wsAuth(ws, { password, token }) {
     let ok = false;
     if (!limiter.blocked(ws.ip)) {
-      ok = typeof token === "string" && tokens.has(token) ? true : await checkPassword(prefs.auth, password);
+      if (typeof token === "string" && tokens.has(token)) ok = true;
+      else if (password !== undefined) {
+        // counted before scrypt: guesses sent in parallel are all counted.
+        // An old token alone (OpenSet restarted) is not a wrong password.
+        limiter.fail(ws.ip);
+        ok = await checkPassword(prefs.auth, password);
+      }
       if (ok) limiter.ok(ws.ip);
-      else if (password !== undefined) limiter.fail(ws.ip); // an old token (OpenSet restarted) is not a wrong password
     }
     ws.authed = ok;
     sendAccess(ws, ok ? (tokens.has(token) ? token : newToken()) : null, !ok && token !== undefined ? { tokenRejected: true } : {});
@@ -1221,7 +1273,7 @@ function start(opts = {}) {
 
   // HTTP: X-OpenSet-Password header, or "Authorization: Bearer <token>"
   async function httpAllowed(req, res) {
-    if (!prefs.auth || isLoopback(req.socket.remoteAddress)) return true;
+    if (!prefs.auth || localReq(req)) return true;
     const ip = clientIp(req);
     if (limiter.blocked(ip)) {
       res.status(429).json({ error: "Too many wrong passwords: try again later" });
@@ -1230,21 +1282,20 @@ function start(opts = {}) {
     const bearer = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "");
     if (bearer && tokens.has(bearer)) return true;
     const pw = req.get("x-openset-password");
+    if (pw !== undefined || bearer) limiter.fail(ip); // before scrypt: parallel guesses are all counted
     if (pw !== undefined && (await checkPassword(prefs.auth, pw))) {
       limiter.ok(ip);
       return true;
     }
-    if (pw !== undefined || bearer) limiter.fail(ip);
     res.status(401).json({ error: "Password required" });
     return false;
   }
 
   app.post("/api/load-als", (req, res) => {
     // reads files from disk: only from the computer running OpenSet
-    if (!isLoopback(req.socket.remoteAddress))
-      return res.status(403).json({ error: "Only allowed from this computer" });
+    if (!localReq(req)) return res.status(403).json({ error: "Only allowed from this computer" });
     const { file } = req.body || {};
-    if (typeof file !== "string" || !file) return res.status(400).json({ error: "Missing 'file' path" });
+    if (!isAls(file)) return res.status(400).json({ error: "Not a Live project (.als)" });
     try {
       offlineProject = parseAls(file);
       setPrefs({ lastProject: path.resolve(file) });
@@ -1255,11 +1306,13 @@ function start(opts = {}) {
   });
 
   app.use((err, _req, res, _next) => {
+    if (!err.status) log.error(`[http] ${err.stack || err.message}`);
     res.status(err.status || 500).json({ error: err.status ? err.message : "Internal error" });
   });
 
   const server = http.createServer(app);
-  const wss = new WebSocketServer({ server });
+  // maxPayload: the biggest real message (a setlist edit) is a few KB; ws's default is 100 MB
+  const wss = new WebSocketServer({ server, maxPayload: 256 * 1024, verifyClient: ({ req }, done) => done(originOk(req), 403) });
   // ws re-emits the HTTP server's errors (e.g. EADDRINUSE); start() handles them
   wss.on("error", () => {});
 
@@ -1273,7 +1326,9 @@ function start(opts = {}) {
   wss.on("connection", (ws, req) => {
     const ip = clientIp(req);
     ws.ip = ip;
+    ws.local = localReq(req);
     ws.authed = false;
+    ws.on("error", () => ws.terminate()); // a malformed frame closes this socket, never OpenSet
     devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null, settings: {} });
     ws.on("pong", () => {
       const d = devices.get(ws);
@@ -1292,7 +1347,7 @@ function start(opts = {}) {
         if (msg && msg.type === "device") deviceInfo(devices.get(ws), msg);
         else if (msg && msg.type === "auth") wsAuth(ws, msg).catch((e) => log.error(`[auth] ${e.message}`));
         else if (!canControl(ws)) sendAccess(ws); // read-only: tell the browser to ask for the password
-        else runCommand(msg);
+        else runCommand(msg, "web", ws.local);
       } catch (e) {
         log.error(`[ws] ${e.message}`);
       }

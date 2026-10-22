@@ -5,8 +5,9 @@ const fs = require("fs");
 
 function openCommand(platform, url) {
   if (platform === "darwin") return ["open", [url]];
-  // "" is start's window title; without it a quoted URL would become the title
-  if (platform === "win32") return ["cmd", ["/c", "start", "", url]];
+  // explorer opens URLs and files with their app; cmd's start would split a path like
+  // C:\Shows\R&B\set.als at the "&"
+  if (platform === "win32") return ["explorer", [url]];
   return ["xdg-open", [url]];
 }
 

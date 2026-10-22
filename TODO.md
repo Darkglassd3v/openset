@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 e A2 fatti, prossimo A3 (sicurezza), poi A4 (motore, server, AbleNet)
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1, A2, A3 fatti, prossimo A4 (motore, server, AbleNet)
 
 ## Da fare
 
@@ -135,10 +135,10 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   8. `.als`: decompressione limitata (64 MB) e lettura senza regex quadratiche sui tag non chiusi
   9. `setPassword` e `peers` solo da questo computer; 12. computer di riserva senza redirect
   10. `/api/load-als` solo file `.als`; all'avvio automatico si apre solo un `.als`
-  13. `midi` vale solo da questo computer, `mirror` solo dai computer di riserva (Safe Mode)
+  13. `midi` vale solo da questo computer (Safe Mode); `mirror` resta accettato da tutti: il computer di riserva spesso non ha il principale nella sua lista, e Safe Mode è una protezione dagli errori, non dagli attacchi
   16. testi: il file si legge solo per un brano della scaletta (nomi riservati di Windows)
   18. `setlist.json` leggibile solo dall'utente (0600)
-- [ ] GREEN: `server/index.js`, `server/auth.js`, `server/editor.js`, `server/setlist.js`, `server/als-parser.js`, UI
+- [x] GREEN: `server/index.js`, `server/editor.js`, `server/setlist.js`, `server/als-parser.js`, `server/launch.js` (Windows: `explorer`), UI; anche A4.11 (route async con try/catch)
 - Non corretti: password e token in chiaro su HTTP (serve HTTPS: versione dedicata); token senza scadenza; Node 18 dentro i programmi (pkg 5.8.1 arriva a Node 18: passare a Node SEA in una versione dedicata); limitatore per /64 IPv6; tetto alle connessioni WebSocket
 
 #### A4 — Motore, server e AbleNet (agenti `ponytail:ponytail-audit` e `ecc:code-reviewer`, confermati con un Live simulato)
@@ -153,7 +153,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   8. Re-Enable Automation e Back to Arrangement al confine, non una quantizzazione prima
   9. Live in silenzio: `is_playing` falso e coda svuotata; al ritorno di Live la coda vecchia non scatta
   10. sezioni dopo la fine del brano ignorate, fine della sezione mai oltre la fine del brano
-  11. incolla con `\r` o U+2028 (Note di Apple) non chiude il server; route async con try/catch
+  11. [fatto in A3] incolla con `\r` o U+2028 (Note di Apple) non chiude il server; route async con try/catch
   12. `setlist.json` scritto in modo atomico (`.tmp` + rename); file illeggibile copiato in `setlist.corrupt-<ora>.json` e registrato nel log
   13. WebSocket: client che non rispondono al ping chiusi, niente invio a chi ha più di 1 MB in coda; battito ogni 2 s e la UI si ricollega se tace per 6 s; `perMessageDeflate` (stato da ~30 KB a ~2 KB)
   14. AbleNet: impostazioni locali (`scene`, `driftCorrection`, `network`, `openBrowser`, `floatingWindow`, `autoLaunchLive`, `defaultView`) non copiate sui computer di riserva; correzione della deriva solo sulla riserva verso il principale; computer tolti dalla lista dimenticati; comandi copiati accettati dai computer di riserva configurati anche con password

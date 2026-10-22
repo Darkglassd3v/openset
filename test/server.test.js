@@ -1023,7 +1023,7 @@ test("/api/load-als works from this computer only", async (t) => {
   assert.equal(s.lastProjectName, "show.als"); // for Auto-Launch the Last Live Project
   assert.equal(JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8")).lastProject, file);
   assert.equal((await post(c.url("/api/load-als"), {})).status, 400);
-  assert.equal((await post(c.url("/api/load-als"), { file: file + ".nope" })).status, 500);
+  assert.equal((await post(c.url("/api/load-als"), { file: path.join(c.baseDir, "missing.als") })).status, 500);
   if (LAN_IP) {
     const lan = await post(`http://${LAN_IP}:${c.srv.httpPort}/api/load-als`, { file });
     assert.equal(lan.status, 403);
@@ -1690,14 +1690,13 @@ test("A3: a peer that redirects is not followed", async (t) => {
   assert.equal((await c.state()).peers[0].online, false);
 });
 
-test("A3: Safe Mode: midi only from this computer, mirror only from backup computers", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+test("A3: Safe Mode: midi only from this computer", { skip: !LAN_IP && "no LAN address" }, async (t) => {
   const c = await setup(t);
   await c.connect({ ...LIVE, is_playing: true });
   await c.cmd({ cmd: "settings", safeMode: true });
   const lan = (body) =>
     fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   assert.equal((await lan({ cmd: "next", midi: true })).status, 400);
-  assert.equal((await lan({ cmd: "next", mirror: true })).status, 400);
   assert.equal((await c.cmd({ cmd: "next", midi: true })).status, 200); // the host's own MIDI pedal
 });
 

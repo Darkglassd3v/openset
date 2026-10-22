@@ -25,7 +25,8 @@ function parseName(raw) {
   let transition = null;
   const arrow = text.indexOf(">>>");
   if (arrow >= 0) {
-    transition = parseName(text.slice(arrow + 3)).name || null;
+    // the target ends at a further ">>>"; no recursion, so thousands of arrows cannot overflow the stack
+    transition = parseName(text.slice(arrow + 3).split(">>>")[0]).name || null;
     text = text.slice(0, arrow);
   }
   let description = null;

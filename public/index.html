@@ -399,7 +399,7 @@
     <p>MIDI e OSC non sono limitati dal Safe Mode.</p>
     <p id="pwStatus"></p>
     <div class="row">
-      <input class="field" type="password" id="pwNew" autocomplete="new-password" placeholder="Nuova password (almeno 4 caratteri)" aria-label="Nuova password">
+      <input class="field" type="password" id="pwNew" autocomplete="new-password" placeholder="Nuova password (almeno 6 caratteri)" aria-label="Nuova password">
       <button class="btn" id="pwSet">Imposta password</button>
       <button class="btn" id="pwClear">Rimuovi</button>
     </div>
@@ -1356,7 +1356,7 @@ function buildSettings() {
   const show = stageShow();
   document.querySelectorAll("[data-stage]").forEach((c) => { c.checked = !!show[c.dataset.stage]; });
   $("pwStatus").textContent = state.passwordSet
-    ? "Password attiva: gli altri dispositivi la chiedono per comandare (questo computer no). Non vale per OSC."
+    ? "Password attiva: gli altri dispositivi la chiedono per comandare (questo computer no). L'OSC resta aperto a tutta la rete."
     : "Nessuna password: chiunque sulla rete può comandare OpenSet dal browser.";
   $("pwClear").hidden = !state.passwordSet;
   if (!("speechSynthesis" in window)) $("speechStatus").textContent = "Sintesi vocale non disponibile in questo browser.";
@@ -1410,7 +1410,8 @@ $("alsLoad").onclick = async () => {
 };
 $("pwSet").onclick = () => {
   const password = $("pwNew").value;
-  if (password.length < 4) { $("pwStatus").textContent = "La password deve avere almeno 4 caratteri."; return; }
+  if (!["localhost", "127.0.0.1", "[::1]"].includes(location.hostname)) { $("pwStatus").textContent = "La password si imposta dal computer su cui gira OpenSet."; return; }
+  if (password.length < 6) { $("pwStatus").textContent = "La password deve avere almeno 6 caratteri."; return; }
   send({ cmd: "setPassword", password });
   $("pwNew").value = "";
 };
