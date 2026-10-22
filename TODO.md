@@ -14,6 +14,13 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ## In corso
 
+Richiesta dell'utente (2026-10-23, prima di andare a dormire): «correggi tutte le cose … FAI TUTTO NON LASCIARE NIENTE IN SOSPESO», piano con `ecc:plan` e `ecc:tdd-workflow`, bug descritti in parole semplici; se qualcosa non va si segna qui «da verificare»; **alla fine spegnere il PC (`systemctl poweroff`) comunque**.
+
+- [ ] v0.6.2 — correzioni (sezione «v0.6.2» sotto), release
+- [ ] v0.7.0 — funzioni di AbleSet che mancavano (sezione «v0.7.0» sotto), release
+- [ ] v0.8.0 — Node recente dentro i programmi (sezione «v0.8.0» sotto), release
+- [ ] fine: `/ecc:ck save`, memoria aggiornata, spegnere il PC
+
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
 - [x] v0.6.0: PR #3 (merge `279f7fa`), 4 zip e guida PDF anche in `build/release-0.6.0/`; release su GitHub dal tag (vedi sotto), CI verde su Windows, macOS e Ubuntu
 - [x] Release senza artefatti delle Actions (scelta dell'utente, 2026-10-22): `release.yml` con un solo job su macOS (PR #4, merge `c70dcd1`), tag `v0.6.0` spostato su `c70dcd1` e pushato: release pubblica https://github.com/Darkglassd3v/openset/releases/tag/v0.6.0 con 4 zip e guida, 0 artefatti (run 39840370127)
@@ -38,6 +45,51 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`)
 
 ## Da fare
+
+### v0.6.2 — correzioni (branch `release/v0.6.2`)
+Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
+
+- [ ] C1 Computer di riserva
+  - Quando togli dalla lista un computer di riserva con password e intanto gli stava arrivando un comando, rimettendolo la lista lo segnava ancora come «rifiuta i comandi». Ora la risposta di un computer già tolto viene ignorata (`peerDenied`).
+  - Con un computer di riserva spento, gli altri si aggiornavano in ritardo (fino a 0,8 s ciascuno) perché OpenSet li leggeva uno alla volta. Ora li legge tutti insieme (`pollPeers` in parallelo).
+- [ ] C2 Brani con lo stesso nome: con due brani uguali in scaletta (una ripresa), togliere, spostare o scrivere una nota su uno cambiava anche l'altro. Ora ogni brano ha una sua chiave: il secondo è «Nome#2» (ordine, tolti, stop, note, durate misurate).
+- [ ] C3 Password e accessi
+  - Quando un iPad sblocca OpenSet, la password passava in chiaro sulla rete. Ora l'iPad manda solo una prova calcolata dalla password e da un numero nuovo a ogni volta (sfida e risposta): la password non viaggia più.
+  - Un iPad sbloccato restava sbloccato fino al riavvio di OpenSet, da qualsiasi indirizzo. Ora l'accesso scade dopo 24 ore senza uso e vale solo dall'indirizzo che l'ha ottenuto.
+  - Chi prova password a caso con IPv6 poteva cambiare indirizzo a ogni tentativo e non essere mai fermato. Ora i tentativi si contano per rete (/64).
+  - Un dispositivo poteva aprire connessioni senza limite fino a rallentare OpenSet. Ora al massimo 20 per indirizzo e 100 in tutto.
+  - Un altro programma sullo stesso computer poteva comandare Live al posto di OpenSet. Ora il Remote Script accetta solo i comandi con la chiave che manda a OpenSet.
+- [ ] C4 Log: se OpenSet restava acceso per giorni, `openset.log` cresceva senza limite (si accorciava solo all'avvio). Ora oltre 1 MB passa a `openset.old.log` anche mentre è acceso.
+- [ ] C5 User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
+- [ ] C6 Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
+- [ ] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Trovare la causa e toglierla.
+- [ ] Rilascio 0.6.2: copertura, CHANGELOG, report TDD, versione, `code-review` e correzione di tutto quello che trova, PR, CI, merge, tag
+
+### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
+Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.
+
+- [ ] F1 Brani aggiunti a mano dalla UI, senza progetto Live (scaletta, note e testi)
+- [ ] F2 `+LOOPFULL` come in AbleSet (oggi si comporta come `+LOOP`)
+- [ ] F3 Testi da più tracce `+LYRICS` (oggi solo la prima)
+- [ ] F4 Colori delle clip con la tabella di AbleSet (oggi per tonalità)
+- [ ] F5 Canvas: viste personalizzate fatte di riquadri
+- [ ] F6 Mixer: volumi, mute e solo delle tracce dalla UI
+- [ ] F7 Variabili condivise (e Persist Shared Variables)
+- [ ] F8 Script di progetto
+- [ ] F9 Progetti su più file `.als` (e Delay Before Jumping to Song File)
+- [ ] F10 Due computer: solo e volumi dei gruppi sincronizzati
+- [ ] F11 OSC visibile in rete (Bonjour)
+- [ ] Rilascio 0.7.0 (guida con tutte le novità)
+
+### v0.8.0 — Node recente dentro i programmi (branch `release/v0.8.0`)
+- [ ] I programmi contengono Node 18, che non riceve più aggiornamenti di sicurezza da aprile 2025 (pkg 5.8.1 non va oltre). Passare a Node SEA con un Node attuale, per Windows, macOS (arm64 e Intel) e Linux, con icona, firma ad hoc e guida dentro gli zip; prova di avvio in CI su ogni sistema
+- [ ] Rilascio 0.8.0
+
+### Non fattibili su questo computer (detto all'utente il 2026-10-23)
+- Pacchetto log del tester (bug della scaletta che sparisce): serve il file che deve mandare lui.
+- Prove su iPad/Safari, Mac, Windows, Live veri e con due computer veri: qui c'è solo Linux; si prova con Chrome, un Live simulato e la CI su Windows e macOS.
+- Scambio automatico dell'audio tra due computer, Audio Interfaces, LTC, AbleSet Controller: servono hardware o Max for Live.
+- Automazione del tempo letta da Live mentre suona: l'API di Live non la dà ai Remote Script (resta la lettura dal file `.als`).
 
 ### v0.5.1 — feedback all'avvio e convivenza con AbleSet (hotfix)
 
