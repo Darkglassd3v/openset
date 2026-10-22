@@ -440,3 +440,8 @@ test("quantBeats: Live global quantization in beats", () => {
   assert.equal(quantBeats(11, 4, 4), 0.25); // 1/16
   assert.equal(quantBeats(99, 4, 4), 0); // unknown
 });
+
+test("parseName: thousands of >>> do not overflow the stack (audit A3)", () => {
+  assert.equal(parseName("Verse >>> Chorus >>> Bridge").transition, "Chorus");
+  assert.doesNotThrow(() => parseName(">>>".repeat(30000)));
+});

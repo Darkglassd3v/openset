@@ -6,7 +6,8 @@ const { openCommand, parseArgs, openBrowser, appCommand, liveRunning } = require
 test("openCommand: the system's way to open a URL", () => {
   const url = "http://localhost:39080";
   assert.deepEqual(openCommand("darwin", url), ["open", [url]]);
-  assert.deepEqual(openCommand("win32", url), ["cmd", ["/c", "start", "", url]]);
+  // explorer, not cmd: cmd would split a path like C:\Shows\R&B\set.als at the "&"
+  assert.deepEqual(openCommand("win32", url), ["explorer", [url]]);
   assert.deepEqual(openCommand("linux", url), ["xdg-open", [url]]);
 });
 

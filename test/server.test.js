@@ -5,6 +5,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
+const http = require("http");
+const net = require("net");
 const WebSocket = require("ws");
 const { start } = require("../server/index");
 const { encode, decode } = require("../server/osc");
@@ -1515,4 +1517,200 @@ test("CLI: a busy port prints a hint and exits with 1", async (t) => {
   assert.match(stderr, /OpenSet cannot start: .*EADDRINUSE.*already running/);
   // the version is the first thing printed at start-up
   assert.equal(stdout.split(/\r?\n/)[0], `OpenSet ${require("../package.json").version}`);
+});
+
+// ---------------- audit 0.6.0: security (A3) ----------------
+
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("A3: a malformed or huge WebSocket frame closes that socket, not OpenSet", async (t) => {
+  const c = await setup(t);
+  const sock = net.connect(c.srv.httpPort, "127.0.0.1");
+  t.after(() => sock.destroy());
+  await new Promise((r) => sock.once("connect", r));
+  sock.write(
+    "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+  );
+  await new Promise((r) => sock.once("data", r)); // 101 Switching Protocols
+  sock.write(Buffer.from([0x83, 0x80, 0, 0, 0, 0])); // reserved opcode 3
+  await pause(100);
+  assert.equal((await fetch(c.url("/api/state"))).status, 200);
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  t.after(() => ws.terminate());
+  await new Promise((r) => ws.once("open", r));
+  ws.on("error", () => {});
+  const closed = new Promise((r) => ws.once("close", r));
+  ws.send("x".repeat(300 * 1024));
+  assert.equal(await closed, 1009); // message too big
+  assert.equal((await fetch(c.url("/api/state"))).status, 200);
+});
+
+function rawRequest(port, { method = "GET", path: p = "/", headers = {}, body = "" }) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: "127.0.0.1", port, method, path: p, headers }, (res) => {
+      res.resume();
+      res.on("end", () => resolve(res));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+test("A3: other web sites and DNS rebinding get no trust from this computer", async (t) => {
+  const opened = [];
+  const c = await setup(t, { openFile: (f) => opened.push(f) });
+  const json = { "Content-Type": "application/json" };
+  // a page on another site posting to localhost (CSRF)
+  let res = await rawRequest(c.srv.httpPort, { method: "POST", path: "/api/host/folder", headers: { ...json, Origin: "http://evil.example" }, body: "{}" });
+  assert.equal(res.statusCode, 403);
+  assert.deepEqual(opened, []);
+  // a rebound name pointing at 127.0.0.1 is not "this computer"
+  res = await rawRequest(c.srv.httpPort, { method: "POST", path: "/api/host/folder", headers: { ...json, Host: "evil.example:" + c.srv.httpPort }, body: "{}" });
+  assert.equal(res.statusCode, 403);
+  assert.deepEqual(opened, []);
+  // the app itself still works: same origin, or no Origin (curl, Companion)
+  res = await rawRequest(c.srv.httpPort, { method: "POST", path: "/api/host/folder", headers: { ...json, Origin: `http://127.0.0.1:${c.srv.httpPort}`, Host: `127.0.0.1:${c.srv.httpPort}` }, body: "{}" });
+  assert.equal(res.statusCode, 200);
+  assert.equal((await fetch(c.url("/"))).headers.get("x-frame-options"), "DENY");
+  // cross-site WebSocket
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`, { origin: "http://evil.example" });
+  const status = await new Promise((r) => {
+    ws.once("unexpected-response", (_req, resp) => r(resp.statusCode));
+    ws.once("open", () => r("open"));
+    ws.once("error", () => r("error"));
+  });
+  ws.terminate();
+  assert.equal(status, 403);
+});
+
+test("A3: passwords of at least 6 characters; parallel guesses are all counted", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "abcde" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "palco-2026" })).status, 200);
+  const guesses = await Promise.all(
+    Array.from({ length: 20 }, (_, i) =>
+      fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-OpenSet-Password": "guess" + i },
+        body: JSON.stringify({ cmd: "stop" }),
+      }).then((r) => r.status)
+    )
+  );
+  assert.ok(guesses.filter((s) => s === 429).length >= 15, String(guesses));
+});
+
+test("A3: OSC answers only the address that asks, 4 subscriptions per address, 64 messages per packet", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const lan = await udpSocket(LAN_IP);
+  const victim = await udpSocket("127.0.0.1");
+  const ports = await Promise.all(Array.from({ length: 6 }, () => udpSocket(LAN_IP)));
+  t.after(() => [lan, victim, ...ports].forEach((s) => s.close()));
+  const toServer = (buf) => lan.send(buf, c.srv.udpPort, LAN_IP);
+  let reflected = 0;
+  victim.on("message", () => reflected++);
+  toServer(encode("/getValues", ["127.0.0.1", victim.address().port]));
+  toServer(encode("/subscribe", ["127.0.0.1", victim.address().port]));
+  await pause(200);
+  await c.at(50);
+  await pause(200);
+  assert.equal(reflected, 0); // a LAN device cannot point OpenSet at someone else
+
+  const counts = ports.map(() => 0);
+  ports.forEach((s, i) => s.on("message", () => counts[i]++));
+  for (const s of ports) {
+    toServer(encode("/subscribe", [LAN_IP, s.address().port]));
+    await pause(20);
+  }
+  await pause(200);
+  counts.fill(0);
+  await c.at(10);
+  await pause(200);
+  assert.deepEqual(counts.map((n) => n > 0), [false, false, true, true, true, true]); // the 4 newest
+
+  const one = await udpSocket(LAN_IP);
+  t.after(() => one.close());
+  let got = 0;
+  one.on("message", () => got++);
+  const get = encode("/getValues", [LAN_IP, one.address().port]);
+  toServer(get);
+  await pause(300);
+  const perRequest = got;
+  got = 0;
+  const parts = [Buffer.from("#bundle\0", "latin1"), Buffer.alloc(8)];
+  for (let i = 0; i < 100; i++) {
+    const size = Buffer.alloc(4);
+    size.writeInt32BE(get.length);
+    parts.push(size, get);
+  }
+  toServer(Buffer.concat(parts));
+  await pause(600);
+  assert.ok(perRequest > 0 && got <= 64 * perRequest, `${got} datagrams for 100 requests of ${perRequest}`);
+});
+
+test("A3: setPassword and peers only from this computer", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  const lan = (body) =>
+    fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await lan({ cmd: "setPassword", password: "palco-2026" })).status, 400);
+  assert.equal((await lan({ cmd: "peers", urls: ["http://10.0.0.9:39080"] })).status, 400);
+  const s = await c.state();
+  assert.equal(s.passwordSet, false);
+  assert.deepEqual(s.peers, []);
+});
+
+test("A3: only .als files are loaded or opened at start", async (t) => {
+  const c = await setup(t);
+  const res = await fetch(c.url("/api/load-als"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: "/etc/hostname" }) });
+  assert.equal(res.status, 400);
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-launch-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const script = path.join(baseDir, "evil.sh");
+  fs.writeFileSync(script, "x");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ lastProject: script, settings: { autoLaunchLive: true } }));
+  const files = [];
+  await setup(t, { baseDir, liveRunning: () => false, openFile: (f) => files.push(f) });
+  assert.deepEqual(files, []);
+});
+
+test("A3: a peer that redirects is not followed", async (t) => {
+  const target = http.createServer((_q, r) => r.end(JSON.stringify({ connected: true, is_playing: false, setlist: [], current: -1, settings: {} })));
+  await new Promise((r) => target.listen(0, "127.0.0.1", r));
+  const redirector = http.createServer((q, r) => {
+    r.writeHead(302, { Location: `http://127.0.0.1:${target.address().port}${q.url}` });
+    r.end();
+  });
+  await new Promise((r) => redirector.listen(0, "127.0.0.1", r));
+  t.after(() => { target.close(); redirector.close(); });
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${redirector.address().port}`] });
+  await waitFor(async () => (await c.state()).peers.length === 1, "peer polled");
+  await pause(200);
+  assert.equal((await c.state()).peers[0].online, false);
+});
+
+test("A3: Safe Mode: midi only from this computer, mirror only from backup computers", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, is_playing: true });
+  await c.cmd({ cmd: "settings", safeMode: true });
+  const lan = (body) =>
+    fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await lan({ cmd: "next", midi: true })).status, 400);
+  assert.equal((await lan({ cmd: "next", mirror: true })).status, 400);
+  assert.equal((await c.cmd({ cmd: "next", midi: true })).status, 200); // the host's own MIDI pedal
+});
+
+test("A3: lyrics files are read only for songs in the setlist", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  fs.mkdirSync(path.join(c.baseDir, "lyrics"));
+  fs.writeFileSync(path.join(c.baseDir, "lyrics", "Ghost.json"), JSON.stringify({ lines: [{ beat: 0, text: "x" }] }));
+  assert.equal((await fetch(c.url("/api/lyrics/Ghost"))).status, 404);
+});
+
+test("A3: setlist.json is readable by this user only", { skip: process.platform === "win32" && "no Unix modes" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  assert.equal(fs.statSync(path.join(c.baseDir, "setlist.json")).mode & 0o777, 0o600);
 });

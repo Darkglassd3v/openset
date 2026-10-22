@@ -124,7 +124,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - Non corretto: brani con lo stesso nome (ripresa) modificati insieme, perché il protocollo usa il nome (da rivedere con gli id)
 
 #### A3 — Sicurezza (agente `ecc:security-reviewer`, prove su un server vero; nessun XSS, path traversal o RCE dalla rete)
-- [ ] RED `server.test.js` (+ `editor`, `setlist`, `als-parser`):
+- [x] RED `server.test.js` (+ `editor`, `setlist`, `als-parser`, `launch`):
   1. un frame WebSocket malformato non chiude OpenSet (`ws.on("error")`, `maxPayload` 64 KB)
   2. richieste da altri siti: `Origin` diverso da `Host` rifiutato (WebSocket e POST), `Host` solo IP, `localhost`, `*.local` o nome del computer (DNS rebinding), `X-Frame-Options: DENY`
   3. limitatore della password: il tentativo conta prima di scrypt (richieste in parallelo), password di almeno 6 caratteri

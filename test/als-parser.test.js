@@ -156,3 +156,14 @@ test("parseAls: no tempo automation means no tempo map", () => {
 test("parseAls: missing file throws", () => {
   assert.throws(() => parseAls(path.join(tmp, "nope.als")), /ENOENT/);
 });
+
+test("parseAls: a decompression bomb is refused, unclosed tags stay fast (audit A3)", () => {
+  const bomb = path.join(tmp, "bomb.als");
+  fs.writeFileSync(bomb, zlib.gzipSync(Buffer.alloc(3 << 20)));
+  assert.throws(() => parseAls(bomb, 2 << 20), /too big/);
+  const open = path.join(tmp, "open.als");
+  fs.writeFileSync(open, zlib.gzipSync("<Locator>".repeat(80000) + "<MidiTrack>".repeat(20000)));
+  const t0 = Date.now();
+  assert.deepEqual(parseAls(open).locators, []);
+  assert.ok(Date.now() - t0 < 1000, `took ${Date.now() - t0} ms`);
+});
