@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W4 RED (prima: testi del riquadro dei motivi più professionali, richiesta utente)
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W4 RED
 
 ## Da fare
 
@@ -56,6 +56,9 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] RED: `engine.test.js` (marcatore `played` a fine brano, anche senza salto), `server.test.js` (il brano finito va tra i tolti, il marcatore non arriva a Live)
 - [x] GREEN: motore (`songEnd` aggiunge `played`), server (il brano va in `skip`, registrato nel log), UI (Opzioni → Riproduzione)
 - Voce: Remove Played Songs Automatically
+
+#### Ritocchi chiesti dall'utente
+- [x] Riquadro dei motivi (2026-10-22): testi professionali, tutto maiuscolo, titolo in ambra + indicazione
 
 #### W4 — Colori e Tools
 - [ ] `[colore]` nei locator (18 colori di AbleSet), sezioni con il colore del brano; traccia sezioni con `+CC`/`+CLIPCOLORS` → colore della clip (colonna della tavolozza di Live); flag `+SECTIONS`; UI colorata

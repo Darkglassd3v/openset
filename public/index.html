@@ -54,8 +54,10 @@
   .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--red); flex-shrink: 0; }
   .dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); }
   .conn { font-size: 12px; color: var(--dim); letter-spacing: .08em; text-transform: uppercase; }
-  .issues { background: var(--amber-dim); color: var(--text); font-size: 13px; padding: 8px 16px; }
+  .issues { background: var(--amber-dim); color: var(--text); padding: 10px 16px; border-bottom: 2px solid var(--amber);
+    text-transform: uppercase; letter-spacing: .06em; font-size: 13px; line-height: 1.5; }
   .issues p { margin: 2px 0; }
+  .issues b { color: var(--amber); font-weight: 700; margin-right: .6em; }
   .log { max-height: 45vh; overflow: auto; font-size: 11px; line-height: 1.4; background: var(--panel);
     border: 1px solid var(--line); padding: 8px; margin-top: 8px; white-space: pre-wrap; word-break: break-all; }
   .set-name { font-size: 12px; color: var(--amber); letter-spacing: .06em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -720,18 +722,19 @@ function scriptNote(inst) {
 }
 
 // why Live and OpenSet are not talking (state.liveIssues from the server)
+// [title, what to do]; shown in capitals
 const ISSUES = {
-  "osc-busy": "La porta OSC 39051 è occupata (AbleSet aperto?): l'OSC di OpenSet è spento. Scaletta e comandi da Live funzionano.",
-  "script-updated": "Il Remote Script di OpenSet è stato aggiornato: chiudi e riapri Live.",
-  "script-old": "Live usa ancora il vecchio Remote Script di OpenSet: chiudi e riapri Live.",
-  "cmd-port-busy": "La porta 39050 è occupata: i comandi di OpenSet non arrivano a Live. C'è un secondo Live aperto? Riavvia Live.",
-  "live-silent": "Live non risponde: resta l'ultima scaletta ricevuta. Live sta caricando un set o è stato chiuso?",
-  "no-live": "Nessun messaggio da Live: apri Live e scegli OpenSet come superficie di controllo.",
+  "live-silent": ["Live non risponde", "Visualizzata l'ultima scaletta ricevuta. Verificare che Ableton Live sia aperto e il set caricato."],
+  "no-live": ["Live non collegato", "Aprire Ableton Live e selezionare OpenSet come superficie di controllo."],
+  "script-updated": ["Remote Script aggiornato", "Riavviare Ableton Live per caricarlo."],
+  "script-old": ["Remote Script non aggiornato", "Riavviare Ableton Live per caricare la nuova versione."],
+  "cmd-port-busy": ["Comandi verso Live non disponibili", "Porta 39050 in uso: chiudere le altre istanze di Live e riavviarlo."],
+  "osc-busy": ["OSC disattivato", "Porta 39051 in uso da un'altra applicazione (AbleSet?). Scaletta e Live funzionano normalmente."],
 };
 function renderIssues(st) {
   // with an empty setlist the "Collega Ableton Live" screen already explains no-live
   const codes = (st.liveIssues || []).filter((c) => c !== "no-live" || st.setlist.length);
-  const html = codes.map((c) => `<p>${esc(ISSUES[c] || c)}</p>`).join("");
+  const html = codes.map((c) => { const [title, todo] = ISSUES[c] || [c, ""]; return `<p><b>${esc(title)}</b>${esc(todo)}</p>`; }).join("");
   const el = $("issues");
   if (el.innerHTML !== html) el.innerHTML = html;
   el.hidden = !html;
