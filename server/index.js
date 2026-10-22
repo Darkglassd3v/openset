@@ -207,6 +207,8 @@ function start(opts = {}) {
     now: Date.now, // injectable clock for tests
     peerPollMs: 1000,
     pingMs: 2000, // browser latency check
+    wsPerIp: 20, // WebSocket connections from one address
+    wsMax: 100, // and from everyone together
     scriptInstall: null, // Remote Script install result, shown by the UI
     netInfo, // platform, host name and interfaces, for /api/connect
     logger: null, // the CLI passes its own, so a crash lands in the same file
@@ -1395,7 +1397,13 @@ function start(opts = {}) {
     server,
     maxPayload: 256 * 1024,
     perMessageDeflate: true,
-    verifyClient: ({ req }, done) => done(originOk(req), 403),
+    verifyClient: ({ req }, done) => {
+      if (!originOk(req)) return done(false, 403);
+      // a device opening connections in a loop must not slow OpenSet down for the band
+      const ip = clientIp(req);
+      const fromIp = [...wss.clients].filter((ws) => ws.ip === ip).length;
+      done(fromIp < cfg.wsPerIp && wss.clients.size < cfg.wsMax, 503);
+    },
   });
   // ws re-emits the HTTP server's errors (e.g. EADDRINUSE); start() handles them
   wss.on("error", () => {});

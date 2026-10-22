@@ -22,22 +22,35 @@ function checkPassword(auth, password) {
   );
 }
 
+// who is counted: an IPv4 address, or an IPv6 /64 network (a device picks a new
+// address in its /64 at will, so one per guess would never be slowed down)
+function limitKey(ip) {
+  const a = String(ip).split("%")[0].replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, "");
+  if (!a.includes(":")) return a;
+  const [head, tail = ""] = a.split("::");
+  const h = head ? head.split(":") : [];
+  const t = a.includes("::") && tail ? tail.split(":") : [];
+  const groups = [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
+  return groups.slice(0, 4).map((g) => parseInt(g, 16) || 0).join(":") + "::/64";
+}
+
 // after `max` wrong guesses an address waits `ms` before it can try again
 function createLimiter({ max = 5, ms = 30000, now = Date.now } = {}) {
-  const fails = new Map(); // address -> { count, until }
+  const fails = new Map(); // limitKey -> { count, until }
   return {
     blocked: (ip) => {
-      const f = fails.get(ip);
+      const f = fails.get(limitKey(ip));
       return !!f && f.count >= max && now() < f.until;
     },
     fail: (ip) => {
-      const f = fails.get(ip) || { count: 0, until: 0 };
+      const k = limitKey(ip);
+      const f = fails.get(k) || { count: 0, until: 0 };
       if (f.count >= max && now() >= f.until) f.count = 0; // the wait is over
       f.count++;
       f.until = now() + ms;
-      fails.set(ip, f);
+      fails.set(k, f);
     },
-    ok: (ip) => fails.delete(ip),
+    ok: (ip) => fails.delete(limitKey(ip)),
   };
 }
 
