@@ -15,8 +15,8 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [x] v0.6.0: PR #3 (merge `279f7fa`), tag `v0.6.0` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), 4 zip e guida PDF in `build/release-0.6.0/`, CI verde su Windows, macOS e Ubuntu
-- [ ] Release senza artefatti delle Actions (scelta dell'utente, 2026-10-22): `release.yml` con un solo job su macOS, provato sulle PR che toccano il rilascio, pubblica solo dal tag; poi tag `v0.6.0` spostato sul nuovo `main` e pushato (release pubblica)
+- [x] v0.6.0: PR #3 (merge `279f7fa`), 4 zip e guida PDF anche in `build/release-0.6.0/`; release su GitHub dal tag (vedi sotto), CI verde su Windows, macOS e Ubuntu
+- [x] Release senza artefatti delle Actions (scelta dell'utente, 2026-10-22): `release.yml` con un solo job su macOS (PR #4, merge `c70dcd1`), tag `v0.6.0` spostato su `c70dcd1` e pushato: release pubblica https://github.com/Darkglassd3v/openset/releases/tag/v0.6.0 con 4 zip e guida, 0 artefatti (run 39840370127)
   - [x] RED `packaging.test.js`: niente `upload-artifact`/`download-artifact`, un solo job su `macos-latest`, `codesign` del programma arm64, prova sulle PR, pubblicazione solo dai tag
   - [x] GREEN: `.github/workflows/release.yml` (prova sulla PR prima del tag)
 - [ ] Dopo la release 0.6.0: workflow di release riutilizzabile (`workflow_call`) in un repo centrale (es. `Darkglassd3v/.github`) per tutti i progetti dell'utente, senza artefatti delle Actions (richiesta dell'utente, 2026-10-22)
