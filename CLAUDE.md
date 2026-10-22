@@ -66,6 +66,10 @@ Ogni modifica segue questo ordine. Non saltare passi.
   coincide sempre con l'ultima versione rilasciata più la documentazione.
 - Correzioni urgenti a una versione rilasciata: `hotfix/v<x.y.z>` dal tag, stessa
   procedura con PR.
+- `main` è protetto da un ruleset (utente, 2026-10-23): niente push diretti, nemmeno
+  per `TODO.md` o la documentazione (branch `docs/...` e PR); per il merge servono i 3
+  job della CI verdi e il merge commit; niente force push né cancellazione. Se cambia
+  il nome di un job in `ci.yml`, aggiorna anche i controlli richiesti dal ruleset.
 
 ## Regole per gli artefatti di rilascio (regola dell'utente, 2026-10-21)
 
