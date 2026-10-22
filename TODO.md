@@ -69,7 +69,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 #### W8 — Rilascio v0.6.0
 - [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI verde (le build), merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
 
-### Dopo la v0.6.0 — audit completo (richiesto dall'utente il 2026-10-22)
+### Audit completo dopo W7, prima del rilascio W8 (richiesto dall'utente il 2026-10-22: i bug trovati si correggono nella 0.6.0)
 - [ ] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP)
 - [ ] `superpowers:systematic-debugging` sul bug della scaletta che sparisce, con il pacchetto log della 0.5.1
 - [ ] agente `ecc:python-reviewer` sul Remote Script (Python 3.7 di Live 11, API di Live)
