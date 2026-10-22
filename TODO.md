@@ -21,7 +21,8 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   - [x] GREEN: `.github/workflows/release.yml` (prova sulla PR prima del tag)
 - [ ] Release più asciutta (richiesta dell'utente, 2026-10-22): la guida PDF solo dentro gli zip (non a parte, si rischia di non scaricarla), al posto dei passi di installazione un changelog breve dal CHANGELOG
   - [x] RED `release-notes.test.js` (una riga per voce, raggruppate, dove sta la guida), `packaging.test.js` (solo gli zip, `body_path: release-notes.md`)
-  - [ ] GREEN: `scripts/release-notes.js`, `release.yml`; poi la release 0.6.0 corretta (PDF a parte tolto, note nuove) e la regola aggiornata in `CLAUDE.md`
+  - [x] GREEN: `scripts/release-notes.js`, `release.yml`, regola aggiornata in `CLAUDE.md` (e in quello globale dell'utente)
+  - [ ] Release 0.6.0 corretta su GitHub dopo il merge: PDF a parte tolto, note brevi
 - [ ] Dopo la release 0.6.0: workflow di release riutilizzabile (`workflow_call`) in un repo centrale (es. `Darkglassd3v/.github`) per tutti i progetti dell'utente, senza artefatti delle Actions (richiesta dell'utente, 2026-10-22)
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`); scegliere dove pubblicare le release (vedi «Da decidere»)
 
