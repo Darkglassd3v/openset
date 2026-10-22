@@ -53,6 +53,13 @@ test("guide: version, new features and step-by-step commands for every platform"
   assert.match(html, /Risoluzione dei problemi/);
   // diagnostics: where the log is and how to send it (Debug Logs / Create Log Package)
   assert.match(html, /<h2>Diagnostica e log<\/h2>/);
+  // exporting the logs, step by step (user request, 2026-10-22)
+  assert.match(html, /<h3>Esportare il pacchetto log<\/h3>/);
+  assert.match(html, /cartella <b>Download<\/b>/);
+  assert.match(html, /<h3>Se la pagina di OpenSet non si apre<\/h3>/);
+  assert.match(html, /open ~\/Library\/Application\\ Support\/OpenSet/);
+  assert.match(html, /explorer %APPDATA%\\OpenSet/);
+  assert.match(html, /xdg-open ~\/\.config\/openset/);
   assert.match(html, /Crea pacchetto log/);
   assert.match(html, /openset\.log/);
   assert.match(html, /OpenSet e AbleSet insieme/);
