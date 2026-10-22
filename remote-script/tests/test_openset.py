@@ -168,6 +168,23 @@ class OpenSetTest(unittest.TestCase):
         self.assertIs(self.states()[0]["cmd_port"], False)
         self.assertTrue(any("busy" in m for m in other.logged))
 
+    def test_start_is_reported_to_openset(self):
+        logs = [m["msg"] for m in self.received() if m.get("type") == "log"]
+        self.assertIn("OpenSet script %s started (Live unknown)" % VERSION, logs)
+
+    def test_errors_are_sent_to_openset_too(self):
+        class BadName(object):
+            @property
+            def name(self):
+                raise RuntimeError("track gone")
+
+        self.song.tracks = [BadName()]
+        self.received()
+        self.os._send_clips()
+        logs = [m["msg"] for m in self.received() if m.get("type") == "log"]
+        self.assertEqual(logs, ["OpenSet clips error: track gone"])
+        self.assertIn("OpenSet clips error: track gone", self.os.logged)
+
     def test_cues_are_resent_only_when_they_change(self):
         self.received()
         self.os._send_state()

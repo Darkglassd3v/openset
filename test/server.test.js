@@ -164,6 +164,34 @@ test("Live is marked offline after a silence, the setlist stays", async (t) => {
   assert.deepEqual(s.liveIssues, ["live-silent"]);
 });
 
+test("debug logs: Live connection events, file log and log package", async (t) => {
+  const c = await setup(t, { liveTimeoutMs: 300 });
+  await c.connect();
+  await waitFor(async () => !(await c.state()).connected, "disconnect", 3000);
+  const { lines } = await (await fetch(c.url("/api/logs"))).json();
+  assert.ok(lines.some((l) => / INFO \[live\] connected/.test(l)), lines.join("\n"));
+  assert.ok(lines.some((l) => / \[live\] silent/.test(l)), lines.join("\n"));
+  assert.match(fs.readFileSync(path.join(c.baseDir, "openset.log"), "utf8"), /\[live\] connected/);
+  const res = await fetch(c.url("/api/log-package"));
+  assert.equal(res.status, 200);
+  assert.match(res.headers.get("content-disposition"), /attachment; filename="openset-[\d.]+-log-\d{8}-\d{4}\.txt"/);
+  const text = await res.text();
+  assert.match(text, new RegExp(`^OpenSet ${require("../package.json").version.replace(/\./g, "\\.")} `));
+  assert.match(text, /liveIssues: live-silent/);
+  assert.match(text, /\[live\] connected/);
+});
+
+test("debug logs: Remote Script messages and broken Live messages are logged", async (t) => {
+  const c = await setup(t);
+  c.sendLive({ type: "log", msg: "OpenSet clips error: track gone" });
+  const raw = await udpSocket();
+  t.after(() => raw.close());
+  raw.send("{truncated datagram", c.srv.statePort, "127.0.0.1"); // was silently dropped
+  const logged = async () => (await (await fetch(c.url("/api/logs"))).json()).lines.join("\n");
+  await waitFor(async () => /\[script\] OpenSet clips error: track gone/.test(await logged()), "script log");
+  await waitFor(async () => /ERROR \[live\] /.test(await logged()), "error from a broken message");
+});
+
 test("liveIssues explain why Live is not working with OpenSet", async (t) => {
   const c = await setup(t, { scriptInstall: { status: "updated", path: "/x/Remote Scripts/OpenSet" } });
   assert.deepEqual((await c.state()).liveIssues, ["script-updated", "no-live"]);
@@ -421,6 +449,8 @@ test("password: other devices need it to give commands; wrong guesses are slowed
   assert.equal((await post("/api/setlist-text", { text: "Finale" })).status, 401);
   assert.equal((await post("/api/cmd", { cmd: "setPassword", password: "" })).status, 401);
   assert.equal((await fetch(lan("/api/state"))).status, 200); // reading is always allowed
+  assert.equal((await fetch(lan("/api/logs"))).status, 401); // logs show paths and addresses
+  assert.equal((await fetch(lan("/api/log-package"))).status, 401);
 
   // a browser on another device: read-only until it unlocks
   const ws = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
