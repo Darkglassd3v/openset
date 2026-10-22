@@ -23,9 +23,10 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   - [x] RED `release-notes.test.js` (una riga per voce, raggruppate, dove sta la guida), `packaging.test.js` (solo gli zip, `body_path: release-notes.md`)
   - [x] GREEN: `scripts/release-notes.js`, `release.yml`, regola aggiornata in `CLAUDE.md` (e in quello globale dell'utente)
   - [x] Release 0.6.0 corretta su GitHub: PDF a parte tolto (resta dentro i 4 zip), note brevi da `scripts/release-notes.js`; PR #5 unita
-- [ ] Azione di release condivisa `Darkglassd3v/.github/actions/release@v1` (creata il 2026-10-22, CI verde su Ubuntu, Windows, macOS): è un'azione e non un workflow riutilizzabile, perché deve girare nel job che costruisce (niente artefatti)
+- [x] Azione di release condivisa `Darkglassd3v/.github/actions/release@v1` (creata il 2026-10-22, CI verde su Ubuntu, Windows, macOS; PR #6 unita, usata anche da dierre): è un'azione e non un workflow riutilizzabile, perché deve girare nel job che costruisce (niente artefatti)
   - [x] RED `packaging.test.js`: `release.yml` la usa, solo gli zip, niente `softprops` né `release-notes`; `scripts/release-notes.js` e il suo test tolti (le note le scrive l'azione)
   - [x] GREEN: `.github/workflows/release.yml`, `CLAUDE.md`
+- [ ] v0.6.1 (branch `release/v0.6.1`): corsa in AbleNet trovata dalla CI Windows della PR #6 (test A4 «removed peers are forgotten», 200 invece di 400): una lettura del computer di riserva ancora in corso quando lo si toglie dalla lista lo rimette nello stato
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`); scegliere dove pubblicare le release (vedi «Da decidere»)
 
 ## Da fare
