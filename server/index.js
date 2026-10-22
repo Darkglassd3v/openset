@@ -200,13 +200,16 @@ function start(opts = {}) {
     }
   }
 
+  // Live's data stays after a silence (set loading, AbleSet on the port…) unless a .als is loaded
+  const useLive = () => liveState.connected || !offlineProject;
+
   // clips of the Sections/+LYRICS tracks, from Live or from the loaded .als
   function currentTracks() {
-    return liveState.connected ? tracks : (offlineProject && offlineProject.tracks) || [];
+    return useLive() ? tracks : offlineProject.tracks || [];
   }
 
   function setlist() {
-    const source = liveState.connected ? cues : offlineProject ? offlineProject.locators : [];
+    const source = useLive() ? cues : offlineProject.locators;
     return S.applyOrder(S.buildSetlist(S.cuesFromLive(source, currentTracks())), prefs);
   }
 
@@ -219,6 +222,21 @@ function start(opts = {}) {
     return key(offlineProject.locators) === key(cues) ? map : null;
   }
 
+  // why Live and OpenSet are not talking, for the UI and the log package
+  function liveIssues() {
+    const out = [];
+    if (oscPort === null) out.push("osc-busy");
+    if (!liveState.connected) {
+      const status = cfg.scriptInstall && cfg.scriptInstall.status;
+      if (status === "installed" || status === "updated") out.push("script-updated");
+      out.push(lastLiveMsg ? "live-silent" : "no-live");
+    } else {
+      if (liveState.script_version !== VERSION) out.push("script-old");
+      if (liveState.cmd_port === false) out.push("cmd-port-busy");
+    }
+    return out;
+  }
+
   function publicState(list = setlist()) {
     const tempo = liveState.connected
       ? liveState.tempo
@@ -229,6 +247,7 @@ function start(opts = {}) {
       ...liveState,
       version: VERSION,
       oscPort,
+      liveIssues: liveIssues(),
       tempo,
       offline: !liveState.connected && !!offlineProject,
       setlist: list.map((s) => ({ ...s, seconds: S.songSeconds(s, tempo, map) })),
