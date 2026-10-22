@@ -3,6 +3,12 @@
 Tutte le novità di OpenSet, dalla versione più recente. La guida PDF di ogni
 rilascio riporta la sezione della sua versione.
 
+## 0.6.1 — 2026-10-23
+
+### Correzioni
+
+- **Due computer**: *Sincronizza ora* e la correzione dello scarto non seguono più un computer di riserva appena tolto dalla lista, anche quando ce ne sono altri; i computer tolti non vengono più letti; se una lettura di una riserva finisce mentre OpenSet si chiude, OpenSet non va più in crash.
+
 ## 0.6.0 — 2026-10-22
 
 ### Novità

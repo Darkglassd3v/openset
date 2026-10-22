@@ -26,8 +26,15 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] Azione di release condivisa `Darkglassd3v/.github/actions/release@v1` (creata il 2026-10-22, CI verde su Ubuntu, Windows, macOS; PR #6 unita, usata anche da dierre): è un'azione e non un workflow riutilizzabile, perché deve girare nel job che costruisce (niente artefatti)
   - [x] RED `packaging.test.js`: `release.yml` la usa, solo gli zip, niente `softprops` né `release-notes`; `scripts/release-notes.js` e il suo test tolti (le note le scrive l'azione)
   - [x] GREEN: `.github/workflows/release.yml`, `CLAUDE.md`
-- [ ] v0.6.1 (branch `release/v0.6.1`): corsa in AbleNet trovata dalla CI Windows della PR #6 (test A4 «removed peers are forgotten», 200 invece di 400): una lettura del computer di riserva ancora in corso quando lo si toglie dalla lista lo rimette nello stato
-- [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`); scegliere dove pubblicare le release (vedi «Da decidere»)
+- [ ] v0.6.1 (branch `release/v0.6.1`): corsa in AbleNet (trovata dalla CI Windows della PR #6: una lettura del computer di riserva ancora in corso quando lo si toglie dalla lista lo rimetteva nello stato)
+  - [x] RED `c406642` + GREEN `564e0dc`: `prunePeers()` anche alla fine di `pollPeers`
+  - [x] Copertura (righe 99.29%, rami 93.45%), report TDD `docs/releases/0.6.1/v0.6.1.tdd.md`, CHANGELOG 0.6.1 (Correzioni), README, versione 0.6.1 (VERSION, package.json e lock, Remote Script)
+  - [x] `code-review` del branch (PR #7, CI verde): con più riserve quella tolta è ancora seguita finché si leggono le altre; `leader()` si fida di tutte le voci di `peerStatus`; i computer tolti a metà lettura sono ancora letti; una lettura che finisce dopo la chiusura di OpenSet lancia `ERR_SOCKET_DGRAM_NOT_RUNNING` (rejection non gestita: crash); test della corsa con un'attesa fissa e un controllo che passava anche in RED; CHANGELOG descriveva un sintomo mai visto
+  - [x] RED `server.test.js` (`gatedPeer`: la riserva risponde solo quando il test la lascia andare): più riserve, chiusura durante la lettura
+  - [x] GREEN: `leader()` solo tra i computer della lista, quelli tolti non si leggono più, `.catch` sulla lettura (secondo `prunePeers()` tolto); CHANGELOG e report
+  - [ ] PR #7 con CI verde, merge, tag `v0.6.1` (pubblica `release.yml`)
+  - Non corretti (dalla revisione): `peerDenied` di una riserva tolta mentre un comando copiato è in viaggio resta finché un comando successivo non riesce (raro, solo l'etichetta «rifiuta»); riserve lette una dopo l'altra (una spenta ritarda le altre fino a 800 ms)
+- [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`)
 
 ## Da fare
 
@@ -79,7 +86,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] RED Tools: `test_openset.py` (Set Clip Colors from Names, Place/Remove Section Locators senza togliere locator esistenti, rifiutati mentre suona), `server.test.js` (comandi verso Live, non da scollegato o mentre suona), `setlist.test.js` (colonna 0 = red, 6 = teal)
 - [x] GREEN Tools: server (rifiutati da scollegato; locator non mentre suona), Remote Script (`_clip_colors_from_names`, `_section_locators`, `COLOR_COLUMNS`), UI (Opzioni → Strumenti), colonne 0 = red e 6 = teal
 - Voci: `[colore]` nei locator (18 colori di AbleSet), sezioni con il colore del brano; traccia sezioni con `+CC`/`+CLIPCOLORS` → colore della clip (colonna della tavolozza di Live); flag `+SECTIONS`; UI colorata
-- [ ] Tools: Set Clip Colors from Names, Place Locators on Section Clips, Remove Automatically Placed Locators
+- [x] Tools: Set Clip Colors from Names, Place Locators on Section Clips, Remove Automatically Placed Locators (RED/GREEN Tools sopra)
 
 #### W5 — General
 - [x] RED: `launch.test.js` (`appCommand`, fallback, `liveRunning`), `server.test.js` (defaultView, openBrowser start/live/off, floatingWindow, autoLaunchLive con `lastProject`)

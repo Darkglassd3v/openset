@@ -1825,9 +1825,24 @@ test("A4: AbleNet: this computer's own settings are not copied to the backup", a
 });
 
 function fakePeer(t, state) {
-  const srv = http.createServer((_q, res) => res.end(JSON.stringify({ connected: true, tempo: 120, sig_num: 4, sig_den: 4, setlist: [], current: -1, settings: { scene: "main" }, ...state() })));
+  const srv = http.createServer(async (_q, res) => res.end(JSON.stringify({ connected: true, tempo: 120, sig_num: 4, sig_den: 4, setlist: [], current: -1, settings: { scene: "main" }, ...(await state()) })));
   t.after(() => srv.close());
   return new Promise((r) => srv.listen(0, "127.0.0.1", () => r(`http://127.0.0.1:${srv.address().port}`)));
+}
+
+// a backup that answers only when released: the poll is still waiting for it while the test acts
+async function gatedPeer(t, state) {
+  const p = { hits: 0 };
+  p.asked = new Promise((r) => (p.ask = r));
+  const go = new Promise((r) => (p.release = r));
+  t.after(() => p.release());
+  p.url = await fakePeer(t, async () => {
+    p.hits++;
+    p.ask();
+    await go;
+    return state();
+  });
+  return p;
 }
 
 test("A4: AbleNet: only a backup corrects its drift; removed peers are forgotten", async (t) => {
@@ -1876,4 +1891,53 @@ test("A4: the HTTP port of the last run is tried first, so saved addresses keep 
   await a.srv.close();
   const b = await setup(t, { baseDir, httpPort: [p2, p1] });
   assert.equal(b.srv.httpPort, p1);
+});
+
+test("A4: a peer removed while its poll is still running is not brought back", async (t) => {
+  const a = await gatedPeer(t, () => ({ is_playing: true, beat: 8 }));
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect();
+  await c.cmd({ cmd: "peers", urls: [a.url] });
+  await a.asked;
+  await c.cmd({ cmd: "peers", urls: [] });
+  a.release();
+  await pause(150);
+  assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400);
+});
+
+test("A4: with more backups, a removed one is not followed while the others answer, nor asked again", async (t) => {
+  const a = await gatedPeer(t, () => ({ is_playing: true, beat: 8 }));
+  const b = await gatedPeer(t, () => ({ is_playing: false, beat: 0 }));
+  const gone = await gatedPeer(t, () => ({ is_playing: true, beat: 8 }));
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect();
+  await c.cmd({ cmd: "peers", urls: [a.url, b.url, gone.url] });
+  await a.asked;
+  await c.cmd({ cmd: "peers", urls: [b.url] });
+  a.release();
+  await b.asked; // the answer of the removed backup is in, the poll waits for the next one
+  assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400);
+  b.release();
+  await pause(150);
+  assert.equal(gone.hits, 0, "a backup removed during the poll is not asked");
+});
+
+test("A4: a backup poll that ends after OpenSet is closed does not throw", async (t) => {
+  let t0 = Date.now();
+  // half a beat ahead, at 120 BPM: the backup would nudge Live towards it
+  const a = await gatedPeer(t, () => ({ is_playing: true, beat: 8.5 + (Date.now() - t0) / 500 }));
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect({ ...LIVE, is_playing: true, beat: 8 });
+  t0 = Date.now();
+  await c.cmd({ cmd: "settings", scene: "backup", driftCorrection: true });
+  await c.cmd({ cmd: "peers", urls: [a.url] });
+  await a.asked;
+  const errors = [];
+  const onError = (e) => errors.push(e.code || e.message);
+  process.on("unhandledRejection", onError);
+  t.after(() => process.off("unhandledRejection", onError));
+  await c.srv.close();
+  a.release();
+  await pause(150);
+  assert.deepEqual(errors, []);
 });
