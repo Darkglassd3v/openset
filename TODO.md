@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W4 GREEN colori
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W4 RED Tools
 
 ## Da fare
 
@@ -62,7 +62,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### W4 — Colori e Tools
 - [x] RED colori: `setlist.test.js` (`[colore]`, ereditato dalle sezioni, `+CC`/`+CLIPCOLORS` per colonna, `+SECTIONS`, locator `>` sulla clip), `als-parser.test.js` (`Color`/`ColorIndex`, `+SECTIONS`), `test_openset.py` (`color` e `+SECTIONS`)
-- [ ] GREEN colori: `server/setlist.js`, `server/als-parser.js`, Remote Script, UI
+- [x] GREEN colori: `server/setlist.js`, `server/als-parser.js`, Remote Script (`d1b6e6d`), UI (barra e tinta dei brani, sezioni, striscia; provata in Chrome)
 - [ ] RED/GREEN Tools
 - Voci: `[colore]` nei locator (18 colori di AbleSet), sezioni con il colore del brano; traccia sezioni con `+CC`/`+CLIPCOLORS` → colore della clip (colonna della tavolozza di Live); flag `+SECTIONS`; UI colorata
 - [ ] Tools: Set Clip Colors from Names, Place Locators on Section Clips, Remove Automatically Placed Locators

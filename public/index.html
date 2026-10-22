@@ -24,6 +24,11 @@
     --amber-dim: #6b4a1a;
     --red: #ff5347;          /* stop / live */
     --green: #57d97a;        /* play */
+    /* AbleSet's song and section colors: [blue] in a locator, +CC clip colors */
+    --c-gray: #6b7280; --c-red: #ef4444; --c-orange: #f97316; --c-amber: #f59e0b; --c-yellow: #eab308;
+    --c-lime: #84cc16; --c-green: #22c55e; --c-emerald: #10b981; --c-teal: #14b8a6; --c-cyan: #06b6d4;
+    --c-sky: #0ea5e9; --c-blue: #3b82f6; --c-indigo: #6366f1; --c-violet: #8b5cf6; --c-purple: #a855f7;
+    --c-fuchsia: #d946ef; --c-pink: #ec4899; --c-rose: #f43f5e;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   [hidden] { display: none !important; }
@@ -96,6 +101,10 @@
   .song.current .song-name, .song.current .num { color: var(--amber); }
   .song.skip .song-head, .song.skip .sections, .song.skip .edit-row .song-name, .song.skip .note { opacity: .45; }
   .song.skip .song-name { text-decoration: line-through; }
+  /* --sc: the song or section color; the tint needs color-mix (older iPads keep the bar only) */
+  .song.colored .song-head { box-shadow: inset 6px 0 0 var(--sc); background: color-mix(in srgb, var(--sc) 16%, transparent); }
+  .chip.colored { border-color: var(--sc); background: color-mix(in srgb, var(--sc) 22%, transparent); }
+  .strip-seg.colored { background: color-mix(in srgb, var(--sc) 45%, var(--panel)); box-shadow: inset 0 3px 0 var(--sc); }
   .stop-tag { font-size: 11px; color: var(--red); letter-spacing: .08em; text-transform: uppercase; margin-left: 8px; }
   .sections { padding: 0 14px 12px 50px; display: flex; flex-wrap: wrap; gap: 8px; }
   .chip {
@@ -659,6 +668,7 @@ function beatToBBT(beat, num, den) {
   return bar + "." + b + "." + t;
 }
 const classes = (s) => (s.classes || []).filter((c) => /^[\w-]+$/.test(c)).join(" ");
+const colorStyle = (c) => (c && /^[a-z]+$/.test(c) ? `--sc: var(--c-${c})` : "");
 const curSong = () => state && state.setlist[state.current];
 
 // ---------- render ----------
@@ -802,7 +812,7 @@ function buildSetlist() {
   }
   el.innerHTML = `
     <ol class="songs">${list.map((s, i) => `
-      <li class="song ${s.skip ? "skip" : ""} ${classes(s)}" data-i="${i}">
+      <li class="song ${s.skip ? "skip" : ""} ${s.color ? "colored" : ""} ${classes(s)}" data-i="${i}" style="${colorStyle(s.color)}">
         <button class="song-head" data-act="song" data-i="${i}">
           <span class="num">${s.number ?? "·"}</span>
           <span class="song-main">
@@ -813,8 +823,8 @@ function buildSetlist() {
         </button>
         ${s.sections.length ? `<div class="sections">
           ${s.sections.map((sec, j) => `
-            <button class="chip ${sec.quick ? "quick" : ""}" data-act="jump" data-time="${sec.time}"
-                    data-song="${i}" data-sec="${j}">${esc(sec.name)}</button>`).join("")}
+            <button class="chip ${sec.quick ? "quick" : ""} ${sec.color ? "colored" : ""}" style="${colorStyle(sec.color)}"
+                    data-act="jump" data-time="${sec.time}" data-song="${i}" data-sec="${j}">${esc(sec.name)}</button>`).join("")}
           ${s.end != null ? `<button class="chip loop-chip" data-act="loopSong" data-i="${i}">⟲ loop brano</button>` : ""}
         </div>` : ""}
       </li>`).join("")}
@@ -1024,14 +1034,15 @@ document.addEventListener("paste", (e) => {
 function renderStrip() {
   const strip = $("strip");
   const list = state.setlist.map((s, i) => ({ s, i })).filter((x) => !x.s.skip);
-  const key = JSON.stringify(list.map((x) => [x.s.name, x.s.seconds]));
+  const key = JSON.stringify(list.map((x) => [x.s.name, x.s.seconds, x.s.color]));
   if (key !== stripKey) {
     stripKey = key;
     strip.querySelectorAll(".strip-seg").forEach((n) => n.remove());
     const total = list.reduce((a, x) => a + x.s.seconds, 0);
     for (const { s, i } of list) {
       const seg = document.createElement("div");
-      seg.className = "strip-seg";
+      seg.className = "strip-seg" + (s.color ? " colored" : "");
+      seg.style.cssText = colorStyle(s.color);
       seg.dataset.i = i;
       seg.style.width = (total ? (s.seconds / total) * 100 : 100 / list.length) + "%";
       seg.innerHTML = "<span>" + esc(s.name) + "</span>";
