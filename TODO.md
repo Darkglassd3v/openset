@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8)
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), correzioni A1 (Remote Script)
 
 ## Da fare
 
@@ -88,9 +88,15 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI verde (le build), merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
 
 ### Audit completo dopo W7, prima del rilascio W8 (richiesto dall'utente il 2026-10-22: i bug trovati si correggono nella 0.6.0)
-- [ ] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP)
-- [ ] `superpowers:systematic-debugging` sul bug della scaletta che sparisce, con il pacchetto log della 0.5.1
-- [ ] agente `ecc:python-reviewer` sul Remote Script (Python 3.7 di Live 11, API di Live)
+- Via libera dell'utente il 2026-10-22: audit, correzioni, commit, push, PR e merge (stato salvato anche con `/ecc:ck save`)
+- [ ] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP) + revisione della logica di riproduzione + revisione della UI (in corso, 4 agenti)
+- [ ] `superpowers:systematic-debugging` sul bug della scaletta che sparisce, con il pacchetto log della 0.5.1 (in attesa del pacchetto)
+- [x] agente `ecc:python-reviewer` sul Remote Script (Python 3.7 di Live 11, API di Live): 13 punti, correzioni in A1
+
+#### A1 — Remote Script (da `ecc:python-reviewer`)
+- [ ] RED `test_openset.py`: solo del click tolto anche se una traccia non risponde; `disconnect()` toglie solo, nudge e listener e non manda più lo stato; lo stop di Live toglie il solo del click (server caduto durante il count-in); invio fallito → cue e clip rimandati, e comunque ogni ~10 s; `_tick` si riprogramma anche dopo un errore; `nudge` con `dir` sconosciuto ignorato e `ms` limitato a 1000; `_section_locators` rimette la testina anche dopo un errore; lettura dei comandi limitata a 64 per tick e `ConnectionResetError` (Windows) saltato; errori uguali una volta al minuto anche se alternati; `jump`/`seek`/`quant` senza valore rifiutati; niente listener del tempo e dei locator (bastano i tick, evita raffiche con l'automazione del tempo)
+- [ ] GREEN: `remote-script/OpenSet/OpenSet.py`
+- Non corretti: lettura dei cue a ogni tick con set molto grandi (non misurato in Live, da rivedere se il pacchetto log mostra rallentamenti); comandi da altri programmi dello stesso computer (la porta 39050 è già solo su 127.0.0.1)
 - [ ] `ecc:e2e-testing` (Playwright) per i flussi principali della UI, oggi senza test automatici
 - [ ] Verificare su Safari/iPad il tempo della prima connessione WebSocket: nel Chrome di test 1-2,4 s (da Node 8 ms, HTTP 3 ms)
 - [ ] prima di ogni merge `code-review` sulla PR; ai rilasci grossi `ecc:orch-review`
@@ -117,9 +123,6 @@ for Live).
 - [x] Logo "anello aperto + play" (scelto dall'utente il 2026-10-21): `docs/brand/logo.svg`, `docs/brand/logo-wordmark.svg`, icone PWA 180/192/512 rigenerate
 
 ## Da decidere con l'utente
-
-- Audit prima di W8: partire con `ponytail:ponytail-audit`, `security-review`, `ecc:python-reviewer`, poi `ecc:e2e-testing`? (chiesto il 2026-10-22, costa token)
-- CI bloccata su `main`: run 39825803727 resta `in_progress` con i 3 job verdi (problema di GitHub): lasciarla o cancellarla?
 
 - Brani aggiunti a mano dalla UI, senza progetto Live (solo scaletta e testi):
   proposto il 2026-10-20, in attesa di risposta.
