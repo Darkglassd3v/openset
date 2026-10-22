@@ -86,7 +86,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### G1 — Guida PDF strutturata (richiesta dell'utente, 2026-10-22)
 - [x] RED `guide.test.js`: copertina (logo grande, nome, versione), indice cliccabile, capitoli in ordine (prima le funzioni di base: installazione, Live, dispositivi, uso, opzioni, log, problemi; ultime novità e correzioni), intestazione del capitolo ripetuta su ogni pagina, numeri di pagina; CHANGELOG con `### Novità` e `### Correzioni`
-- [ ] GREEN: `scripts/build-guide.js` (HTML stampato da Chrome), PDF controllato a occhio
+- [x] GREEN: `scripts/build-guide.js` (HTML stampato da Chrome), PDF controllato a occhio: 17 pagine, 49 link interni
 
 #### W8 — Rilascio v0.6.0
 - [ ] Copertura, CHANGELOG, guida PDF, README, report TDD, PR, CI verde (le build), merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
