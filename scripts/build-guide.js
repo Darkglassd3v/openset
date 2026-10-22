@@ -158,9 +158,27 @@ ${cmd(`unzip openset-${v}-linux-x64.zip -d openset && cd openset`, `chmod +x ope
 </table>
 <p class="note">I pedali Bluetooth «volta pagina» inviano le frecce e PagSu/PagGiù.</p>
 
+<h2>Diagnostica e log</h2>
+<p>OpenSet scrive un registro in <code>openset.log</code>, nella cartella dei dati (macOS
+<code>~/Library/Application Support/OpenSet</code>, Windows <code>%APPDATA%\\OpenSet</code>, Linux
+<code>~/.config/openset</code>): avvio, porte, quando Live si collega o smette di rispondere, errori del
+Remote Script e crash.</p>
+<ol>
+  <li>Opzioni → <b>Debug</b> → <b>Mostra log</b> per leggerlo.</li>
+  <li>Se qualcosa non va: <b>Crea pacchetto log</b>. Si scarica <code>openset-&lt;versione&gt;-log-&lt;data&gt;.txt</code>
+    con versione, sistema, porte, stato di Live, il registro e le righe di OpenSet dal <code>Log.txt</code> di Live.
+    Invialo con due righe su cosa è successo.</li>
+</ol>
+<h3>OpenSet e AbleSet insieme</h3>
+<p>Possono restare aperti insieme. Live manda lo stato a OpenSet su una porta privata (<code>127.0.0.1:39061</code>).
+La porta OSC <code>39051</code> è la stessa di AbleSet: se AbleSet la occupa, OpenSet parte con l'OSC spento e lo scrive
+nel riquadro in alto. In Live tieni attive solo le superfici di controllo che usi.</p>
+
 <h2>Risoluzione dei problemi</h2>
 <ul>
-  <li><b>«OpenSet cannot start … already running»</b>: c'è già un OpenSet aperto, o AbleSet (stessa porta 39051). Chiudi l'altro programma.</li>
+  <li><b>«OpenSet cannot start … already running»</b>: c'è già un OpenSet aperto. Chiudilo e riprova.</li>
+  <li><b>Riquadro «Live non risponde»</b>: la scaletta resta quella ricevuta per ultima. Il riquadro in alto dice il motivo
+    (Live sta caricando un set, Remote Script da aggiornare: chiudi e riapri Live). Se non passa, crea il pacchetto log.</li>
   <li><b>La spia resta rossa</b>: riavvia Live e controlla che OpenSet sia scelto come Superficie di controllo.</li>
   <li><b>Il telefono non apre l'indirizzo</b>: stessa rete del computer, firewall che consente le reti private, oppure prova l'indirizzo IP invece di <code>.local</code>.</li>
   <li><b>Lo schermo del tablet si spegne</b>: Blocco automatico su Mai (il browser non può impedirlo senza HTTPS).</li>

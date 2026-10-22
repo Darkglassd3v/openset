@@ -24,6 +24,7 @@ senza internet.
 - **Controllo remoto** — browser, tastiera e pedali Bluetooth, MIDI (Web MIDI), OSC compatibile AbleSet (TouchOSC, Bitfocus Companion), HTTP
 - **Striscia di avanzamento show** — panoramica del concerto, nell'ordine della scaletta, con playhead in tempo reale
 - **Modalità offline** — parser dei file `.als`: scaletta, sezioni (anche dalla traccia `Sections`), testi `+LYRICS` e tempi anche senza Live aperto
+- **Diagnostica** — registro `openset.log`, Opzioni → Debug con *Mostra log* e *Crea pacchetto log* (con le righe di OpenSet dal `Log.txt` di Live); se Live non risponde la scaletta resta e un riquadro dice il motivo
 - **Cross-platform** — Windows, macOS (Apple Silicon nativo e Intel) e Linux; eseguibili standalone senza installare Node.js
 
 ## Download
@@ -144,6 +145,12 @@ cartella dell'utente, che non si perde spostando o cancellando il programma:
 Al primo avvio della 0.4.0 OpenSet copia lì i file che le versioni precedenti
 tenevano accanto al programma (gli originali restano dove sono). Il percorso è
 stampato all'avvio (`[data] ...`).
+
+Nella stessa cartella c'è il registro `openset.log` (oltre 1 MB il precedente
+diventa `openset.old.log`). Se qualcosa non va, Opzioni → Debug → **Crea pacchetto
+log** scarica `openset-<versione>-log-<data>.txt` con versione, sistema, porte,
+stato di Live, registro e le righe di OpenSet dal `Log.txt` di Live: invialo con
+due righe su cosa è successo.
 
 ### Da sorgente (tutte le piattaforme, richiede Node.js ≥ 18)
 
