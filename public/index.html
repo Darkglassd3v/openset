@@ -193,7 +193,7 @@
   .stage-section { font-size: clamp(24px, 6vw, 44px); font-weight: 600; }
   .stage-section .dim { font-weight: 400; font-size: .6em; }
   .bar { position: relative; height: 10px; background: var(--panel); border-radius: 5px; overflow: hidden; }
-  .bar-fill { position: absolute; inset: 0 auto 0 0; background: var(--amber); width: 0; }
+  .bar-fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--amber); width: 0; }
   .bar-tick { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); }
   .times { display: flex; gap: 24px; flex-wrap: wrap; }
   .times b { display: block; font-size: clamp(30px, 8vw, 56px); font-variant-numeric: tabular-nums; }
@@ -237,7 +237,7 @@
   .settings kbd { font-family: ui-monospace, Consolas, monospace; color: var(--text); border: 1px solid var(--line); border-radius: 4px; padding: 1px 6px; }
   .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
   .lock-layer {
-    position: fixed; inset: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center;
+    position: fixed; top: 0; right: 0; bottom: 0; left: 0; z-index: 50; display: flex; align-items: flex-end; justify-content: center;
     padding-bottom: calc(110px + env(safe-area-inset-bottom)); background: rgba(13, 13, 17, .15);
   }
   .lock-layer .btn { font-size: 16px; padding: 14px 20px; border-color: var(--amber); color: var(--amber); touch-action: none; }
@@ -296,6 +296,9 @@
     .song.skip { display: none; }
     .song-head { padding: 8px 0; }
   }
+  /* iPhone Safari zooms into fields under 16 px and stays zoomed */
+  @media (max-width: 600px) { input, select, textarea, .field, .note, .edit-bar input, .edit-bar select, .settings select { font-size: 16px; } }
+  body.ws-down main, body.ws-down footer { opacity: .45; pointer-events: none; }
 </style>
 <link rel="stylesheet" href="/custom.css">
 </head>
@@ -359,7 +362,7 @@
     <label>Vista all'apertura <select id="defaultView">
       <option value="setlist">Scaletta</option><option value="stage">Palco</option>
       <option value="lyrics">Testi</option><option value="settings">Opzioni</option></select></label>
-    <p class="dim">Un dispositivo con una sua vista in «Questo dispositivo» usa quella.</p>
+    <p class="dim">Vale per i dispositivi nuovi: gli altri riaprono l'ultima vista usata, o quella scelta in «Questo dispositivo».</p>
     <label>Apri OpenSet nel browser <select id="openBrowser">
       <option value="start">all'avvio di OpenSet</option><option value="live">quando Live si collega</option>
       <option value="off">mai</option></select></label>
@@ -580,6 +583,7 @@ const KEYS = {
 const VIEW_NAMES = { setlist: "Scaletta", stage: "Palco", lyrics: "Testi", settings: "Opzioni" };
 
 let state = null;
+const newDevice = !store.get("openset.view", ""); // AbleSet's Default View applies to new devices only
 let view = store.get("openset.view", "setlist");
 // per-device preferences (voice, stage layout), kept in this browser only
 const device = (() => { try { return JSON.parse(store.get("openset.device", "{}")) || {}; } catch { return {}; } })();
@@ -599,6 +603,7 @@ let ws;
 function connect() {
   ws = new WebSocket((location.protocol === "https:" ? "wss://" : "ws://") + location.host);
   ws.onopen = () => {
+    document.body.classList.remove("ws-down");
     sendDevice();
     const token = store.get("openset.token", "");
     if (token) send({ type: "auth", token });
@@ -608,15 +613,21 @@ function connect() {
     if (msg.type === "state") {
       const first = !state;
       state = msg.state;
-      // AbleSet's Default View, unless this device has its own
-      if (first && !navigated && !VIEW_NAMES[device.view] && VIEW_NAMES[state.settings.defaultView]) showView(state.settings.defaultView);
+      // AbleSet's Default View, on a device that never opened OpenSet
+      if (first && newDevice && !navigated && !VIEW_NAMES[device.view] && VIEW_NAMES[state.settings.defaultView]) showView(state.settings.defaultView);
       else render();
     }
     if (msg.type === "cue") onCue(msg.cue);
     if (msg.type === "device") onDeviceCommand(msg);
     if (msg.type === "access") onAccess(msg);
   };
-  ws.onclose = () => setTimeout(connect, 1500);
+  ws.onclose = () => {
+    // a frozen "Live connesso" would hide that taps go nowhere
+    document.body.classList.add("ws-down");
+    $("dot").className = "dot";
+    $("connLabel").textContent = "OpenSet non raggiungibile…";
+    setTimeout(connect, 1500);
+  };
 }
 connect();
 
@@ -648,6 +659,7 @@ let authTried = false;
 function onAccess(msg) {
   access = msg;
   if (msg.token) store.set("openset.token", msg.token);
+  if (msg.tokenRejected) store.set("openset.token", "");
   $("unlockApp").hidden = msg.control;
   if (msg.control) { $("authPanel").hidden = true; authTried = false; }
   else if (authTried) { $("authStatus").textContent = "Password errata, o troppi tentativi: riprova tra poco."; authTried = false; }
@@ -682,7 +694,7 @@ function stopGuarded(cmd) {
   }
   stopArmed = Date.now();
   $("btnStop").textContent = "Conferma " + haltLabel().toLowerCase();
-  setTimeout(() => { if (Date.now() - stopArmed >= 3000) $("btnStop").textContent = haltLabel(); }, 3100);
+  setTimeout(() => { if (Date.now() - stopArmed >= 3000) { stopArmed = 0; $("btnStop").textContent = haltLabel(); } }, 3100);
 }
 
 // ---------- this device: name, view and lock, as seen by the server ----------
@@ -733,6 +745,7 @@ function beatToBBT(beat, num, den) {
 const classes = (s) => (s.classes || []).filter((c) => /^[\w-]+$/.test(c)).join(" ");
 const colorStyle = (c) => (c && /^[a-z]+$/.test(c) ? `--sc: var(--c-${c})` : "");
 const curSong = () => state && state.setlist[state.current];
+const songCount = (n) => n + (n === 1 ? " brano" : " brani");
 
 // ---------- render ----------
 function render() {
@@ -747,8 +760,8 @@ function render() {
   $("version").textContent = st.version ? "v" + st.version : "";
   $("clock").textContent = beatToBBT(st.beat || 0, st.sig_num || 4, st.sig_den || 4);
   $("bpm").textContent = Math.round(st.tempo || 0) + " BPM";
-  $("btnPlay").textContent = st.is_playing ? "Playing" : "Play";
   $("btnPlay").classList.toggle("playing", !!st.is_playing);
+  $("btnPlay").setAttribute("aria-pressed", String(!!st.is_playing));
   // AbleSet: Sync Playback Now is disabled and says "Live is Playing" while playing
   $("syncPlayback").disabled = !!st.is_playing;
   $("syncPlayback").textContent = st.is_playing ? "Live sta suonando" : "Sincronizza ora";
@@ -773,8 +786,17 @@ function render() {
 }
 
 function renderSetlist() {
-  const key = JSON.stringify([state.setlist, editing, state.saved, state.backups, state.setlistName, state.connected, state.offline, state.scriptInstall]);
-  if (key !== listKey) { listKey = key; buildSetlist(); }
+  // durations follow Live's tempo: updated in place, so a tempo ramp never rebuilds the list under a finger
+  const songs = state.setlist.map(({ seconds, ...s }) => s);
+  const key = JSON.stringify([songs, editing, state.saved, state.backups, state.setlistName, state.connected, state.offline, state.scriptInstall]);
+  const busy = drag || (document.activeElement && document.activeElement.closest("#setlist input, #setlist select"));
+  if (key !== listKey && !busy) { listKey = key; buildSetlist(); }
+  document.querySelectorAll("#setlist .song-time").forEach((el) => {
+    const s = state.setlist[+el.dataset.i];
+    el.textContent = s && s.seconds ? fmt(s.seconds) : "—";
+  });
+  const total = document.querySelector("#setlist .set-total");
+  if (total) total.textContent = fmt(state.timing.setTotal);
   document.querySelectorAll("#setlist .song").forEach((el) => {
     const cur = +el.dataset.i === state.current;
     el.classList.toggle("current", cur);
@@ -847,7 +869,7 @@ function buildSetlist() {
         <button class="btn" data-act="unskipAll">Rimetti tutti</button>
         <button class="btn" data-act="copy" title="Ctrl+C">Copia</button>
         <button class="btn" data-act="paste" title="Ctrl+V">Incolla</button>
-        <input id="saveName" placeholder="Nome scaletta" aria-label="Nome scaletta" value="${esc(state.setlistName || "")}">
+        <input id="saveName" maxlength="64" placeholder="Nome scaletta" aria-label="Nome scaletta" value="${esc(state.setlistName || "")}">
         <button class="btn" data-act="save">Salva</button>
         ${state.saved.length ? `
           <select id="loadName" aria-label="Scalette salvate">${state.saved.map((n) =>
@@ -872,7 +894,7 @@ function buildSetlist() {
           <input class="note" data-i="${i}" placeholder="Note per il palco…" aria-label="Note per ${esc(s.name)}" value="${esc(s.notes || "")}">
         </li>`).join("")}
       </ol>
-      <div class="list-foot">Totale ${fmt(t.setTotal)} · ${count} brani</div>`;
+      <div class="list-foot">Totale <span class="set-total">${fmt(t.setTotal)}</span> · ${songCount(count)}</div>`;
     fetch("/api/setlist-text").then((r) => r.text()).then((txt) => { setlistTextCache = txt; }).catch(() => {});
     return;
   }
@@ -880,12 +902,12 @@ function buildSetlist() {
     <ol class="songs">${list.map((s, i) => `
       <li class="song ${s.skip ? "skip" : ""} ${s.color ? "colored" : ""} ${classes(s)}" data-i="${i}" style="${colorStyle(s.color)}">
         <button class="song-head" data-act="song" data-i="${i}">
-          <span class="num">${s.number ?? "·"}</span>
+          <span class="num">${s.number != null ? s.number : "·"}</span>
           <span class="song-main">
             <span class="song-name">${esc(s.name)}${s.stopAfter || s.endMarker === "STOP" ? '<span class="stop-tag">stop</span>' : ""}</span>
             ${s.description || s.tags.length || s.notes ? `<span class="song-desc">${esc([s.description, s.tags.map((x) => "#" + x).join(" "), s.notes].filter(Boolean).join(" · "))}</span>` : ""}
           </span>
-          <span class="song-time mono">${s.seconds ? fmt(s.seconds) : "—"}</span>
+          <span class="song-time mono" data-i="${i}">${s.seconds ? fmt(s.seconds) : "—"}</span>
         </button>
         ${s.sections.length ? `<div class="sections">
           ${s.sections.map((sec, j) => `
@@ -895,7 +917,7 @@ function buildSetlist() {
         </div>` : ""}
       </li>`).join("")}
     </ol>
-    <div class="list-foot">Totale ${fmt(t.setTotal)} · ${count} brani
+    <div class="list-foot">Totale <span class="set-total">${fmt(t.setTotal)}</span> · ${songCount(count)}
       <button class="btn" data-act="edit">Modifica scaletta</button></div>`;
 }
 
@@ -941,7 +963,6 @@ $("setlist").addEventListener("click", (e) => {
   else if (act === "skipAll" || act === "unskipAll") editSetlist((rows) => rows.forEach((r) => { r.skip = act === "skipAll"; }));
   else if (act === "copy") copySetlist();
   else if (act === "paste") openPaste("");
-  if (e.detail > 0) b.blur(); // keep Space for play/stop after a tap
 });
 $("setlist").addEventListener("change", (e) => {
   if (!e.target.classList.contains("note")) return;
@@ -961,7 +982,8 @@ $("setlist").addEventListener("pointerdown", (e) => {
 });
 $("setlist").addEventListener("pointermove", (e) => {
   if (!drag) return;
-  const row = document.elementFromPoint(e.clientX, e.clientY)?.closest("#setlist .song");
+  const hit = document.elementFromPoint(e.clientX, e.clientY);
+  const row = hit && hit.closest("#setlist .song");
   document.querySelectorAll("#setlist .song.drop").forEach((r) => r.classList.remove("drop"));
   if (row) { drag.to = +row.dataset.i; row.classList.add("drop"); }
 });
@@ -970,7 +992,8 @@ function endDrag() {
   const { from, to } = drag;
   drag = null;
   document.querySelectorAll("#setlist .dragging, #setlist .drop").forEach((r) => r.classList.remove("dragging", "drop"));
-  if (to !== from) editSetlist((rows) => rows.splice(to, 0, rows.splice(from, 1)[0]));
+  const at = to > from ? to - 1 : to; // the amber line marks "above this row"
+  if (at !== from) editSetlist((rows) => rows.splice(at, 0, rows.splice(from, 1)[0]));
 }
 $("setlist").addEventListener("pointerup", endDrag);
 $("setlist").addEventListener("pointercancel", () => { drag = null; listKey = ""; render(); });
@@ -1001,10 +1024,12 @@ function addSongs(indexes) {
 $("searchInput").addEventListener("input", async () => {
   const q = $("searchInput").value;
   try {
-    searchResults = q.trim() ? (await (await fetch("/api/search?q=" + encodeURIComponent(q))).json()).results : [];
+    const results = q.trim() ? (await (await fetch("/api/search?q=" + encodeURIComponent(q))).json()).results : [];
+    if ($("searchInput").value !== q) return; // a newer search is on its way
+    searchResults = results;
   } catch { searchResults = []; }
   $("searchList").innerHTML = searchResults.map((r, i) => `<li><button data-pick="${i}">${r.kind === "tag"
-    ? `#${esc(r.tag)} <span class="dim">· tutti i ${r.indexes.length} brani</span>`
+    ? `#${esc(r.tag)} <span class="dim">· ${r.indexes.length === 1 ? "1 brano" : `tutti i ${r.indexes.length} brani`}</span>`
     : esc(r.name) + (state.setlist[r.index] && state.setlist[r.index].skip ? ' <span class="dim">· tolto</span>' : "")}</button></li>`).join("") ||
     (q.trim() ? '<li class="dim">Nessun brano trovato.</li>' : "");
 });
@@ -1060,9 +1085,9 @@ document.querySelectorAll("[data-host]").forEach((b) => (b.onclick = async () =>
   try {
     const r = await fetch("/api/host/" + action, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ app: !!b.dataset.app }) });
     const j = await r.json();
-    $("hostStatus").textContent = r.status === 403 ? "Solo dal computer su cui gira OpenSet."
+    $("hostStatus").innerHTML = r.status === 403 ? "Solo dal computer su cui gira OpenSet."
       : !r.ok ? "Non disponibile su questo sistema."
-      : action === "installScript" ? `Remote Script: ${j.status}${j.path ? " in " + j.path : ""}. Riavvia Live.`
+      : action === "installScript" ? scriptNote(j) + (j.status === "installed" || j.status === "updated" ? " Riavvia Live per caricarlo." : "")
       : action === "quit" ? "OpenSet si sta chiudendo." : "Fatto.";
   } catch {
     $("hostStatus").textContent = "OpenSet non risponde.";
@@ -1071,7 +1096,7 @@ document.querySelectorAll("[data-host]").forEach((b) => (b.onclick = async () =>
 $("checkUpdate").onclick = async () => {
   try {
     const u = await (await fetch("/api/update")).json();
-    $("hostStatus").innerHTML = u.error ? "Controllo non riuscito: " + esc(u.error)
+    $("hostStatus").innerHTML = u.error ? "Controllo non riuscito: GitHub non risponde, riprova più tardi."
       : u.newer ? `Disponibile OpenSet ${esc(u.latest)}${u.url ? `: <a href="${esc(u.url)}" target="_blank" rel="noopener">scarica</a>` : ""}`
       : `OpenSet ${esc(u.current)} è aggiornato.`;
   } catch {
@@ -1107,9 +1132,10 @@ $("logPackage").onclick = async () => {
 
 async function applyPaste(text) {
   try {
-    const r = await fetch("/api/setlist-text", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text }) });
+    const r = await fetch("/api/setlist-text", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify({ text }) });
     const res = await r.json();
-    if (!r.ok) throw new Error(res.error);
+    if (r.status === 401) throw new Error("serve la password: premi «Sblocca»");
+    if (!r.ok) throw new Error("testo non valido");
     if (res.unmatched.length) openPaste(text, "Non trovati (restano fuori): " + res.unmatched.join(", "));
     else $("pastePanel").hidden = true;
   } catch (err) {
@@ -1132,24 +1158,28 @@ document.addEventListener("paste", (e) => {
 function renderStrip() {
   const strip = $("strip");
   const list = state.setlist.map((s, i) => ({ s, i })).filter((x) => !x.s.skip);
-  const key = JSON.stringify(list.map((x) => [x.s.name, x.s.seconds, x.s.color]));
+  const key = JSON.stringify(list.map((x) => [x.s.name, x.s.color, x.i]));
   if (key !== stripKey) {
     stripKey = key;
     strip.querySelectorAll(".strip-seg").forEach((n) => n.remove());
-    const total = list.reduce((a, x) => a + x.s.seconds, 0);
     for (const { s, i } of list) {
       const seg = document.createElement("div");
       seg.className = "strip-seg" + (s.color ? " colored" : "");
       seg.style.cssText = colorStyle(s.color);
       seg.dataset.i = i;
-      seg.style.width = (total ? (s.seconds / total) * 100 : 100 / list.length) + "%";
       seg.innerHTML = "<span>" + esc(s.name) + "</span>";
       seg.title = s.name;
       seg.onclick = () => send({ cmd: "song", index: i });
       strip.insertBefore(seg, $("playhead"));
     }
   }
-  strip.querySelectorAll(".strip-seg").forEach((n) => n.classList.toggle("cur", +n.dataset.i === state.current));
+  // widths follow the durations, which follow Live's tempo
+  const total = list.reduce((a, x) => a + x.s.seconds, 0);
+  strip.querySelectorAll(".strip-seg").forEach((n) => {
+    const s = state.setlist[+n.dataset.i];
+    n.style.width = (total ? (s.seconds / total) * 100 : 100 / list.length) + "%";
+    n.classList.toggle("cur", +n.dataset.i === state.current);
+  });
   const t = state.timing;
   $("playhead").hidden = !t.setTotal;
   $("playhead").style.left = (t.setTotal ? Math.min(1, t.setElapsed / t.setTotal) * 100 : 0) + "%";
@@ -1171,7 +1201,7 @@ function renderStage() {
   $("stNextSec").textContent = nextSec ? "› " + nextSec.name : "";
   $("stLeft").textContent = s && s.seconds ? fmt(st.timing.songLeft) : "—";
   $("stSetLeft").textContent = fmt(st.timing.setTotal - st.timing.setElapsed);
-  $("stSetLabel").textContent = `alla fine dello show · ${st.timing.songsLeft} brani`;
+  $("stSetLabel").textContent = `alla fine dello show · ${songCount(st.timing.songsLeft)}`;
   $("stNext").textContent = next ? next.name : "fine scaletta";
   const show = stageShow();
   $("stDesc").hidden = !show.desc;
@@ -1219,16 +1249,20 @@ function renderStage() {
 }
 $("stQuick").addEventListener("click", (e) => {
   const b = e.target.closest("[data-time]");
-  if (b) { send({ cmd: "jump", time: +b.dataset.time }); if (e.detail > 0) b.blur(); }
+  if (b) send({ cmd: "jump", time: +b.dataset.time });
 });
 
 // ---------- lyrics ----------
 async function fetchLyrics(name) {
-  lyr.cache[name] = null; // loading or missing
+  lyr.cache[name] = undefined; // loading: the screen keeps what it shows
   try {
     const r = await fetch("/api/lyrics/" + encodeURIComponent(name));
-    lyr.cache[name] = r.ok ? await r.json() : null;
-  } catch {}
+    lyr.cache[name] = r.ok ? await r.json() : null; // null: this song has no lyrics
+  } catch {
+    // network error: retry soon, not "Nessun testo" for the rest of the show
+    setTimeout(() => { delete lyr.cache[name]; if (view === "lyrics") renderLyrics(); }, 2000);
+    return;
+  }
   lyr.song = null; // force a rebuild
   if (view === "lyrics") renderLyrics();
 }
@@ -1302,9 +1336,21 @@ $("quant").innerHTML = QUANT.map((q, i) => `<option value="${i}">${q}</option>`)
 $("midiAction").innerHTML = Object.entries(ACTIONS).map(([k, v]) => `<option value="${k}">${v}</option>`).join("");
 
 function renderSettings() {
-  const key = JSON.stringify([state.settings, state.quant, state.midi, state.peers, state.devices, state.passwordSet, midi.status, midi.learning]);
-  if (key === settingsKey) return;
-  settingsKey = key;
+  // latency and drift change every second: updated in place, so a ✕ is never replaced under a finger
+  const devices = state.devices.map(({ latencyMs, ...d }) => d);
+  const peers = state.peers.map(({ drift, ...p }) => p);
+  const key = JSON.stringify([state.settings, state.quant, state.midi, peers, devices, state.passwordSet, midi.status, midi.learning]);
+  if (key !== settingsKey) { settingsKey = key; buildSettings(); }
+  document.querySelectorAll("#deviceList .lat").forEach((el) => {
+    const d = state.devices[+el.dataset.i];
+    el.textContent = d && d.latencyMs != null ? ` · ${d.latencyMs} ms` : "";
+  });
+  document.querySelectorAll("#peerList .drift").forEach((el) => {
+    const p = state.peers[+el.dataset.i];
+    if (p) el.textContent = p.drift;
+  });
+}
+function buildSettings() {
   document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });
   document.querySelectorAll("[data-dev]").forEach((c) => { c.checked = !!device[c.dataset.dev]; });
   const show = stageShow();
@@ -1331,18 +1377,18 @@ function renderSettings() {
     "<li>Nessuna mappatura.</li>";
   if (document.activeElement !== $("devName")) $("devName").value = device.name || "";
   $("devView").value = device.view || "";
-  $("deviceList").innerHTML = state.devices.map((d) => `
+  $("deviceList").innerHTML = state.devices.map((d, i) => `
     <li><span class="on-dot" aria-hidden="true">●</span>
       <span class="mono">${esc(d.name || "senza nome")}</span> · ${esc(d.ip)}
       ${d.view ? " · " + esc(VIEW_NAMES[d.view] || d.view) : ""}${d.locked ? " · 🔒 bloccato" : ""}
-      ${d.latencyMs != null ? ` · ${d.latencyMs} ms` : ""}
+      <span class="lat" data-i="${i}">${d.latencyMs != null ? ` · ${d.latencyMs} ms` : ""}</span>
       ${Object.keys(d.settings || {}).length ? `<div class="dim mono dev-settings">${esc(Object.entries(d.settings).map(([k, v]) => `${k}: ${v}`).join(" · "))}</div>` : ""}</li>`).join("") ||
     "<li>Nessun dispositivo collegato.</li>";
   $("peerList").innerHTML = state.peers.map((p, i) => `
     <li><span class="${p.online ? "on-dot" : "off-dot"}" aria-hidden="true">●</span>
       <span class="mono">${esc(p.url)}</span>
       ${p.online
-        ? (p.connected ? `· ${p.scene === "backup" ? "riserva" : "principale"} · Live connesso${p.song ? " · " + esc(p.song) : ""} · scarto ${p.drift} beat` : "· Live non connesso")
+        ? (p.connected ? `· ${p.scene === "backup" ? "riserva" : "principale"} · Live connesso${p.song ? " · " + esc(p.song) : ""} · scarto <span class="drift" data-i="${i}">${p.drift}</span> beat` : "· Live non connesso")
         : "· non raggiungibile"}
       <button class="btn" data-peer-del="${i}" aria-label="Rimuovi ${esc(p.url)}">✕</button></li>`).join("") ||
     "<li>Nessun computer di riserva.</li>";
@@ -1355,7 +1401,9 @@ $("alsLoad").onclick = async () => {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file }),
     });
     const res = await r.json();
-    $("alsStatus").textContent = r.ok ? `Caricato: ${res.locators} locator.` : "Errore: " + res.error;
+    $("alsStatus").textContent = r.ok ? `Caricato: ${res.locators} locator.`
+      : r.status === 403 ? "Solo dal computer su cui gira OpenSet."
+      : /ENOENT/.test(res.error) ? "File non trovato: controlla il percorso." : "File non leggibile: " + res.error;
   } catch {
     $("alsStatus").textContent = "Errore di rete.";
   }
@@ -1368,8 +1416,9 @@ $("pwSet").onclick = () => {
 };
 $("pwClear").onclick = () => send({ cmd: "setPassword", password: "" });
 $("peerAdd").onclick = () => {
-  const url = $("peerUrl").value.trim();
-  if (!url || !state) return;
+  const raw = $("peerUrl").value.trim();
+  if (!raw || !state) return;
+  const url = /^https?:\/\//.test(raw) ? raw : "http://" + raw;
   send({ cmd: "peers", urls: [...state.peers.map((p) => p.url), url] });
   $("peerUrl").value = "";
 };
@@ -1403,8 +1452,22 @@ $("midiList").addEventListener("click", (e) => {
 
 // ---------- MIDI (Web MIDI: Chrome/Edge on localhost or HTTPS) ----------
 const midi = { access: null, learning: null, status: $("midiStatus").textContent };
+// one tab owns MIDI: with two tabs open, one pedal press would skip two songs
+function midiLock() {
+  return new Promise((resolve) => {
+    if (!navigator.locks) return resolve(true);
+    navigator.locks.request("openset-midi", { ifAvailable: true }, (lock) => {
+      resolve(!!lock);
+      return lock ? new Promise(() => {}) : undefined; // held while this tab is open
+    });
+  });
+}
 async function initMidi() {
   if (midi.access) return true;
+  if (!midi.locked && !(midi.locked = await midiLock())) {
+    midi.status = "MIDI già attivo in un'altra scheda di OpenSet: usa quella.";
+    return false;
+  }
   if (!navigator.requestMIDIAccess) {
     midi.status = "Web MIDI non disponibile qui: apri http://localhost:39080 in Chrome o Edge sul computer con il controller.";
     return false;
@@ -1419,7 +1482,7 @@ async function initMidi() {
     const inputs = [...midi.access.inputs.values()];
     inputs.forEach((input) => { input.onmidimessage = onMidi; });
     midi.status = inputs.length
-      ? "MIDI attivo: " + inputs.map((x) => x.name).join(", ") + ". Tieni aperta una sola scheda."
+      ? "MIDI attivo: " + inputs.map((x) => x.name).join(", ") + "."
       : "Nessun dispositivo MIDI collegato.";
     settingsKey = "";
     if (state) render();
@@ -1460,15 +1523,17 @@ $("queueBar").addEventListener("click", (e) => {
   const b = e.target.closest("[data-q]");
   if (!b) return;
   send(b.dataset.q === "clear" ? { cmd: "clearQueue" } : { cmd: "jumpToQueued", now: b.dataset.q === "now" });
-  if (e.detail > 0) b.blur();
 });
 $("btnPlay").onclick = () => { if (!state || !state.is_playing) send({ cmd: "play" }); };
 $("btnStop").onclick = () => stopGuarded(haltCmd());
 $("btnLoop").onclick = () => send({ cmd: "loopToggle" });
 $("btnPrev").onclick = () => send({ cmd: "prev" });
 $("btnNext").onclick = () => send({ cmd: "next" });
-document.querySelectorAll("footer button").forEach((b) =>
-  b.addEventListener("click", (e) => { if (e.detail > 0) b.blur(); }));
+// a tapped or clicked button gives the focus back: Space stays play/pause (keyboard focus is kept)
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (b && e.detail > 0) b.blur();
+});
 
 document.addEventListener("keydown", (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k" && !device.locked) { e.preventDefault(); openSearch(); return; }

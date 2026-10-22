@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 fatto, A2 (UI) in corso, poi A3 (sicurezza) e A4 (motore, server, AbleNet)
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 e A2 fatti, prossimo A3 (sicurezza), poi A4 (motore, server, AbleNet)
 
 ## Da fare
 
@@ -98,7 +98,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] RED `server.test.js`: le stesse clip rimandate dallo script ogni ~10 s non ricaricano i testi (`lyricsRev` invariato)
 - [x] GREEN: `remote-script/OpenSet/OpenSet.py`, server (clip uguali ignorate)
 - Non corretti: lettura dei cue a ogni tick con set molto grandi (non misurato in Live, da rivedere se il pacchetto log mostra rallentamenti); comandi da altri programmi dello stesso computer (la porta 39050 è già solo su 127.0.0.1)
-- [ ] `ecc:e2e-testing` (Playwright) per i flussi principali della UI, oggi senza test automatici
+- [x] `ecc:e2e-testing` (Playwright) per i flussi principali della UI: `e2e/ui.spec.js` (A2), in CI su Ubuntu
 - [ ] Verificare su Safari/iPad il tempo della prima connessione WebSocket: nel Chrome di test 1-2,4 s (da Node 8 ms, HTTP 3 ms)
 - [ ] prima di ogni merge `code-review` sulla PR; ai rilasci grossi `ecc:orch-review`
 - Un primo audit generico era partito in background ed è stato fermato su richiesta dell'utente (si rifà con queste skill)
@@ -120,7 +120,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   13. trascinare un brano in giù lo mette sopra la linea ambra
   14. testi: «In riproduzione», «1 brano», errori del server in italiano, `scriptNote` per lo stato del Remote Script
   16. ricerca: risposte arrivate in ritardo ignorate
-- [ ] GREEN: `public/index.html`, server (limitatore), più 8 (MIDI in una sola scheda con `navigator.locks`) e 15 (campi 16 px sui telefoni: niente zoom di Safari), senza test automatico
+- [x] GREEN: `public/index.html`, server (limitatore), più 8 (MIDI in una sola scheda con `navigator.locks`) e 15 (campi 16 px sui telefoni: niente zoom di Safari), senza test automatico
 - Non corretto: brani con lo stesso nome (ripresa) modificati insieme, perché il protocollo usa il nome (da rivedere con gli id)
 
 #### A3 — Sicurezza (agente `ecc:security-reviewer`, prove su un server vero; nessun XSS, path traversal o RCE dalla rete)

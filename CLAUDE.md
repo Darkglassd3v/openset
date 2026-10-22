@@ -31,6 +31,7 @@ npm start                                           # server su :39080
 npm test                                            # test Node (node:test)
 npm run coverage                                    # test + copertura
 python3 -m unittest discover -s remote-script/tests # test del Remote Script
+npm run e2e                                         # test della UI (Playwright sul Chrome di sistema, e2e/*.spec.js)
 npx pkg@5.8.1 . --targets node18-linux-x64 --out-path build   # binario locale
 bash scripts/build-release-local.sh   # 4 zip con la versione + guida PDF in build/release-<versione>/
 ```

@@ -44,6 +44,10 @@ jobs:
       - name: Remote Script tests
         run: python -m unittest discover -s remote-script/tests -v
 
+      - name: UI tests (Playwright on the system Chrome)
+        if: runner.os == 'Linux'
+        run: npx playwright test
+
       - name: PDF guide (headless Chrome)
         if: runner.os == 'Linux'
         run: |

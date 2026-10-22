@@ -1196,9 +1196,9 @@ function start(opts = {}) {
   const clientIp = (req) => String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
   const canControl = (ws) => !prefs.auth || isLoopback(ws.ip) || ws.authed;
 
-  function sendAccess(ws, token) {
+  function sendAccess(ws, token, extra = {}) {
     if (ws.readyState === 1)
-      ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!prefs.auth, ...(token ? { token } : {}) }));
+      ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!prefs.auth, ...(token ? { token } : {}), ...extra }));
   }
 
   function newToken() {
@@ -1213,10 +1213,10 @@ function start(opts = {}) {
     if (!limiter.blocked(ws.ip)) {
       ok = typeof token === "string" && tokens.has(token) ? true : await checkPassword(prefs.auth, password);
       if (ok) limiter.ok(ws.ip);
-      else limiter.fail(ws.ip);
+      else if (password !== undefined) limiter.fail(ws.ip); // an old token (OpenSet restarted) is not a wrong password
     }
     ws.authed = ok;
-    sendAccess(ws, ok ? (tokens.has(token) ? token : newToken()) : null);
+    sendAccess(ws, ok ? (tokens.has(token) ? token : newToken()) : null, !ok && token !== undefined ? { tokenRejected: true } : {});
   }
 
   // HTTP: X-OpenSet-Password header, or "Authorization: Bearer <token>"
