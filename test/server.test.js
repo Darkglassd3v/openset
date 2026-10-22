@@ -1713,3 +1713,167 @@ test("A3: setlist.json is readable by this user only", { skip: process.platform 
   await c.cmd({ cmd: "setPassword", password: "palco-2026" });
   assert.equal(fs.statSync(path.join(c.baseDir, "setlist.json")).mode & 0o777, 0o600);
 });
+
+// ---------------- audit 0.6.0: engine, server, AbleNet (A4) ----------------
+
+async function rawWebSocket(t, port) {
+  const sock = net.connect(port, "127.0.0.1");
+  t.after(() => sock.destroy());
+  await new Promise((r) => sock.once("connect", r));
+  sock.write(
+    "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+  );
+  await new Promise((r) => sock.once("data", r));
+  return sock;
+}
+
+test("A4: a queued jump to the next section is done when the playhead gets there by itself", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, is_playing: true, beat: 10 });
+  await c.cmd({ cmd: "settings", jumpMode: "section" });
+  await c.cmd({ cmd: "nextSection" });
+  assert.equal((await c.state()).queued.time, 16);
+  for (const b of [12, 15.9, 16.1]) await c.at(b, { is_playing: true });
+  assert.equal((await c.state()).queued, null);
+  const from = c.cmds.length;
+  for (const b of [19, 22, 25, 28, 31.9, 32.1]) await c.at(b, { is_playing: true });
+  await waitFor(() => c.cmds.slice(from).some((x) => x.cmd === "stop"), "STOP at 32");
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "jump" && x.time === 16), "Chorus not replayed");
+});
+
+test("A4: count-in: none at beat 0 (no click left soloed), and the pre-roll does not run the song before", async (t) => {
+  const c = await setup(t);
+  const cues = [{ name: "A", time: 0 }, { name: ">Intro", time: 0 }, { name: "STOP", time: 32 }, { name: "B", time: 40 }, { name: ">Verse", time: 44 }];
+  await c.connect({ ...LIVE, cues, beat: 4 });
+  await c.cmd({ cmd: "settings", countIn: true, countInSoloClick: true, countInBars: 4 });
+  let from = c.cmds.length;
+  await c.cmd({ cmd: "section", index: 0 });
+  await waitFor(() => c.cmds.slice(from).some((x) => x.cmd === "play"), "play");
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "clickSolo"), JSON.stringify(c.cmds.slice(from)));
+
+  await c.at(41);
+  from = c.cmds.length;
+  await c.cmd({ cmd: "section", index: 0 }); // Verse at 44: count-in from 28, inside A
+  await waitFor(() => c.cmds.slice(from).some((x) => x.cmd === "seek" && x.time === 28), "seek 28");
+  for (const b of [28.1, 30, 31.9, 32.1, 34, 37, 40, 43.9, 44.1]) await c.at(b, { is_playing: true });
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "stop"), "A's STOP must not end the count-in");
+  await waitFor(() => c.cmds.slice(from).some((x) => x.cmd === "clickSolo" && x.on === false), "click back at the section");
+});
+
+test("A4: Re-Enable Automation on a song jump arrives at the song start, not a bar early", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "SONG END", time: 16 }, { name: "B", time: 24 }] });
+  await c.cmd({ cmd: "settings", reEnableAutomation: true });
+  const jumped = c.expectCmd({ cmd: "jump", time: 24 });
+  await c.at(11.9, { is_playing: true });
+  await c.at(12.1, { is_playing: true });
+  await jumped;
+  await pause(100);
+  assert.ok(!c.cmds.some((x) => x.cmd === "reEnableAutomation"), "not before the boundary");
+  const extra = c.expectCmd({ cmd: "reEnableAutomation" });
+  await c.at(24.05, { is_playing: true });
+  await extra;
+});
+
+test("A4: when Live goes silent, it is not playing and the queue is dropped", async (t) => {
+  const c = await setup(t, { liveTimeoutMs: 300 });
+  await c.connect({ ...LIVE, is_playing: true });
+  await c.cmd({ cmd: "settings", jumpMode: "song" });
+  await c.cmd({ cmd: "next" });
+  assert.ok((await c.state()).queued);
+  await waitFor(async () => !(await c.state()).connected, "Live silent", 3000);
+  const s = await c.state();
+  assert.equal(s.is_playing, false);
+  assert.equal(s.queued, null);
+});
+
+test("A4: an unreadable setlist.json is kept aside before anything overwrites it", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-corrupt-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), '{"saved": {"Tour 2026": ');
+  const c = await setup(t, { baseDir });
+  await c.cmd({ cmd: "settings", safeMode: true });
+  const copies = fs.readdirSync(baseDir).filter((f) => /^setlist\.corrupt-.*\.json$/.test(f));
+  assert.equal(copies.length, 1);
+  assert.equal(fs.readFileSync(path.join(baseDir, copies[0]), "utf-8"), '{"saved": {"Tour 2026": ');
+  assert.ok((await (await fetch(c.url("/api/logs"))).json()).lines.some((l) => l.includes("setlist.corrupt-")));
+});
+
+test("A4: WebSocket: silent clients are dropped, the state is compressed, a heartbeat keeps browsers sure", async (t) => {
+  const c = await setup(t, { pingMs: 50 });
+  const sock = await rawWebSocket(t, c.srv.httpPort); // never answers pings
+  await waitFor(() => sock.destroyed || sock.readableEnded, "silent socket closed", 2000);
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  t.after(() => ws.terminate());
+  const types = [];
+  ws.on("message", (b) => types.push(JSON.parse(b).type));
+  await new Promise((r) => ws.once("open", r));
+  assert.match(ws.extensions, /permessage-deflate/);
+  await waitFor(() => types.includes("tick"), "heartbeat", 1000);
+});
+
+test("A4: AbleNet: this computer's own settings are not copied to the backup", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  await backup.cmd({ cmd: "settings", scene: "backup", network: "en0" });
+  await main.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${backup.srv.httpPort}`] });
+  await main.cmd({ cmd: "settings", scene: "main", network: "wlan0", safeMode: true });
+  await waitFor(async () => (await backup.state()).settings.safeMode, "shared setting mirrored");
+  const s = (await backup.state()).settings;
+  assert.deepEqual([s.scene, s.network], ["backup", "en0"]);
+});
+
+function fakePeer(t, state) {
+  const srv = http.createServer((_q, res) => res.end(JSON.stringify({ connected: true, tempo: 120, sig_num: 4, sig_den: 4, setlist: [], current: -1, settings: { scene: "main" }, ...state() })));
+  t.after(() => srv.close());
+  return new Promise((r) => srv.listen(0, "127.0.0.1", () => r(`http://127.0.0.1:${srv.address().port}`)));
+}
+
+test("A4: AbleNet: only a backup corrects its drift; removed peers are forgotten", async (t) => {
+  let t0 = Date.now();
+  // half a beat ahead of this computer, at 120 BPM: inside the nudge range
+  const url = await fakePeer(t, () => ({ is_playing: true, beat: 8.5 + (Date.now() - t0) / 500 }));
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect({ ...LIVE, is_playing: true, beat: 8 });
+  t0 = Date.now();
+  await c.cmd({ cmd: "settings", driftCorrection: true }); // this computer is the main one
+  await c.cmd({ cmd: "peers", urls: [url] });
+  await waitFor(async () => (await c.state()).peers[0]?.playing, "peer playing");
+  await pause(200);
+  assert.ok(!c.cmds.some((x) => x.cmd === "nudge"), "the main computer does not follow its backup");
+
+  await c.at(8, { is_playing: false });
+  await c.cmd({ cmd: "peers", urls: [] });
+  await pause(150);
+  assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400); // no ghost of the removed peer
+});
+
+test("A4: AbleNet: a backup that refuses the copied commands (password) is shown", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  await backup.cmd({ cmd: "setPassword", password: "palco-2026" });
+  await main.connect();
+  await main.cmd({ cmd: "peers", urls: [`http://${LAN_IP || "127.0.0.1"}:${backup.srv.httpPort}`] });
+  await main.cmd({ cmd: "play" });
+  if (LAN_IP) await waitFor(async () => (await main.state()).peers[0]?.denied === true, "denied shown");
+});
+
+test("A4: a chunked message that cannot be read goes to the log", async (t) => {
+  const c = await setup(t);
+  c.sendLive({ type: "chunk", id: 7, i: 0, n: 1, data: "{bad" });
+  await waitFor(async () => (await (await fetch(c.url("/api/logs"))).json()).lines.some((l) => l.includes("chunk")), "logged");
+});
+
+test("A4: the HTTP port of the last run is tried first, so saved addresses keep working", async (t) => {
+  const free = () => new Promise((r) => { const s = net.createServer().listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => r(p)); }); });
+  const p1 = await free();
+  const p2 = await free();
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-port-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const a = await setup(t, { baseDir, httpPort: [p1, p2] });
+  assert.equal(a.srv.httpPort, p1);
+  await a.srv.close();
+  const b = await setup(t, { baseDir, httpPort: [p2, p1] });
+  assert.equal(b.srv.httpPort, p1);
+});

@@ -142,7 +142,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - Non corretti: password e token in chiaro su HTTP (serve HTTPS: versione dedicata); token senza scadenza; Node 18 dentro i programmi (pkg 5.8.1 arriva a Node 18: passare a Node SEA in una versione dedicata); limitatore per /64 IPv6; tetto alle connessioni WebSocket
 
 #### A4 — Motore, server e AbleNet (agenti `ponytail:ponytail-audit` e `ecc:code-reviewer`, confermati con un Live simulato)
-- [ ] RED `engine.test.js`, `server.test.js`, `setlist.test.js`, `editor.test.js`:
+- [x] RED `engine.test.js`, `server.test.js`, `setlist.test.js`, `e2e/ui.spec.js`:
   1. con il loop di Live acceso il motore non salta a fine brano o sezione mentre il loop gira (il vamp suona una volta sola)
   2. salto in coda verso il confine naturale (sezione o brano successivo): la coda si svuota quando la testina ci arriva da sola (oggi rifà la sezione/il brano)
   3. dopo uno stop il motore dimentica i confini già scattati (oggi STOP, +SKIP, +LOOP, SONG END non scattano più al secondo passaggio)

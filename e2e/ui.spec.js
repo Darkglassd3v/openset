@@ -191,3 +191,16 @@ test("search: a late answer for an older query is ignored", async ({ page, opens
   await expect(page.locator("#searchList")).toContainText("Finale");
   await expect(page.locator("#searchList")).not.toContainText("Perché");
 });
+
+test("A4: a connection that goes quiet (sleeping iPad, half-open Wi-Fi) is noticed and reopened", async ({ page, openset }) => {
+  const state = await openset.state();
+  let n = 0;
+  await page.routeWebSocket(/.*/, (ws) => {
+    if (n++ === 0) ws.send(JSON.stringify({ type: "state", state })); // then silence, with the socket left open
+    else ws.connectToServer();
+  });
+  await page.goto(openset.url());
+  await connected(page);
+  await expect(page.locator("#connLabel")).toHaveText("OpenSet non raggiungibile…", { timeout: 9000 });
+  await expect(page.locator("#connLabel")).toHaveText("Live connesso", { timeout: 9000 });
+});

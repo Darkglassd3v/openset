@@ -445,3 +445,8 @@ test("parseName: thousands of >>> do not overflow the stack (audit A3)", () => {
   assert.equal(parseName("Verse >>> Chorus >>> Bridge").transition, "Chorus");
   assert.doesNotThrow(() => parseName(">>>".repeat(30000)));
 });
+
+test("A4: sections after the song end are ignored; a section never ends after its song", () => {
+  const songs = buildSetlist([{ name: "A", time: 0 }, { name: ">V +LOOP", time: 8 }, { name: "SONG END", time: 16 }, { name: ">X", time: 20 }, { name: "B", time: 32 }]);
+  assert.deepEqual(songs[0].sections.map((x) => [x.name, x.time, x.end]), [["V", 8, 16]]);
+});
