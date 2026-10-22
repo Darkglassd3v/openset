@@ -164,6 +164,90 @@ test("Live is marked offline after a silence, the setlist stays", async (t) => {
   assert.deepEqual(s.liveIssues, ["live-silent"]);
 });
 
+test("playback settings: Restart Song Before Jumping Back, pause and Stop by Default Instead of Pausing", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  assert.equal((await c.state()).settings.restartBeforeBack, true);
+  await c.at(50); // in Perché (40-72)
+  let j = c.expectCmd({ cmd: "jump", time: 40 }); // default: back to the song start first
+  await c.cmd({ cmd: "prev" });
+  await j;
+  await c.cmd({ cmd: "settings", restartBeforeBack: false });
+  j = c.expectCmd({ cmd: "jump", time: 0 }); // straight to the previous song
+  await c.cmd({ cmd: "prev" });
+  await j;
+
+  // pause keeps the position: Live's Stop goes back to the start marker
+  await c.at(50, { is_playing: true });
+  let stop = c.expectCmd({ cmd: "stop" });
+  let seek = c.expectCmd({ cmd: "seek", time: 50 });
+  await c.cmd({ cmd: "pause" });
+  await stop;
+  await seek;
+  // playPause (Space): pause by default…
+  stop = c.expectCmd({ cmd: "stop" });
+  seek = c.expectCmd({ cmd: "seek", time: 50 });
+  await c.cmd({ cmd: "playPause" });
+  await stop;
+  await seek;
+  // …stop with Stop by Default Instead of Pausing
+  await c.cmd({ cmd: "settings", stopInsteadOfPause: true });
+  const from = c.cmds.length;
+  stop = c.expectCmd({ cmd: "stop" });
+  await c.cmd({ cmd: "playPause" });
+  await stop;
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "seek"));
+  await c.at(50, { is_playing: false });
+  const play = c.expectCmd({ cmd: "play" });
+  await c.cmd({ cmd: "playPause" });
+  await play;
+});
+
+test("playback settings: Disable Loop When Jumping, automation and arrangement on song jumps", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const s = (await c.state()).settings;
+  assert.deepEqual([s.disableLoopOnJump, s.reEnableAutomation, s.backToArrangement, s.keepPlayingQueued], [true, false, false, false]);
+  await c.at(10, { loop: true });
+  const off = c.expectCmd({ cmd: "loop", on: false });
+  await c.cmd({ cmd: "next" });
+  await off;
+  await c.cmd({ cmd: "settings", disableLoopOnJump: false, reEnableAutomation: true, backToArrangement: true });
+  let from = c.cmds.length;
+  const re = c.expectCmd({ cmd: "reEnableAutomation" });
+  const back = c.expectCmd({ cmd: "backToArrangement" });
+  await c.cmd({ cmd: "next" });
+  await re;
+  await back;
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "loop"));
+  // a section jump is not a song jump
+  from = c.cmds.length;
+  const sec = c.expectCmd({ cmd: "jump", time: 16 });
+  await c.cmd({ cmd: "section", index: 1 });
+  await sec;
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "reEnableAutomation" || x.cmd === "backToArrangement"));
+});
+
+test("OSC: pause, playPause, reEnableAutomation and backToArrangement", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.at(50, { is_playing: true });
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  for (const [address, want] of [
+    ["/global/pause", { cmd: "seek", time: 50 }],
+    ["/global/playPause", { cmd: "seek", time: 50 }],
+    ["/global/reEnableAutomation", { cmd: "reEnableAutomation" }],
+    ["/global/backToArrangement", { cmd: "backToArrangement" }],
+  ]) {
+    const got = c.expectCmd(want);
+    sendOsc(c, osc, address, []);
+    await got;
+  }
+});
+
 test("debug logs: Live connection events, file log and log package", async (t) => {
   const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();

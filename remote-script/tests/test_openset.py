@@ -80,6 +80,7 @@ class FakeSong(object):
         self.loop_start = 0.0
         self.loop_length = 4.0
         self.clip_trigger_quantization = 4
+        self.back_to_arranger = True
         self.cue_points = [FakeCue("Song B", 32.0), FakeCue("Song A", 0.0)]
         self.tracks = []
         self.calls = []
@@ -93,6 +94,9 @@ class FakeSong(object):
 
     def stop_playing(self):
         self.calls.append("stop")
+
+    def re_enable_automation(self):
+        self.calls.append("re_enable_automation")
 
     def add_is_playing_listener(self, cb):
         self.listeners.append(cb)
@@ -186,6 +190,12 @@ class OpenSetTest(unittest.TestCase):
         self.assertIn("OpenSet clips error: track gone", self.os.logged)
         self.os._send_clips()  # the same error every 2 s is not repeated
         self.assertEqual([m for m in self.received() if m.get("type") == "log"], [])
+
+    def test_automation_and_arrangement_commands(self):
+        self.os._handle({"cmd": "reEnableAutomation"})
+        self.os._handle({"cmd": "backToArrangement"})
+        self.assertIn("re_enable_automation", self.song.calls)
+        self.assertIs(self.song.back_to_arranger, False)
 
     def test_cues_are_resent_only_when_they_change(self):
         self.received()

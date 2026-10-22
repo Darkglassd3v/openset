@@ -14,7 +14,8 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ## In corso
 
-- [ ] v0.5.1 su `hotfix/v0.5.1` (da `main` 533df7a = tag v0.5.0 + TODO): V4 PR e CI
+- [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W1 GREEN
 
 ## Da fare
 
@@ -36,13 +37,15 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] Copertura (righe 99.23%, rami 93.22%), CHANGELOG 0.5.1, guida, INSTALL, README, report TDD, versione 0.5.1
 - [x] Build locale: `scripts/build-release-local.sh` + `scripts/assemble-release.sh` (usato anche da `release.yml`); il launcher dell'app firma ad hoc il programma arm64 compilato su Linux
 - [x] CI: smoke test `curl | grep -q` falliva (23) con `index.html` oltre 64 KB: ora scarica su file
-- [ ] PR #2 verso `main`, CI verde (le build), merge commit; zip e PDF 0.5.1 in `build/release-0.5.1/` per l'utente
+- [x] PR #2 verso `main`, CI verde su Windows/macOS/Ubuntu, merge commit `d93fe1d`; zip e PDF 0.5.1 in `build/release-0.5.1/` (arm64 senza bytecode, firmato dal launcher)
 - Spazio GitHub per gli artefatti esaurito (utente, 2026-10-22): niente tag che avvia `release.yml`; la CI deve solo provare le build; zip e PDF si producono in locale (`build/release-<versione>/`) e l'utente li distribuisce a mano
 
 ### v0.6.0 — impostazioni di AbleSet (branch `release/v0.6.0` da `main` dopo la 0.5.1)
 
 #### W1 — Playback
-- [ ] Restart Song Before Jumping Back; Stop by Default Instead of Pausing (spazio = stop); Disable Loop When Jumping; Re-Enable Automation on Song Jump; Reset Tracks Back to Arrangement on Song Jump; Always Keep Playing When Jumping to Queued Songs
+- [x] RED: `engine.test.js` (keepPlayingQueued), `server.test.js` (restartBeforeBack, pause/playPause/stopInsteadOfPause, disableLoopOnJump, reEnableAutomation, backToArrangement, OSC), `test_openset.py` (comandi a Live)
+- [ ] GREEN: motore, server, Remote Script, UI (Opzioni → Riproduzione, Spazio e Stop)
+- Voci: Restart Song Before Jumping Back; Stop by Default Instead of Pausing (spazio = stop); Disable Loop When Jumping; Re-Enable Automation on Song Jump; Reset Tracks Back to Arrangement on Song Jump; Always Keep Playing When Jumping to Queued Songs
 
 #### W2 — Section Count-In
 - [ ] Count-in prima della sezione scelta (1, 2 o 4 battute); solo della traccia click (prima traccia o gruppo con «click», tracce `+CLICK`, «Lifesine») durante il count-in
@@ -75,6 +78,7 @@ for Live).
 
 ## Fatto
 
+- [x] v0.5.1 (OpenSet e AbleSet insieme, scaletta conservata, motivi a schermo, log e pacchetto log, build locale): vedi `docs/releases/0.5.1/v0.5.1.tdd.md`
 - [x] v0.5.0 rilasciata (modalità di salto, editor, dispositivi, Safe Mode e password, versione nei nomi, icone, guida PDF): vedi `docs/releases/0.5.0/v0.5.0.tdd.md`
 - [x] v0.4.0 rilasciata (cartella dati, apertura automatica, installazione del Remote Script, QR, porta 80): vedi `docs/releases/0.4.0/`
 - [x] v0.3.1 rilasciata (PWA per iPad/iPhone): vedi `docs/releases/0.3.1/v0.3.1.tdd.md`

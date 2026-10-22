@@ -233,3 +233,12 @@ test("jump modes Quantized and Manual leave the queue to the server", () => {
   for (const m of ["quantized", "manual"])
     assert.deepEqual(play(songs, [15.9, 16.1, 31.9, 32.1], { ...queued(72), ...mode(m) }), [jump(40)], m);
 });
+
+test("Always Keep Playing When Jumping to Queued Songs: no stop before a queued song", () => {
+  const stopSet = set(QSET.map((c) => (c.name === "SONG END" ? { name: "STOP", time: 32 } : c)));
+  const keep = (m, extra = {}) => mode(m, { keepPlayingQueued: true, ...extra });
+  assert.deepEqual(play(stopSet, [31.9, 32.1], { ...queued(72), ...keep("song") }), [jump(72)]);
+  assert.deepEqual(play(set(QSET), [31.9, 32.1], { ...queued(72), ...keep("dynamic", { alwaysStop: true }) }), [jump(72)]);
+  // nothing queued: a STOP still stops
+  assert.deepEqual(play(stopSet, [31.9, 32.1], keep("song")), [STOP, jump(40)]);
+});
