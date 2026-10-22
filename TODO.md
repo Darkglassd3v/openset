@@ -26,13 +26,14 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] Azione di release condivisa `Darkglassd3v/.github/actions/release@v1` (creata il 2026-10-22, CI verde su Ubuntu, Windows, macOS; PR #6 unita, usata anche da dierre): è un'azione e non un workflow riutilizzabile, perché deve girare nel job che costruisce (niente artefatti)
   - [x] RED `packaging.test.js`: `release.yml` la usa, solo gli zip, niente `softprops` né `release-notes`; `scripts/release-notes.js` e il suo test tolti (le note le scrive l'azione)
   - [x] GREEN: `.github/workflows/release.yml`, `CLAUDE.md`
-- [ ] v0.6.1 (branch `release/v0.6.1`): corsa in AbleNet (trovata dalla CI Windows della PR #6: una lettura del computer di riserva ancora in corso quando lo si toglie dalla lista lo rimetteva nello stato)
+- [x] v0.6.1 (branch `release/v0.6.1`, PR #7, merge `8cbcda5`, tag `v0.6.1`): release https://github.com/Darkglassd3v/openset/releases/tag/v0.6.1 con 4 zip e guida dentro, note brevi, 0 artefatti nuovi (run 39872539481); corsa in AbleNet (trovata dalla CI Windows della PR #6: una lettura del computer di riserva ancora in corso quando lo si toglie dalla lista lo rimetteva nello stato)
   - [x] RED `c406642` + GREEN `564e0dc`: `prunePeers()` anche alla fine di `pollPeers`
   - [x] Copertura (righe 99.29%, rami 93.45%), report TDD `docs/releases/0.6.1/v0.6.1.tdd.md`, CHANGELOG 0.6.1 (Correzioni), README, versione 0.6.1 (VERSION, package.json e lock, Remote Script)
   - [x] `code-review` del branch (PR #7, CI verde): con più riserve quella tolta è ancora seguita finché si leggono le altre; `leader()` si fida di tutte le voci di `peerStatus`; i computer tolti a metà lettura sono ancora letti; una lettura che finisce dopo la chiusura di OpenSet lancia `ERR_SOCKET_DGRAM_NOT_RUNNING` (rejection non gestita: crash); test della corsa con un'attesa fissa e un controllo che passava anche in RED; CHANGELOG descriveva un sintomo mai visto
   - [x] RED `server.test.js` (`gatedPeer`: la riserva risponde solo quando il test la lascia andare): più riserve, chiusura durante la lettura
   - [x] GREEN: `leader()` solo tra i computer della lista, quelli tolti non si leggono più, `.catch` sulla lettura (secondo `prunePeers()` tolto); CHANGELOG e report
-  - [ ] PR #7 con CI verde, merge, tag `v0.6.1` (pubblica `release.yml`)
+  - [x] PR #7 con CI verde, merge, tag `v0.6.1` (pubblica `release.yml`)
+- [x] `main` protetto (richiesta dell'utente, 2026-10-23): ruleset «main» con PR obbligatoria, i 3 job della CI verdi, solo merge commit, niente force push né cancellazione; anche la documentazione passa da una PR
   - Non corretti (dalla revisione): `peerDenied` di una riserva tolta mentre un comando copiato è in viaggio resta finché un comando successivo non riesce (raro, solo l'etichetta «rifiuta»); riserve lette una dopo l'altra (una spenta ritarda le altre fino a 800 ms)
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`)
 
