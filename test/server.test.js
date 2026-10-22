@@ -322,6 +322,46 @@ test("Tools (AbleSet): clip colors from names, place and remove section locators
   assert.equal((await c.cmd({ cmd: "removeSectionLocators" })).status, 400);
 });
 
+test("General settings: default view, when to open the browser, floating window", async (t) => {
+  const opened = [];
+  const c = await setup(t, { openBrowser: (url, opts) => opened.push([url, opts]) });
+  const s = (await c.state()).settings;
+  assert.deepEqual([s.defaultView, s.openBrowser, s.floatingWindow, s.autoLaunchLive], ["setlist", "start", false, false]);
+  assert.deepEqual(opened, [[`http://localhost:${c.srv.httpPort}`, { app: false }]]); // "start": right away
+  assert.equal((await c.cmd({ cmd: "settings", defaultView: "kitchen" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "settings", openBrowser: "sometimes" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "settings", defaultView: "stage", openBrowser: "off" })).status, 200);
+});
+
+test("Open on Start: with 'live' the browser opens once, when Live connects", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-open-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ settings: { openBrowser: "live", floatingWindow: true } }));
+  const opened = [];
+  const c = await setup(t, { baseDir, openBrowser: (url, opts) => opened.push([url, opts]) });
+  assert.deepEqual(opened, []);
+  await c.connect();
+  await waitFor(() => opened.length === 1, "browser opened");
+  assert.deepEqual(opened[0], [`http://localhost:${c.srv.httpPort}`, { app: true }]);
+  await c.at(12);
+  assert.equal(opened.length, 1);
+});
+
+test("Auto-Launch the Last Live Project: the last .als opens when Live is not running", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-launch-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const als = path.join(baseDir, "Show.als");
+  fs.writeFileSync(als, "x");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ lastProject: als, settings: { autoLaunchLive: true } }));
+  const files = [];
+  const c = await setup(t, { baseDir, liveRunning: () => false, openFile: (f) => files.push(f) });
+  assert.deepEqual(files, [als]);
+  assert.equal((await c.state()).lastProjectName, "Show.als");
+  const busy = [];
+  await setup(t, { baseDir, liveRunning: () => true, openFile: (f) => busy.push(f) }); // Live already open
+  assert.deepEqual(busy, []);
+});
+
 test("debug logs: Live connection events, file log and log package", async (t) => {
   const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();
@@ -888,6 +928,8 @@ test("/api/load-als works from this computer only", async (t) => {
   const s = await c.state();
   assert.equal(s.offline, true);
   assert.deepEqual(s.setlist.map((x) => x.name), ["Uno", "Due"]);
+  assert.equal(s.lastProjectName, "show.als"); // for Auto-Launch the Last Live Project
+  assert.equal(JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8")).lastProject, file);
   assert.equal((await post(c.url("/api/load-als"), {})).status, 400);
   assert.equal((await post(c.url("/api/load-als"), { file: file + ".nope" })).status, 500);
   if (LAN_IP) {
