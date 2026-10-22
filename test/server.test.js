@@ -62,6 +62,7 @@ async function setup(t, opts = {}) {
     baseDir,
     httpPort: 0,
     udpPort: 0,
+    statePort: 0,
     livePort: live.address().port,
     log: false,
     ...opts,
@@ -71,7 +72,7 @@ async function setup(t, opts = {}) {
     srv,
     cmds,
     url: (p) => `http://127.0.0.1:${srv.httpPort}${p}`,
-    sendLive: (obj) => live.send(JSON.stringify(obj), srv.udpPort, "127.0.0.1"),
+    sendLive: (obj) => live.send(JSON.stringify(obj), srv.statePort, "127.0.0.1"),
     state: async () => (await fetch(ctx.url("/api/state"))).json(),
     cmd: (body) =>
       fetch(ctx.url("/api/cmd"), {
@@ -855,16 +856,42 @@ test("lyrics: JSON files with accented names and Live +LYRICS tracks", async (t)
   assert.deepEqual((await res.json()).lines[0].segments, [{ chord: "Bm", text: "Ciao" }]);
 });
 
-test("a busy port rejects start() instead of crashing", async (t) => {
+test("a busy HTTP or Live state port rejects start() instead of crashing", async (t) => {
   const c = await setup(t);
-  const base = { baseDir: c.baseDir, log: false, udpPort: 0 };
+  const base = { baseDir: c.baseDir, log: false, udpPort: 0, statePort: 0 };
   await assert.rejects(start({ ...base, httpPort: c.srv.httpPort }), { code: "EADDRINUSE" });
-  await assert.rejects(start({ ...base, httpPort: 0, udpPort: c.srv.udpPort }), { code: "EADDRINUSE" });
+  // the Live state port is private: a second OpenSet cannot share it
+  await assert.rejects(start({ ...base, httpPort: 0, statePort: c.srv.statePort }), { code: "EADDRINUSE" });
+});
+
+test("a busy OSC port (e.g. AbleSet on 39051) leaves OpenSet running with OSC off", async (t) => {
+  const c = await setup(t);
+  const srv = await start({ baseDir: c.baseDir, log: false, httpPort: 0, statePort: 0, udpPort: c.srv.udpPort });
+  t.after(() => srv.close());
+  assert.equal(srv.udpPort, null);
+  const s = await (await fetch(`http://127.0.0.1:${srv.httpPort}/api/state`)).json();
+  assert.equal(s.oscPort, null);
+  assert.equal((await c.state()).oscPort, c.srv.udpPort);
+});
+
+test("Live state arrives on its own loopback port, apart from OSC", async (t) => {
+  const c = await setup(t);
+  assert.notEqual(c.srv.statePort, c.srv.udpPort);
+  await c.connect(); // sendLive targets statePort
+  assert.equal((await c.state()).connected, true);
+});
+
+test("an old Remote Script sending to the OSC port still drives the state", async (t) => {
+  const c = await setup(t);
+  const old = await udpSocket();
+  t.after(() => old.close());
+  old.send(JSON.stringify(LIVE), c.srv.udpPort, "127.0.0.1");
+  await waitFor(async () => (await c.state()).connected, "legacy Live connection");
 });
 
 test("a list of HTTP ports falls back to the next free one", async (t) => {
   const c = await setup(t);
-  const base = { baseDir: c.baseDir, log: false, udpPort: 0 };
+  const base = { baseDir: c.baseDir, log: false, udpPort: 0, statePort: 0 };
   const busy = c.srv.httpPort;
   const srv = await start({ ...base, httpPort: [busy, 0] });
   t.after(() => srv.close());

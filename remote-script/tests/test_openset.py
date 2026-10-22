@@ -40,6 +40,9 @@ sys.modules["ableton.v2.control_surface"] = cs
 
 package = importlib.import_module("OpenSet")
 script = importlib.import_module("OpenSet.OpenSet")
+DEFAULT_SERVER_ADDR = script.SERVER_ADDR  # before setUp points it at the test socket
+with open(os.path.join(HERE, "..", "..", "package.json")) as f:
+    VERSION = json.load(f)["version"]
 
 
 class FakeCue(object):
@@ -144,6 +147,26 @@ class OpenSetTest(unittest.TestCase):
         self.assertEqual(state["quant"], 4)
         self.assertEqual(state["tempo"], 120.0)
         self.assertIn(self.os._send_state, self.song.listeners)
+
+    def test_state_goes_to_the_private_state_port(self):
+        # 39051 is AbleSet's OSC port: Live's state must not share it
+        self.assertEqual(DEFAULT_SERVER_ADDR, ("127.0.0.1", 39061))
+
+    def test_state_reports_script_version_and_command_port(self):
+        state = self.states()[0]
+        self.assertEqual(state["script_version"], VERSION)
+        self.assertIs(state["cmd_port"], True)
+
+    def test_busy_command_port_is_reported(self):
+        blocker = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        blocker.bind(("127.0.0.1", 0))
+        self.addCleanup(blocker.close)
+        script.LISTEN_PORT = blocker.getsockname()[1]
+        self.received()
+        other = script.OpenSet(FakeSong())
+        self.addCleanup(other.disconnect)
+        self.assertIs(self.states()[0]["cmd_port"], False)
+        self.assertTrue(any("busy" in m for m in other.logged))
 
     def test_cues_are_resent_only_when_they_change(self):
         self.received()
