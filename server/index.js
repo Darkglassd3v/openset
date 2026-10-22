@@ -114,7 +114,7 @@ function defaultPrefs() {
     skip: [],
     stopAfter: [],
     notes: {},
-    measured: {}, // song name -> seconds measured during real playback
+    measured: {}, // song key -> seconds measured during real playback
     lastProject: null, // the last .als loaded, for Auto-Launch the Last Live Project
     httpPort: null, // the port of the last run: tried first, so saved addresses keep working
     // AbleSet's Settings: General, Playback, Section Count-In, Setlist
@@ -527,9 +527,9 @@ function start(opts = {}) {
       });
       for (const c of cmds) {
         if (c.cmd !== "played") sendToLive(c, true);
-        else if (!prefs.skip.includes(c.name)) {
-          log.info(`[setlist] ${c.name} played to the end: removed from the setlist`);
-          setPrefs({ skip: [...prefs.skip, c.name] });
+        else if (!prefs.skip.includes(c.key)) {
+          log.info(`[setlist] ${c.key} played to the end: removed from the setlist`);
+          setPrefs({ skip: [...prefs.skip, c.key] });
         }
       }
       if (queued && cmds.some((c) => c.cmd === "jump" && Math.abs(c.time - queued.time) < S.EPS)) queued = null;
@@ -552,7 +552,7 @@ function start(opts = {}) {
         now: cfg.now(),
       });
       if (measured) {
-        prefs.measured = { ...prefs.measured, [measured.name]: measured.seconds };
+        prefs.measured = { ...prefs.measured, [measured.key]: measured.seconds };
         savePrefs();
       }
       for (const cue of cuesBetween({

@@ -937,15 +937,16 @@ function buildSetlist() {
 
 // setlist edits: send the whole order/skip/stop/notes picture
 function editSetlist(change) {
-  const rows = state.setlist.map((s) => ({ name: s.name, skip: s.skip, stopAfter: s.stopAfter, notes: s.notes || "" }));
+  // key: the name, «Name#2» for a reprise with the same name
+  const rows = state.setlist.map((s) => ({ key: s.key, skip: s.skip, stopAfter: s.stopAfter, notes: s.notes || "" }));
   change(rows);
   const notes = {};
-  rows.forEach((r) => { if (r.notes) notes[r.name] = r.notes; });
+  rows.forEach((r) => { if (r.notes) notes[r.key] = r.notes; });
   send({
     cmd: "setlist",
-    order: rows.map((r) => r.name),
-    skip: rows.filter((r) => r.skip).map((r) => r.name),
-    stopAfter: rows.filter((r) => r.stopAfter).map((r) => r.name),
+    order: rows.map((r) => r.key),
+    skip: rows.filter((r) => r.skip).map((r) => r.key),
+    stopAfter: rows.filter((r) => r.stopAfter).map((r) => r.key),
     notes,
   });
 }
@@ -1025,10 +1026,10 @@ function openSearch() {
 }
 // picked songs are played again and move after the last played song
 function addSongs(indexes) {
-  const names = new Set(indexes.map((i) => state.setlist[i] && state.setlist[i].name));
+  const keys = new Set(indexes.map((i) => state.setlist[i] && state.setlist[i].key));
   editSetlist((rows) => {
-    const picked = rows.filter((r) => names.has(r.name));
-    const rest = rows.filter((r) => !names.has(r.name));
+    const picked = rows.filter((r) => keys.has(r.key));
+    const rest = rows.filter((r) => !keys.has(r.key));
     picked.forEach((r) => { r.skip = false; });
     let at = 0;
     rest.forEach((r, k) => { if (!r.skip) at = k + 1; });

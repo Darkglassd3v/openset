@@ -44,7 +44,7 @@ test("a jump right at the end (engine transition) completes the song", () => {
   const steps = [...play(0, 15.75, 0, 120, 0.25), [24, 8]];
   const out = run(steps);
   assert.equal(out.length, 1);
-  assert.equal(out[0].name, "A");
+  assert.equal(out[0].key, "A");
   assert.ok(Math.abs(out[0].seconds - 8) < 0.2);
 });
 

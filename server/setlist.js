@@ -145,6 +145,13 @@ function buildSetlist(cues) {
       if (first) s.playStart = first.time;
     }
   });
+  // a reprise has the same name: setlist settings use the key, «Name#2» for the second one
+  const seen = new Map();
+  for (const s of songs) {
+    const n = (seen.get(s.name) || 0) + 1;
+    seen.set(s.name, n);
+    s.key = n > 1 ? `${s.name}#${n}` : s.name;
+  }
   return songs;
 }
 
@@ -177,7 +184,7 @@ function cuesFromLive(cues, tracks) {
   return [...named, ...extra].sort((a, b) => a.time - b.time || isSection(a) - isSection(b));
 }
 
-// prefs: { order: [name], skip: [name], stopAfter: [name], notes: {name: text} }
+// prefs: { order: [key], skip: [key], stopAfter: [key], notes: {key: text}, measured: {key: seconds} }
 function applyOrder(songs, prefs = {}) {
   const order = prefs.order || [];
   const skip = new Set(prefs.skip || []);
@@ -185,17 +192,17 @@ function applyOrder(songs, prefs = {}) {
   const notes = prefs.notes || {};
   const measured = prefs.measured || {};
   const rank = (s) => {
-    const i = order.indexOf(s.name);
+    const i = order.indexOf(s.key);
     return i < 0 ? order.length : i;
   };
   let n = 0;
   return songs
     .map((s) => ({
       ...s,
-      skip: skip.has(s.name),
-      stopAfter: stopAfter.has(s.name),
-      notes: Object.hasOwn(notes, s.name) ? notes[s.name] : "",
-      measured: Object.hasOwn(measured, s.name) ? measured[s.name] : null,
+      skip: skip.has(s.key),
+      stopAfter: stopAfter.has(s.key),
+      notes: Object.hasOwn(notes, s.key) ? notes[s.key] : "",
+      measured: Object.hasOwn(measured, s.key) ? measured[s.key] : null,
     }))
     .sort((a, b) => rank(a) - rank(b)) // stable: unlisted songs keep timeline order
     .map((s) => ({ ...s, number: s.skip || s.nosong ? null : ++n }));
