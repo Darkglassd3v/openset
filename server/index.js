@@ -30,6 +30,7 @@ const { deviceUrls, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
 const { validAuth, hashPassword, checkPassword, createLimiter } = require("./auth");
+const { createLog, liveLogFiles, liveLogLines } = require("./log");
 const { version: VERSION } = require("../package.json");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
@@ -130,8 +131,11 @@ function start(opts = {}) {
     pingMs: 2000, // browser latency check
     scriptInstall: null, // Remote Script install result, shown by the UI
     netInfo, // platform, host name and interfaces, for /api/connect
+    logger: null, // the CLI passes its own, so a crash lands in the same file
+    liveLogFiles: () => liveLogFiles(process.platform, process.env, os.homedir()),
     ...opts,
   };
+  const log = cfg.logger || createLog({ file: path.join(cfg.baseDir, "openset.log"), echo: cfg.log || "errors", now: cfg.now });
   const PREFS_FILE = path.join(cfg.baseDir, "setlist.json");
   const LYRICS_DIR = path.join(cfg.baseDir, "lyrics");
 
@@ -196,7 +200,7 @@ function start(opts = {}) {
     try {
       fs.writeFileSync(PREFS_FILE, JSON.stringify(prefs, null, 2));
     } catch (e) {
-      console.error(`[prefs] cannot save ${PREFS_FILE}: ${e.message}`);
+      log.error(`[prefs] cannot save ${PREFS_FILE}: ${e.message}`);
     }
   }
 
@@ -220,6 +224,31 @@ function start(opts = {}) {
     if (!map || !liveState.connected) return map || null;
     const key = (list) => JSON.stringify(list.map((c) => [c.name, Math.round(c.time * 1000)]));
     return key(offlineProject.locators) === key(cues) ? map : null;
+  }
+
+  function logPackage(at) {
+    const st = publicState();
+    const install = cfg.scriptInstall;
+    return [
+      `OpenSet ${VERSION} log package, ${at}`,
+      `system: ${process.platform} ${os.release()} ${process.arch}, node ${process.version}`,
+      `data folder: ${cfg.baseDir}`,
+      `ports: http ${server.address() ? server.address().port : "-"}, Live state 127.0.0.1:${stateUdp.address().port}, ` +
+        `OSC ${oscPort === null ? "off (busy)" : oscPort}, commands to Live ${cfg.livePort}`,
+      `Live: ${st.connected ? "connected" : "not connected"}, Live ${st.live_version || "?"}, Remote Script ${st.script_version || "?"}, command port ${st.cmd_port === false ? "busy" : "ok"}`,
+      `liveIssues: ${st.liveIssues.join(", ") || "none"}`,
+      `Remote Script install: ${install ? `${install.status} ${install.path || ""}` : "-"}`,
+      `setlist: ${st.setlist.length} songs${st.offline ? " (offline .als)" : ""}: ${st.setlist.map((s) => s.name).join(" | ")}`,
+      `devices: ${st.devices.length}, backup computers: ${st.peers.map((p) => `${p.url} ${p.online ? "online" : "offline"}`).join(", ") || "none"}`,
+      `settings: ${JSON.stringify(st.settings)}`,
+      "",
+      `== OpenSet log (last ${log.lines().length} lines) ==`,
+      ...log.lines(),
+      "",
+      "== Live's Log.txt: OpenSet lines and Remote Script errors ==",
+      ...liveLogLines(cfg.liveLogFiles()),
+      "",
+    ].join("\n");
   }
 
   // why Live and OpenSet are not talking, for the UI and the log package
@@ -296,6 +325,7 @@ function start(opts = {}) {
   function handleLive(msg) {
     lastLiveMsg = Date.now();
     if (msg.type === "chunk") return handleChunk(msg);
+    if (msg.type === "log") return log.info(`[script] ${String(msg.msg)}`);
     if (msg.type === "clips") {
       tracks = Array.isArray(msg.tracks) ? msg.tracks : [];
       lyricsRev++;
@@ -307,6 +337,11 @@ function start(opts = {}) {
     const prevBeat = liveState.beat;
     const { type, cues: newCues, ...rest } = msg;
     liveState = { ...liveState, ...rest, connected: true };
+    if (!wasConnected)
+      log.info(
+        `[live] connected: Live ${liveState.live_version || "?"}, Remote Script ${liveState.script_version || "older than 0.5.1"}, ` +
+          `command port ${liveState.cmd_port === false ? "busy" : "ok"}`
+      );
     if (Array.isArray(newCues)) cues = newCues;
     const list = setlist();
     if (!wasConnected) sendToLive({ cmd: "resync" }); // ask for cues and clips again
@@ -372,10 +407,15 @@ function start(opts = {}) {
     } catch {}
   }
 
+  let lastLiveError = null;
   function liveJson(buf) {
     try {
       handleLive(JSON.parse(buf.toString("utf-8")));
-    } catch {}
+    } catch (e) {
+      // logged once per kind of error: Live sends ~10 messages a second
+      if (e.message !== lastLiveError) log.error(`[live] bad message: ${e.message}`);
+      lastLiveError = e.message;
+    }
   }
   stateUdp.on("message", liveJson);
 
@@ -395,7 +435,7 @@ function start(opts = {}) {
       try {
         handleOsc(m, rinfo);
       } catch (e) {
-        console.error("[osc]", m.address, e.message);
+        log.error(`[osc] ${m.address}: ${e.message}`);
       }
     }
   });
@@ -405,6 +445,7 @@ function start(opts = {}) {
     const connected = Date.now() - lastLiveMsg < cfg.liveTimeoutMs;
     if (connected !== liveState.connected) {
       liveState.connected = connected;
+      if (!connected) log.info(`[live] silent for ${cfg.liveTimeoutMs} ms: not connected, the last setlist stays`);
       changed();
     }
   }, Math.min(1000, cfg.liveTimeoutMs / 3));
@@ -850,6 +891,18 @@ function start(opts = {}) {
 
   app.get("/api/state", (_req, res) => res.json(publicState()));
 
+  // Debug → Log and "Crea pacchetto log" (AbleSet: Debug Logs, Create Log Package)
+  app.get("/api/logs", async (req, res) => {
+    if (await httpAllowed(req, res)) res.json({ lines: log.lines() });
+  });
+  app.get("/api/log-package", async (req, res) => {
+    if (!(await httpAllowed(req, res))) return;
+    const at = new Date(cfg.now()).toISOString();
+    const stamp = at.slice(0, 16).replace(/-/g, "").replace("T", "-").replace(":", "");
+    res.set("Content-Disposition", `attachment; filename="openset-${VERSION}-log-${stamp}.txt"`);
+    res.type("text/plain").send(logPackage(at));
+  });
+
   app.get("/api/connect", (_req, res) => {
     const urls = deviceUrls(cfg.netInfo(), server.address().port);
     res.json({ urls: urls.map((url) => ({ url, qr: qrSvg(url) })) });
@@ -999,11 +1052,11 @@ function start(opts = {}) {
       try { msg = JSON.parse(buf.toString()); } catch { return; }
       try {
         if (msg && msg.type === "device") deviceInfo(devices.get(ws), msg);
-        else if (msg && msg.type === "auth") wsAuth(ws, msg).catch((e) => console.error("[auth]", e.message));
+        else if (msg && msg.type === "auth") wsAuth(ws, msg).catch((e) => log.error(`[auth] ${e.message}`));
         else if (!canControl(ws)) sendAccess(ws); // read-only: tell the browser to ask for the password
         else runCommand(msg);
       } catch (e) {
-        console.error("[ws]", e.message);
+        log.error(`[ws] ${e.message}`);
       }
     });
   });
@@ -1030,9 +1083,9 @@ function start(opts = {}) {
   if (cfg.alsFile) {
     try {
       offlineProject = parseAls(cfg.alsFile);
-      console.log(`[als] loaded ${offlineProject.locators.length} locators from ${cfg.alsFile}`);
+      log.info(`[als] loaded ${offlineProject.locators.length} locators from ${cfg.alsFile}`);
     } catch (e) {
-      console.error("[als] parse failed:", e.message);
+      log.error(`[als] parse failed: ${e.message}`);
     }
   }
 
@@ -1068,6 +1121,7 @@ function start(opts = {}) {
       server.listen(ports[i], () => {
         server.removeListener("error", onError);
         const httpPort = server.address().port;
+        log.info(`[http] listening on ${httpPort}`);
         if (cfg.log) printAddresses(cfg.netInfo(), httpPort);
         resolve({ httpPort, udpPort: oscPort, statePort: stateUdp.address().port, close });
       });
@@ -1076,16 +1130,16 @@ function start(opts = {}) {
     const bindOsc = () => {
       const busy = (e) => {
         try { udp.close(); } catch {}
-        if (cfg.log) console.error(`[osc] port ${cfg.udpPort} busy (${e.code}): OSC is off. Is AbleSet open?`);
+        log.error(`[osc] port ${cfg.udpPort} busy (${e.code}): OSC is off. Is AbleSet open?`);
         listen(0);
       };
       udp.once("error", busy);
       // all interfaces for OSC; JSON state is accepted from loopback only
       udp.bind(cfg.udpPort, "0.0.0.0", () => {
         udp.removeListener("error", busy);
-        udp.on("error", (e) => console.error("[udp]", e.message));
+        udp.on("error", (e) => log.error(`[osc] ${e.message}`));
         oscPort = udp.address().port;
-        if (cfg.log) console.log(`[osc] listening on ${oscPort}`);
+        log.info(`[osc] listening on ${oscPort}`);
         listen(0);
       });
     };
@@ -1093,8 +1147,8 @@ function start(opts = {}) {
     stateUdp.once("error", fail);
     stateUdp.bind(cfg.statePort, "127.0.0.1", () => {
       stateUdp.removeListener("error", fail);
-      stateUdp.on("error", (e) => console.error("[udp]", e.message));
-      if (cfg.log) console.log(`[live] state on 127.0.0.1:${stateUdp.address().port}, commands to ${cfg.livePort}`);
+      stateUdp.on("error", (e) => log.error(`[live] ${e.message}`));
+      log.info(`[live] state on 127.0.0.1:${stateUdp.address().port}, commands to ${cfg.livePort}`);
       bindOsc();
     });
   });
@@ -1115,28 +1169,42 @@ function printAddresses(info, port) {
 }
 
 if (require.main === module) {
-  console.log(`OpenSet ${VERSION}`);
+  console.log(`OpenSet ${VERSION}`); // first line: the CI smoke test and the user see the version
   let dir = dataDir(process.platform, process.env, os.homedir());
+  let copied = [];
+  let dirError = null;
   try {
-    for (const name of migrateData(BASE_DIR, dir)) console.log(`[data] copied ${name} to ${dir}`);
+    copied = migrateData(BASE_DIR, dir);
   } catch (e) {
-    console.error(`[data] cannot use ${dir}: ${e.message}`);
+    dirError = `[data] cannot use ${dir}: ${e.message}`;
     dir = BASE_DIR;
   }
-  console.log(`[data] ${dir}`);
+  // openset.log in the data folder, also for a crash: it ends up in the log package
+  const log = createLog({ file: path.join(dir, "openset.log"), echo: true });
+  const crash = (e) => {
+    log.error(`[crash] ${(e && e.stack) || e}`);
+    process.exit(1);
+  };
+  process.on("uncaughtException", crash);
+  process.on("unhandledRejection", crash);
+  log.info(`[start] OpenSet ${VERSION} on ${process.platform} ${os.release()} ${process.arch}, node ${process.version}`);
+  if (dirError) log.error(dirError);
+  for (const name of copied) log.info(`[data] copied ${name} to ${dir}`);
+  log.info(`[data] ${dir}`);
   const args = parseArgs(process.argv.slice(2));
   const libs = userLibraries(process.platform, process.env, os.homedir());
   const install = installRemoteScript(path.join(BASE_DIR, "remote-script", "OpenSet"), libs);
   if (install.status === "installed" || install.status === "updated")
-    console.log(`[live] Remote Script ${install.status} in ${install.path}: restart Live and pick OpenSet as Control Surface`);
-  else if (install.status === "error") console.error(`[live] cannot install the Remote Script in ${install.path}: ${install.error}`);
+    log.info(`[live] Remote Script ${install.status} in ${install.path}: restart Live and pick OpenSet as Control Surface`);
+  else if (install.status === "error") log.error(`[live] cannot install the Remote Script in ${install.path}: ${install.error}`);
   else if (install.status === "not-found" && libs.length)
-    console.log("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
-  start({ baseDir: dir, alsFile: args.alsFile, scriptInstall: install }).then((srv) => {
+    log.info("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
+  else if (install.path) log.info(`[live] Remote Script ${install.status} in ${install.path}`);
+  start({ baseDir: dir, alsFile: args.alsFile, scriptInstall: install, logger: log }).then((srv) => {
     if (args.open) openBrowser(`http://localhost${srv.httpPort === 80 ? "" : ":" + srv.httpPort}`);
   }, (e) => {
-    const hint = e.code === "EADDRINUSE" ? " (is OpenSet or AbleSet already running?)" : "";
-    console.error(`OpenSet cannot start: ${e.message}${hint}`);
+    const hint = e.code === "EADDRINUSE" ? " (is OpenSet already running?)" : "";
+    log.error(`OpenSet cannot start: ${e.message}${hint}`);
     process.exit(1);
   });
 }

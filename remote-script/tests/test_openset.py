@@ -184,6 +184,8 @@ class OpenSetTest(unittest.TestCase):
         logs = [m["msg"] for m in self.received() if m.get("type") == "log"]
         self.assertEqual(logs, ["OpenSet clips error: track gone"])
         self.assertIn("OpenSet clips error: track gone", self.os.logged)
+        self.os._send_clips()  # the same error every 2 s is not repeated
+        self.assertEqual([m for m in self.received() if m.get("type") == "log"], [])
 
     def test_cues_are_resent_only_when_they_change(self):
         self.received()
