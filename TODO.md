@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W6 GREEN
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W7 RED
 
 ## Da fare
 
@@ -76,7 +76,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### W6 — Debug e AbleNet
 - [x] RED: `ablenet.test.js` (`nudgeFor`, `syncTarget`), `server.test.js` (impostazioni dei dispositivi, scene, syncPlayback, driftCorrection con battito estrapolato), `test_openset.py` (nudge tenuto per un po')
-- [ ] GREEN: `server/ablenet.js`, server, Remote Script, UI
+- [x] GREEN: `server/ablenet.js`, server (`liveBeatNow`/`beatNow`, `peerClock`, `leader`, `syncPlayback`, nudge a ogni lettura), Remote Script (`nudge` tenuto `ms`), UI (impostazioni per dispositivo nella lista, scene, correzione, «Sincronizza ora» / «Live sta suonando»)
 - Voci: Device Settings (impostazioni di tutti i dispositivi in una pagina); Connected Scene (principale/riserva); Automatic Drift Correction (Phase Nudge); Sync Playback Now
 
 #### W7 — Voci del menu di AbleSet in Opzioni (solo da questo computer)
@@ -90,6 +90,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [ ] `superpowers:systematic-debugging` sul bug della scaletta che sparisce, con il pacchetto log della 0.5.1
 - [ ] agente `ecc:python-reviewer` sul Remote Script (Python 3.7 di Live 11, API di Live)
 - [ ] `ecc:e2e-testing` (Playwright) per i flussi principali della UI, oggi senza test automatici
+- [ ] Verificare su Safari/iPad il tempo della prima connessione WebSocket: nel Chrome di test 1-2,4 s (da Node 8 ms, HTTP 3 ms)
 - [ ] prima di ogni merge `code-review` sulla PR; ai rilasci grossi `ecc:orch-review`
 - Un primo audit generico era partito in background ed è stato fermato su richiesta dell'utente (si rifà con queste skill)
 

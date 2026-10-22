@@ -478,6 +478,11 @@
       <input class="field" id="peerUrl" placeholder="http://192.168.1.20:39080" aria-label="Indirizzo del computer di riserva">
       <button class="btn" id="peerAdd">Aggiungi</button>
     </div>
+    <label>Questo computer è <select id="scene">
+      <option value="main">il principale</option><option value="backup">la riserva</option></select></label>
+    <label><input type="checkbox" data-set="driftCorrection"> Correzione automatica dello scarto (phase nudge di Live): attivala sul computer di riserva, con tutte le clip audio in warp</label>
+    <div class="row"><button class="btn" id="syncPlayback">Sincronizza ora</button></div>
+    <p class="dim">«Sincronizza ora» fa ripartire questo computer, se è fermo, insieme a quello che sta suonando (con Ableton Link parte sulla battuta giusta).</p>
 
     <h2>Scorciatoie (tastiera e pedali Bluetooth)</h2>
     <table>
@@ -561,7 +566,7 @@ let state = null;
 let view = store.get("openset.view", "setlist");
 // per-device preferences (voice, stage layout), kept in this browser only
 const device = (() => { try { return JSON.parse(store.get("openset.device", "{}")) || {}; } catch { return {}; } })();
-const saveDevice = () => store.set("openset.device", JSON.stringify(device));
+const saveDevice = () => { store.set("openset.device", JSON.stringify(device)); sendDevice(); }; // the server lists every device's settings
 const STAGE_DEFAULT = { desc: true, beats: true, times: true, next: true, notes: true, quick: true, lyrics: false };
 const stageShow = () => ({ ...STAGE_DEFAULT, ...(device.stage || {}) });
 let spokenSong = null;
@@ -664,7 +669,17 @@ function stopGuarded(cmd) {
 }
 
 // ---------- this device: name, view and lock, as seen by the server ----------
-function sendDevice() { send({ type: "device", name: device.name || "", view, locked: !!device.locked }); }
+// AbleSet's Device Settings: this browser's own settings, flattened, for the list in Opzioni
+function deviceSettings() {
+  const out = {};
+  for (const [k, v] of Object.entries(device)) {
+    if (["name", "view", "locked"].includes(k)) continue;
+    if (v && typeof v === "object") for (const [k2, v2] of Object.entries(v)) out[k + "." + k2] = v2;
+    else out[k] = v;
+  }
+  return out;
+}
+function sendDevice() { send({ type: "device", name: device.name || "", view, locked: !!device.locked, settings: deviceSettings() }); }
 function onDeviceCommand(msg) {
   if (msg.action === "showPage" && VIEW_NAMES[msg.view]) showView(msg.view);
   if (msg.action === "reload") location.reload();
@@ -717,6 +732,9 @@ function render() {
   $("bpm").textContent = Math.round(st.tempo || 0) + " BPM";
   $("btnPlay").textContent = st.is_playing ? "Playing" : "Play";
   $("btnPlay").classList.toggle("playing", !!st.is_playing);
+  // AbleSet: Sync Playback Now is disabled and says "Live is Playing" while playing
+  $("syncPlayback").disabled = !!st.is_playing;
+  $("syncPlayback").textContent = st.is_playing ? "Live sta suonando" : "Sincronizza ora";
   if (!stopArmed) $("btnStop").textContent = haltLabel();
   $("btnLoop").classList.toggle("on", !!st.loop);
   $("btnLoop").setAttribute("aria-pressed", String(!!st.loop));
@@ -1012,6 +1030,7 @@ async function debugFetch(url) {
   return r;
 }
 document.querySelectorAll("[data-tool]").forEach((b) => (b.onclick = () => send({ cmd: b.dataset.tool })));
+$("syncPlayback").onclick = () => send({ cmd: "syncPlayback" });
 $("logShow").onclick = async () => {
   try {
     const { lines } = await (await debugFetch("/api/logs")).json();
@@ -1252,6 +1271,7 @@ function renderSettings() {
   $("jumpMode").value = state.settings.jumpMode;
   $("countInBars").value = String(state.settings.countInBars);
   $("defaultView").value = state.settings.defaultView;
+  $("scene").value = state.settings.scene;
   $("openBrowser").value = state.settings.openBrowser;
   $("lastProject").textContent = state.lastProjectName ? `(${state.lastProjectName})` : "(prima carica un .als in «Progetto .als»)";
   $("midiStatus").textContent = midi.status;
@@ -1267,13 +1287,14 @@ function renderSettings() {
     <li><span class="on-dot" aria-hidden="true">●</span>
       <span class="mono">${esc(d.name || "senza nome")}</span> · ${esc(d.ip)}
       ${d.view ? " · " + esc(VIEW_NAMES[d.view] || d.view) : ""}${d.locked ? " · 🔒 bloccato" : ""}
-      ${d.latencyMs != null ? ` · ${d.latencyMs} ms` : ""}</li>`).join("") ||
+      ${d.latencyMs != null ? ` · ${d.latencyMs} ms` : ""}
+      ${Object.keys(d.settings || {}).length ? `<div class="dim mono dev-settings">${esc(Object.entries(d.settings).map(([k, v]) => `${k}: ${v}`).join(" · "))}</div>` : ""}</li>`).join("") ||
     "<li>Nessun dispositivo collegato.</li>";
   $("peerList").innerHTML = state.peers.map((p, i) => `
     <li><span class="${p.online ? "on-dot" : "off-dot"}" aria-hidden="true">●</span>
       <span class="mono">${esc(p.url)}</span>
       ${p.online
-        ? (p.connected ? `· Live connesso${p.song ? " · " + esc(p.song) : ""} · scarto ${p.drift} beat` : "· Live non connesso")
+        ? (p.connected ? `· ${p.scene === "backup" ? "riserva" : "principale"} · Live connesso${p.song ? " · " + esc(p.song) : ""} · scarto ${p.drift} beat` : "· Live non connesso")
         : "· non raggiungibile"}
       <button class="btn" data-peer-del="${i}" aria-label="Rimuovi ${esc(p.url)}">✕</button></li>`).join("") ||
     "<li>Nessun computer di riserva.</li>";
@@ -1322,7 +1343,7 @@ $("settings").addEventListener("change", (e) => {
   if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
   if (e.target.id === "jumpMode") send({ cmd: "settings", jumpMode: e.target.value });
   if (e.target.id === "countInBars") send({ cmd: "settings", countInBars: Number(e.target.value) });
-  if (e.target.id === "defaultView" || e.target.id === "openBrowser") send({ cmd: "settings", [e.target.id]: e.target.value });
+  if (["defaultView", "openBrowser", "scene"].includes(e.target.id)) send({ cmd: "settings", [e.target.id]: e.target.value });
   if (e.target.id === "devName") { device.name = e.target.value.trim(); saveDevice(); sendDevice(); }
   if (e.target.id === "devView") { device.view = e.target.value; saveDevice(); }
 });

@@ -31,6 +31,7 @@ const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
 const { validAuth, hashPassword, checkPassword, createLimiter } = require("./auth");
 const { createLog, liveLogFiles, liveLogLines } = require("./log");
+const { nudgeFor, syncTarget } = require("./ablenet");
 const { version: VERSION } = require("../package.json");
 
 // When packaged as a standalone executable (pkg), public/ and remote-script/
@@ -63,6 +64,7 @@ const SETTING_VALUES = {
   countInBars: [1, 2, 4],
   defaultView: ["setlist", "stage", "lyrics", "settings"],
   openBrowser: ["start", "live", "off"], // AbleSet: Open AbleSet on Start (when Live connects)
+  scene: ["main", "backup"], // AbleNet: Connected Scene
 };
 const validSetting = (k, v) => (SETTING_VALUES[k] ? SETTING_VALUES[k].includes(v) : typeof v === "boolean");
 
@@ -97,6 +99,9 @@ function defaultPrefs() {
       countInSoloClick: false,
       // Setlist
       removePlayed: false,
+      // AbleNet (this computer)
+      scene: "main",
+      driftCorrection: false,
     },
     saved: {},
     backups: [], // saved setlists replaced by a newer save: { name, at, data }, newest first
@@ -286,6 +291,12 @@ function start(opts = {}) {
     ].join("\n");
   }
 
+  // Live's position now: its last report moved on by the time since, when playing
+  function liveBeatNow() {
+    if (!liveState.is_playing) return liveState.beat;
+    return liveState.beat + ((Date.now() - lastLiveMsg) / 1000) * ((liveState.tempo || 120) / 60);
+  }
+
   // AbleSet: Open AbleSet on Start (once per run) and Always Open in a Floating Window
   let uiUrl = null;
   let uiOpened = false;
@@ -330,6 +341,7 @@ function start(opts = {}) {
     return {
       ...liveState,
       version: VERSION,
+      beatNow: liveBeatNow(), // for the drift between computers
       oscPort,
       liveIssues: liveIssues(),
       tempo,
@@ -535,7 +547,11 @@ function start(opts = {}) {
   // its own engine on the same set, and Ableton Link keeps the clocks together.
 
   const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword"]);
-  const peerStatus = new Map(); // url -> { url, online, connected, playing, song, drift }
+  const peerStatus = new Map(); // url -> { url, online, connected, playing, song, scene, drift }
+  const peerClock = new Map(); // url -> { beat, tempo, sigNum, sigDen, at }: where the peer was, and when
+  // the computer to follow: online, playing, the main one first
+  const leader = () =>
+    [...peerStatus.values()].filter((p) => p.online && p.connected && p.playing).sort((a, b) => (b.scene === "main") - (a.scene === "main"))[0];
 
   // source: "web" (browser, HTTP) or "osc". Safe Mode only limits the web app;
   // MIDI mapped in a browser and commands repeated from the main computer pass.
@@ -561,21 +577,34 @@ function start(opts = {}) {
     const before = JSON.stringify([...peerStatus]);
     for (const url of prefs.peers) {
       try {
+        const t0 = Date.now();
         const res = await fetch(url + "/api/state", { signal: AbortSignal.timeout(800) });
         const s = await res.json();
         const song = s.setlist && s.setlist[s.current];
+        const playing = !!s.is_playing;
+        // the peer's position when it answered, moved on by half the round trip
+        const half = (Date.now() - t0) / 2000;
+        const beat = (num(s.beatNow) ? s.beatNow : s.beat) + (playing ? half * ((s.tempo || 120) / 60) : 0);
+        const drift = beat - liveBeatNow(); // beats ahead of this computer
+        peerClock.set(url, { beat, tempo: s.tempo, sigNum: s.sig_num, sigDen: s.sig_den, at: Date.now(), drift });
         peerStatus.set(url, {
           url,
           online: true,
           connected: !!s.connected,
-          playing: !!s.is_playing,
+          playing,
           song: song ? song.name : "",
-          drift: Math.round((s.beat - liveState.beat) * 100) / 100, // beats ahead of this computer
+          scene: s.settings && s.settings.scene === "backup" ? "backup" : "main",
+          drift: Math.round(drift * 100) / 100,
         });
       } catch {
         peerStatus.set(url, { url, online: false });
+        peerClock.delete(url);
       }
     }
+    // AbleSet: Automatic Drift Correction, with Live's phase nudge
+    const lead = prefs.settings.driftCorrection && liveState.is_playing && leader();
+    const dir = lead && nudgeFor(peerClock.get(lead.url).drift);
+    if (dir) sendToLive({ cmd: "nudge", dir, ms: 200 });
     if (JSON.stringify([...peerStatus]) !== before) changed();
   }
   const peerTimer = setInterval(() => {
@@ -650,6 +679,16 @@ function start(opts = {}) {
       case "backToArrangement":
         sendToLive({ cmd: msg.cmd });
         return true;
+      case "syncPlayback": {
+        // AbleSet: Sync Playback Now, for a stopped computer while the others play
+        const lead = leader();
+        const clock = lead && peerClock.get(lead.url);
+        if (liveState.is_playing || !clock) return false;
+        const beat = clock.beat + ((Date.now() - clock.at) / 1000) * ((clock.tempo || 120) / 60);
+        sendToLive({ cmd: "seek", time: syncTarget(beat, clock.sigNum || 4, clock.sigDen || 4) });
+        sendToLive({ cmd: "play" });
+        return true;
+      }
       // AbleSet's Tools, run by the Remote Script on the open set
       case "setClipColorsFromNames":
         if (!liveState.connected) return false;
@@ -1161,7 +1200,7 @@ function start(opts = {}) {
     const ip = clientIp(req);
     ws.ip = ip;
     ws.authed = false;
-    devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null });
+    devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null, settings: {} });
     ws.on("pong", () => {
       const d = devices.get(ws);
       if (d && ws.pingAt) d.latencyMs = Date.now() - ws.pingAt; // shown with the next state update
@@ -1187,8 +1226,15 @@ function start(opts = {}) {
   });
 
   // what a browser tells about itself: its name, the view it shows, its lock
-  function deviceInfo(d, { name, view, locked }) {
+  function deviceInfo(d, { name, view, locked, settings }) {
     if (!d) return;
+    // AbleSet: Device Settings, every browser's own settings on one page (flat, small values only)
+    if (settings && typeof settings === "object" && !Array.isArray(settings))
+      d.settings = Object.fromEntries(
+        Object.entries(settings)
+          .filter(([k, v]) => /^[\w.-]{1,40}$/.test(k) && (typeof v === "boolean" || num(v) || (typeof v === "string" && v.length <= 64)))
+          .slice(0, 40)
+      );
     if (typeof name === "string" && name.length <= 64) d.name = name.trim();
     if (Object.values(VIEWS).includes(view)) d.view = view;
     if (typeof locked === "boolean") d.locked = locked;

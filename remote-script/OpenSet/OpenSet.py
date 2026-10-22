@@ -80,6 +80,7 @@ class OpenSet(ControlSurface):
         self._cues_sent = None    # last cues sent, resent only when they change
         self._clips_sent = None
         self._soloed = []         # tracks soloed for a count-in, unsoloed after it
+        self._nudge_ticks = 0     # ticks left with a phase nudge button held
         self._log("OpenSet script %s started (Live %s)" % (VERSION, self._live_version or "unknown"))
         if not self._cmd_port:
             self._log("OpenSet: port %d busy" % LISTEN_PORT)
@@ -101,6 +102,11 @@ class OpenSet(ControlSurface):
         if not self._alive:
             return
         self._poll_commands()
+        if self._nudge_ticks:
+            self._nudge_ticks -= 1
+            if not self._nudge_ticks:
+                self._song.nudge_up = False
+                self._song.nudge_down = False
         self._send_state()
         if self._ticks % CLIPS_EVERY == 0:
             self._send_clips()
@@ -251,6 +257,12 @@ class OpenSet(ControlSurface):
             self._clip_colors_from_names()
         elif cmd in ("placeSectionLocators", "removeSectionLocators"):
             self._section_locators(cmd == "placeSectionLocators")
+        elif cmd == "nudge":
+            # AbleNet drift correction: hold Live's phase nudge button for a moment
+            up = msg.get("dir") == "up"
+            s.nudge_up = up
+            s.nudge_down = not up
+            self._nudge_ticks = max(1, int(msg.get("ms", 200)) // TICK_MS)
         elif cmd == "clickSolo":
             self._click_solo(bool(msg.get("on")))
         elif cmd == "reEnableAutomation":
