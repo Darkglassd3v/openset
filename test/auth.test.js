@@ -1,6 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { createLimiter, createTokens } = require("../server/auth");
+const crypto = require("crypto");
+const { createLimiter, createTokens, hashPassword, checkPassword, checkProof, validAuth } = require("../server/auth");
 
 test("C3: wrong passwords are counted per IPv6 /64 network, not per address", () => {
   const l = createLimiter({ max: 2, ms: 1000, now: () => 0 });
@@ -42,4 +43,29 @@ test("C3: at most 200 unlock tokens are kept, the oldest one goes first", () => 
   const first = tokens.issue("10.0.0.1");
   for (let i = 0; i < 200; i++) tokens.issue("10.0.0.2");
   assert.equal(tokens.valid(first, "10.0.0.1"), false);
+});
+
+test("C3: the password is stored as a PBKDF2 key that a browser can compute too", async () => {
+  const a = hashPassword("palco-2026");
+  assert.match(a.salt, /^[0-9a-f]{32}$/);
+  assert.equal(a.iter, 25000);
+  assert.equal(a.key, crypto.pbkdf2Sync("palco-2026", Buffer.from(a.salt, "hex"), a.iter, 32, "sha256").toString("hex"));
+  assert.equal(validAuth(a), true);
+  assert.equal(await checkPassword(a, "palco-2026"), true);
+  assert.equal(await checkPassword(a, "palco-2027"), false);
+});
+
+test("C3: a proof is the HMAC of a one-time number with the key; a password saved by an older OpenSet still works", async () => {
+  const a = hashPassword("palco-2026");
+  const nonce = "ab".repeat(16);
+  const proof = crypto.createHmac("sha256", Buffer.from(a.key, "hex")).update(nonce).digest("hex");
+  assert.equal(checkProof(a, nonce, proof), true);
+  assert.equal(checkProof(a, "cd".repeat(16), proof), false);
+  assert.equal(checkProof(a, nonce, "00".repeat(32)), false);
+  assert.equal(checkProof(a, nonce, "zz"), false);
+  const salt = crypto.randomBytes(16).toString("hex");
+  const legacy = { salt, hash: crypto.scryptSync("palco-2026", Buffer.from(salt, "hex"), 32).toString("hex") };
+  assert.equal(validAuth(legacy), true);
+  assert.equal(await checkPassword(legacy, "palco-2026"), true);
+  assert.equal(checkProof(legacy, nonce, proof), false); // no key to prove with: the page sends the password once
 });

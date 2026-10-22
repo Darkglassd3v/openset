@@ -8,6 +8,7 @@ const zlib = require("zlib");
 const http = require("http");
 const net = require("net");
 const WebSocket = require("ws");
+const crypto = require("crypto");
 const { start } = require("../server/index");
 const { encode, decode } = require("../server/osc");
 
@@ -697,7 +698,7 @@ test("password: stored as a salted hash, never published, set only from this com
   assert.ok(!JSON.stringify(s).includes("palco-2026") && !("auth" in s));
   const saved = JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8"));
   assert.match(saved.auth.salt, /^[0-9a-f]{32}$/);
-  assert.match(saved.auth.hash, /^[0-9a-f]{64}$/);
+  assert.match(saved.auth.key, /^[0-9a-f]{64}$/);
   assert.ok(!fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8").includes("palco-2026"));
   // this computer keeps full control without the password
   assert.equal((await c.cmd({ cmd: "stop" })).status, 200);
@@ -2008,4 +2009,54 @@ test("C3: one address cannot open connections without limit, nor everyone togeth
   if (!LAN_IP) return;
   assert.ok((await open(LAN_IP)) instanceof WebSocket);
   assert.equal(await open(LAN_IP), 503); // 3 connections in all
+});
+
+// a browser on another device of the network, with the access messages it gets
+async function lanSocket(t, c) {
+  const ws = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
+  const msgs = [];
+  ws.on("message", (b) => msgs.push(JSON.parse(b)));
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  return { ws, send: (m) => ws.send(JSON.stringify(m)), access: (n) => waitFor(() => msgs.filter((m) => m.type === "access")[n], "access message " + n) };
+}
+
+test("C3: a device unlocks with a proof made from the password; the password itself never travels", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const b = await lanSocket(t, c);
+  const { challenge } = await b.access(0);
+  assert.match(challenge.salt, /^[0-9a-f]{32}$/);
+  assert.equal(challenge.iter, 25000);
+  assert.match(challenge.nonce, /^[0-9a-f]{32}$/);
+  const key = crypto.pbkdf2Sync("palco-2026", Buffer.from(challenge.salt, "hex"), challenge.iter, 32, "sha256");
+  const proof = (nonce) => crypto.createHmac("sha256", key).update(nonce).digest("hex");
+  b.send({ type: "auth", proof: "00".repeat(32) });
+  const wrong = await b.access(1);
+  assert.equal(wrong.control, false);
+  assert.notEqual(wrong.challenge.nonce, challenge.nonce); // a new number after every attempt
+  b.send({ type: "auth", proof: proof(challenge.nonce) }); // an old proof, replayed
+  const replayed = await b.access(2);
+  assert.equal(replayed.control, false);
+  b.send({ type: "auth", proof: proof(replayed.challenge.nonce) });
+  const ok = await b.access(3);
+  assert.equal(ok.control, true);
+  assert.match(ok.token, /^[0-9a-f]{64}$/);
+});
+
+test("C3: a password saved by an older OpenSet works once and is then stored the new way", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-legacy-"));
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync("palco-2026", Buffer.from(salt, "hex"), 32).toString("hex");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: { salt, hash } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const b = await lanSocket(t, c);
+  const first = await b.access(0);
+  assert.equal(first.passwordSet, true);
+  assert.equal(first.challenge, undefined); // no key yet: the page sends the password this one time
+  b.send({ type: "auth", password: "palco-2026" });
+  assert.equal((await b.access(1)).control, true);
+  await waitFor(() => JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth.key, "stored as a PBKDF2 key");
 });

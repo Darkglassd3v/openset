@@ -216,3 +216,18 @@ test("C2: two songs with the same name (a reprise) are edited one at a time", as
   await page.press('#setlist input.note[data-i="0"]', "Enter");
   await expect.poll(async () => (await openset.state()).setlist.map((s) => s.notes)).toEqual(["prima", "", ""]);
 });
+
+test("C3: unlocking sends a proof made from the password, never the password", async ({ page, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const sent = [];
+  page.on("websocket", (ws) => ws.on("framesent", (f) => sent.push(String(f.payload))));
+  await page.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.click("#authGo");
+  await expect(page.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  expect(sent.some((p) => p.includes('"proof"'))).toBe(true);
+  expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
+});
