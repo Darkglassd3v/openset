@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 fatto; in attesa degli altri revisori
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 fatto, A2 (UI) in corso; in attesa dei revisori di sicurezza, logica e ponytail-audit
 
 ## Da fare
 
@@ -89,7 +89,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ### Audit completo dopo W7, prima del rilascio W8 (richiesto dall'utente il 2026-10-22: i bug trovati si correggono nella 0.6.0)
 - Via libera dell'utente il 2026-10-22: audit, correzioni, commit, push, PR e merge (stato salvato anche con `/ecc:ck save`)
-- [ ] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP) + revisione della logica di riproduzione + revisione della UI (in corso, 4 agenti)
+- [ ] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP) + revisione della logica di riproduzione (in corso) + revisione della UI (fatta: A2)
 - [ ] `superpowers:systematic-debugging` sul bug della scaletta che sparisce, con il pacchetto log della 0.5.1 (in attesa del pacchetto)
 - [x] agente `ecc:python-reviewer` sul Remote Script (Python 3.7 di Live 11, API di Live): 13 punti, correzioni in A1
 
@@ -102,6 +102,26 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [ ] Verificare su Safari/iPad il tempo della prima connessione WebSocket: nel Chrome di test 1-2,4 s (da Node 8 ms, HTTP 3 ms)
 - [ ] prima di ogni merge `code-review` sulla PR; ai rilasci grossi `ecc:orch-review`
 - Un primo audit generico era partito in background ed è stato fermato su richiesta dell'utente (si rifà con queste skill)
+
+#### A2 — Interfaccia (revisione della UI in Chrome con un Live simulato; nessun XSS trovato)
+- Test della UI con Playwright (`@playwright/test`, Chrome di sistema `channel: "chrome"`, nessun browser scaricato), file `e2e/*.spec.js` (non presi da `node --test`), `npm run e2e`
+- [ ] RED `e2e/ui.spec.js` + `server.test.js`:
+  1. cambio di tempo in Live (rampa): scaletta e striscia non si ricostruiscono, il tocco su sezioni/brani e la nota in scrittura non si perdono, niente `/api/setlist-text` a ogni tick
+  2. WebSocket caduto: pallino spento, «OpenSet non raggiungibile…», comandi attenuati
+  3. Spazio = play/pausa anche dopo un clic su una scheda o un pulsante (il pulsante non tiene il focus)
+  4. incolla scaletta con password da un dispositivo sbloccato (manca `authHeaders()`)
+  5. token vecchio dopo un riavvio di OpenSet: non conta come tentativo sbagliato (server) e il client lo dimentica
+  6. vista all'apertura: vale per i dispositivi nuovi, non sostituisce l'ultima vista del dispositivo
+  7. niente `??`, `?.`, `inset` (iPad con iOS 12-14)
+  9. Opzioni (dispositivi, ridondanza, MIDI) non ricostruite per latenza e deriva
+  10. computer di riserva senza `http://` accettato; nome della scaletta salvata `maxlength=64`
+  11. testi: niente «Nessun testo» mentre caricano, errore di rete non resta in memoria
+  12. Safe Mode: il pulsante Pausa/Stop torna a aggiornarsi dopo una pressione non confermata
+  13. trascinare un brano in giù lo mette sopra la linea ambra
+  14. testi: «In riproduzione», «1 brano», errori del server in italiano, `scriptNote` per lo stato del Remote Script
+  16. ricerca: risposte arrivate in ritardo ignorate
+- [ ] GREEN: `public/index.html`, server (limitatore), più 8 (MIDI in una sola scheda con `navigator.locks`) e 15 (campi 16 px sui telefoni: niente zoom di Safari), senza test automatico
+- Non corretto: brani con lo stesso nome (ripresa) modificati insieme, perché il protocollo usa il nome (da rivedere con gli id)
 
 ### Esclusi (con motivo)
 Show in Dock e licenze (non applicabili); Multi-File Project, Delay Before
