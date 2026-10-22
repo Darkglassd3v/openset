@@ -81,6 +81,8 @@ class FakeSong(object):
         self.loop_length = 4.0
         self.clip_trigger_quantization = 4
         self.back_to_arranger = True
+        self.nudge_up = False
+        self.nudge_down = False
         self.cue_points = [FakeCue("Song B", 32.0), FakeCue("Song A", 0.0)]
         self.tracks = []
         self.calls = []
@@ -256,6 +258,16 @@ class OpenSetTest(unittest.TestCase):
         self.song.is_playing = True  # moving the playhead while playing: refused
         self.os._handle({"cmd": "placeSectionLocators"})
         self.assertEqual(cues(), [(0.0, "Song A"), (8.0, ">Chorus")])
+
+    def test_phase_nudge_is_held_for_a_while(self):
+        self.os._handle({"cmd": "nudge", "dir": "up", "ms": 200})
+        self.assertEqual((self.song.nudge_up, self.song.nudge_down), (True, False))
+        self.os._tick()
+        self.assertTrue(self.song.nudge_up)
+        self.os._tick()
+        self.assertEqual((self.song.nudge_up, self.song.nudge_down), (False, False))
+        self.os._handle({"cmd": "nudge", "dir": "down", "ms": 100})
+        self.assertEqual((self.song.nudge_up, self.song.nudge_down), (False, True))
 
     def test_cues_are_resent_only_when_they_change(self):
         self.received()

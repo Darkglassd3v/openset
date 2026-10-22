@@ -431,10 +431,21 @@ test("devices: connected browsers are listed with name, address, view and lock",
   const c = await setup(t);
   const tab = await browser(c, t, { name: "ipad-1, stage", view: "stage", locked: false });
   const listed = await waitFor(async () => (await c.state()).devices.find((d) => d.name === "ipad-1, stage"), "device");
-  assert.deepEqual({ ...listed, latencyMs: undefined }, { name: "ipad-1, stage", ip: "127.0.0.1", view: "stage", locked: false, latencyMs: undefined });
+  assert.deepEqual({ ...listed, latencyMs: undefined }, { name: "ipad-1, stage", ip: "127.0.0.1", view: "stage", locked: false, latencyMs: undefined, settings: {} });
   tab.ws.send(JSON.stringify({ type: "device", name: 7, view: "nowhere" })); // ignored
   tab.ws.close();
   await waitFor(async () => (await c.state()).devices.length === 0, "device gone");
+});
+
+test("Device Settings: each browser's own settings are listed on one page", async (t) => {
+  const c = await setup(t);
+  await browser(c, t, {
+    name: "ipad-1",
+    settings: { speakSongs: true, speakCount: false, "stage.lyrics": true, voice: "Alice", deep: { x: 1 }, "bad key!": true, long: "x".repeat(100) },
+  });
+  const d = await waitFor(async () => (await c.state()).devices.find((x) => x.name === "ipad-1" && x.settings.speakSongs), "device settings");
+  // flat booleans, numbers and short strings only
+  assert.deepEqual(d.settings, { speakSongs: true, speakCount: false, "stage.lyrics": true, voice: "Alice" });
 });
 
 test("devices: the latency to each browser is measured with WebSocket pings", async (t) => {
@@ -1029,6 +1040,48 @@ test("peers: commands are mirrored to a backup computer, once, without loops", a
   assert.equal(peer.drift, 0);
   await backup.srv.close();
   await waitFor(async () => !(await main.state()).peers[0].online, "peer offline");
+});
+
+test("AbleNet: connected scene, Sync Playback Now and Automatic Drift Correction", async (t) => {
+  const http = require("http");
+  // a fake main computer playing at 120 BPM; offset: its distance from this computer
+  let peer = { is_playing: true, beat: 33.5 };
+  const srv = http.createServer((_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ connected: true, tempo: 120, sig_num: 4, sig_den: 4, setlist: [], current: -1, settings: { scene: "main" }, ...peer }));
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  t.after(() => srv.close());
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect();
+  const s = (await c.state()).settings;
+  assert.deepEqual([s.scene, s.driftCorrection], ["main", false]);
+  assert.equal((await c.cmd({ cmd: "settings", scene: "spare" })).status, 400);
+  await c.cmd({ cmd: "settings", scene: "backup" });
+  await c.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${srv.address().port}`] });
+  await waitFor(async () => (await c.state()).peers[0]?.playing, "peer playing");
+  assert.equal((await c.state()).peers[0].scene, "main");
+
+  // Sync Playback Now: start from the next bar line the main computer reaches
+  const seek = c.expectCmd({ cmd: "seek", time: 36 });
+  const play = c.expectCmd({ cmd: "play" });
+  assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 200);
+  await seek;
+  await play;
+
+  // drift correction, off by default
+  const t0 = Date.now();
+  await c.at(40, { is_playing: true });
+  const follow = (offset) => (peer = { is_playing: true, get beat() { return 40 + ((Date.now() - t0) / 1000) * 2 + offset; } });
+  follow(0.3); // the main computer is ahead
+  await new Promise((r) => setTimeout(r, 200));
+  assert.ok(!c.cmds.some((x) => x.cmd === "nudge"));
+  await c.cmd({ cmd: "settings", driftCorrection: true });
+  await c.expectCmd({ cmd: "nudge", dir: "up" });
+  follow(-0.3);
+  await c.expectCmd({ cmd: "nudge", dir: "down" });
+  // already playing: nothing to sync
+  assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400);
 });
 
 test("peers: invalid lists are rejected", async (t) => {
