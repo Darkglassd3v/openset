@@ -14,7 +14,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ## In corso
 
-- [ ] v0.5.1 su `hotfix/v0.5.1` (da `main` 533df7a = tag v0.5.0 + TODO): V4 rilascio
+- [ ] v0.5.1 su `hotfix/v0.5.1` (da `main` 533df7a = tag v0.5.0 + TODO): V4 PR e CI
 
 ## Da fare
 
@@ -33,7 +33,8 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] GREEN: `server/log.js`, server (`/api/logs`, `/api/log-package`, eventi Live, errori invece di `catch {}` muti), CLI (log nel file, `[crash]` per eccezioni non gestite), Remote Script (`_log` verso OpenSet, una volta per errore ripetuto, `live_version`), UI Opzioni → Debug (Mostra log, Crea pacchetto log); provata nel browser con un Live simulato che tace
 
 #### V4 — Rilascio v0.5.1
-- [ ] Copertura ≥ 80%, CHANGELOG 0.5.1, guida PDF e `INSTALL-*.txt` («OpenSet e AbleSet insieme», «Diagnostica»), README, report TDD `docs/releases/0.5.1/`, versione 0.5.1 (anche `VERSION` in `OpenSet.py`), PR, CI verde (le build), merge
+- [x] Copertura (righe 99.23%, rami 93.22%), CHANGELOG 0.5.1, guida, INSTALL, README, report TDD, versione 0.5.1
+- [ ] PR verso `main`, CI verde (le build), merge commit; zip e PDF 0.5.1 in locale per l'utente
 - Spazio GitHub per gli artefatti esaurito (utente, 2026-10-22): niente tag che avvia `release.yml`; la CI deve solo provare le build; zip e PDF si producono in locale (`build/release-<versione>/`) e l'utente li distribuisce a mano
 
 ### v0.6.0 — impostazioni di AbleSet (branch `release/v0.6.0` da `main` dopo la 0.5.1)
