@@ -2,21 +2,45 @@
 // tempo, time signature and locators — usable offline, without Live running.
 const fs = require("fs");
 const zlib = require("zlib");
+const { isSectionsTrack } = require("./setlist");
 
-function parseAls(filePath) {
+// <Tag ...>…</Tag> blocks found with indexOf: /<Tag>[\s\S]*?<\/Tag>/ is quadratic on a
+// file full of unclosed tags, and a hostile .als could stall the server for minutes
+function blocks(xml, tag, max = Infinity) {
+  const out = [];
+  const close = `</${tag}>`;
+  let from = 0;
+  while (out.length < max) {
+    const start = xml.indexOf("<" + tag, from);
+    if (start < 0) break;
+    if (!/[\s>]/.test(xml[start + tag.length + 1] || "")) { // <Locators> is not <Locator>
+      from = start + 1;
+      continue;
+    }
+    const end = xml.indexOf(close, start);
+    if (end < 0) break;
+    out.push(xml.slice(start, end + close.length));
+    from = end + close.length;
+  }
+  return out;
+}
+
+// maxBytes: a real Live set is a few MB unpacked; a "zip bomb" is refused
+function parseAls(filePath, maxBytes = 64 << 20) {
   const raw = fs.readFileSync(filePath);
+  if (raw.length > maxBytes) throw new Error("File too big for a Live set");
   let xml;
   try {
-    xml = zlib.gunzipSync(raw).toString("utf-8");
-  } catch {
+    xml = zlib.gunzipSync(raw, { maxOutputLength: maxBytes }).toString("utf-8");
+  } catch (e) {
+    if (e.code === "ERR_BUFFER_TOO_LARGE" || e.code === "ERR_OUT_OF_RANGE") throw new Error("File too big for a Live set");
     xml = raw.toString("utf-8"); // some .als exports are plain XML
   }
 
   // --- Locators ---
   const locators = [];
   // Live writes list items with an Id attribute: <Locator Id="0">
-  const locatorBlocks = xml.match(/<Locator(?:\s[^>]*)?>[\s\S]*?<\/Locator>/g) || [];
-  for (const block of locatorBlocks) {
+  for (const block of blocks(xml, "Locator")) {
     const time = matchAttr(block, "Time");
     const name = matchAttr(block, "Name");
     if (time !== null) {
@@ -28,16 +52,23 @@ function parseAls(filePath) {
   // --- "Sections" and "+LYRICS" MIDI tracks: arrangement clips only ---
   // (session clips sit in ClipSlotList, arrangement ones in ArrangerAutomation)
   const tracks = [];
-  for (const block of xml.match(/<MidiTrack[\s>][\s\S]*?<\/MidiTrack>/g) || []) {
+  for (const block of blocks(xml, "MidiTrack")) {
     const name = matchAttr(block, "EffectiveName") || "";
-    if (!/^sections\b/i.test(name.trim()) && !name.includes("+LYRICS")) continue;
-    const arranger = block.match(/<ArrangerAutomation>[\s\S]*?<\/ArrangerAutomation>/);
+    if (!isSectionsTrack(name) && !name.includes("+LYRICS")) continue;
+    const arranger = blocks(block, "ArrangerAutomation", 1)[0];
     const clips = [];
-    for (const clip of (arranger && arranger[0].match(/<MidiClip[\s>][\s\S]*?<\/MidiClip>/g)) || []) {
+    for (const clip of arranger ? blocks(arranger, "MidiClip") : []) {
       const start = parseFloat(matchAttr(clip, "CurrentStart"));
       const end = parseFloat(matchAttr(clip, "CurrentEnd"));
+      // Live 11+ writes <Color>, Live 10 <ColorIndex>
+      const color = parseInt(matchAttr(clip, "Color") ?? matchAttr(clip, "ColorIndex"), 10);
       if (Number.isFinite(start))
-        clips.push({ name: matchAttr(clip, "Name") || "", start, end: Number.isFinite(end) ? end : start });
+        clips.push({
+          name: matchAttr(clip, "Name") || "",
+          start,
+          end: Number.isFinite(end) ? end : start,
+          ...(Number.isInteger(color) && { color }),
+        });
     }
     clips.sort((a, b) => a.start - b.start);
     tracks.push({ name, clips });
@@ -45,8 +76,8 @@ function parseAls(filePath) {
 
   // Every track's Mixer has <Tempo>/<TimeSignature>; only the master's count
   // (MasterTrack, called MainTrack since Live 12).
-  const master = (xml.match(/<(MasterTrack|MainTrack)[\s>][\s\S]*?<\/\1>/) || [xml])[0];
-  const tempoEl = (master.match(/<Tempo>[\s\S]*?<\/Tempo>/) || [""])[0];
+  const master = blocks(xml, "MasterTrack", 1)[0] || blocks(xml, "MainTrack", 1)[0] || xml;
+  const tempoEl = blocks(master, "Tempo", 1)[0] || "";
 
   // --- Tempo (Manual tempo value of the master) ---
   let tempo = null;
@@ -64,7 +95,7 @@ function parseAls(filePath) {
   let tempoMap = null;
   const target = tempoEl.match(/<AutomationTarget Id="(\d+)"/);
   if (target) {
-    for (const env of xml.match(/<AutomationEnvelope[\s>][\s\S]*?<\/AutomationEnvelope>/g) || []) {
+    for (const env of blocks(xml, "AutomationEnvelope")) {
       if (matchAttr(env, "PointeeId") !== target[1]) continue;
       const points = [];
       for (const m of env.matchAll(/<FloatEvent[^>]*Time="([^"]+)"[^>]*Value="([^"]+)"/g)) {

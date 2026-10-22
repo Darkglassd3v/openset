@@ -13,7 +13,9 @@ OUT="build/release-$VERSION"
 mkdir -p "$OUT"
 npm test
 python3 -m unittest discover -s remote-script/tests
-# OpenSet icon and version in the Windows program (patches pkg's base binary)
+# OpenSet icon and version in the Windows program (patches pkg's base binary).
+# The binary patched by an earlier build goes first, or pkg-fetch would reuse it
+rm -f "${PKG_CACHE_PATH:-$HOME/.pkg-cache}"/v3.4/built-v18*-win-x64
 npx -y pkg-fetch@3.4.2 -n node18 -p win -a x64
 npm install --no-save resedit@3.1.0
 node scripts/win-icon.mjs

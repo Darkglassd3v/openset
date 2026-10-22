@@ -89,6 +89,21 @@ test("parseAls: clips of the Sections and +LYRICS tracks", () => {
   ]);
 });
 
+test("parseAls: clip colors and the +SECTIONS flag", () => {
+  const xml = `<Ableton><LiveSet><Tracks>
+    <MidiTrack Id="1"><Name><EffectiveName Value="Markers +SECTIONS +CC" /></Name>
+      <DeviceChain><MainSequencer><ClipTimeable><ArrangerAutomation><Events>
+        <MidiClip Id="0" Time="0"><CurrentStart Value="0" /><CurrentEnd Value="8" /><Name Value="Verse" /><Color Value="23" /></MidiClip>
+        <MidiClip Id="1" Time="8"><CurrentStart Value="8" /><CurrentEnd Value="16" /><Name Value="Chorus" /><ColorIndex Value="9" /></MidiClip>
+      </Events></ArrangerAutomation></ClipTimeable></MainSequencer></DeviceChain>
+    </MidiTrack>
+  </Tracks></LiveSet></Ableton>`;
+  const res = parseAls(write("colors.als", zlib.gzipSync(xml)));
+  assert.deepEqual(res.tracks, [
+    { name: "Markers +SECTIONS +CC", clips: [{ name: "Verse", start: 0, end: 8, color: 23 }, { name: "Chorus", start: 8, end: 16, color: 9 }] },
+  ]);
+});
+
 test("parseAls: no tracks section gives an empty list", () => {
   assert.deepEqual(parseAls(write("none.als", zlib.gzipSync(XML))).tracks, []);
 });
@@ -140,4 +155,15 @@ test("parseAls: no tempo automation means no tempo map", () => {
 
 test("parseAls: missing file throws", () => {
   assert.throws(() => parseAls(path.join(tmp, "nope.als")), /ENOENT/);
+});
+
+test("parseAls: a decompression bomb is refused, unclosed tags stay fast (audit A3)", () => {
+  const bomb = path.join(tmp, "bomb.als");
+  fs.writeFileSync(bomb, zlib.gzipSync(Buffer.alloc(3 << 20)));
+  assert.throws(() => parseAls(bomb, 2 << 20), /too big/);
+  const open = path.join(tmp, "open.als");
+  fs.writeFileSync(open, zlib.gzipSync("<Locator>".repeat(80000) + "<MidiTrack>".repeat(20000)));
+  const t0 = Date.now();
+  assert.deepEqual(parseAls(open).locators, []);
+  assert.ok(Date.now() - t0 < 1000, `took ${Date.now() - t0} ms`);
 });

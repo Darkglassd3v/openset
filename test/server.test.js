@@ -5,6 +5,8 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const zlib = require("zlib");
+const http = require("http");
+const net = require("net");
 const WebSocket = require("ws");
 const { start } = require("../server/index");
 const { encode, decode } = require("../server/osc");
@@ -164,6 +166,262 @@ test("Live is marked offline after a silence, the setlist stays", async (t) => {
   assert.deepEqual(s.liveIssues, ["live-silent"]);
 });
 
+test("playback settings: Restart Song Before Jumping Back, pause and Stop by Default Instead of Pausing", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  assert.equal((await c.state()).settings.restartBeforeBack, true);
+  await c.at(50); // in Perché (40-72)
+  let j = c.expectCmd({ cmd: "jump", time: 40 }); // default: back to the song start first
+  await c.cmd({ cmd: "prev" });
+  await j;
+  await c.cmd({ cmd: "settings", restartBeforeBack: false });
+  j = c.expectCmd({ cmd: "jump", time: 0 }); // straight to the previous song
+  await c.cmd({ cmd: "prev" });
+  await j;
+
+  // pause keeps the position: Live's Stop goes back to the start marker
+  await c.at(50, { is_playing: true });
+  let stop = c.expectCmd({ cmd: "stop" });
+  let seek = c.expectCmd({ cmd: "seek", time: 50 });
+  await c.cmd({ cmd: "pause" });
+  await stop;
+  await seek;
+  // playPause (Space): pause by default…
+  stop = c.expectCmd({ cmd: "stop" });
+  seek = c.expectCmd({ cmd: "seek", time: 50 });
+  await c.cmd({ cmd: "playPause" });
+  await stop;
+  await seek;
+  // …stop with Stop by Default Instead of Pausing
+  await c.cmd({ cmd: "settings", stopInsteadOfPause: true });
+  const from = c.cmds.length;
+  stop = c.expectCmd({ cmd: "stop" });
+  await c.cmd({ cmd: "playPause" });
+  await stop;
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "seek"));
+  await c.at(50, { is_playing: false });
+  const play = c.expectCmd({ cmd: "play" });
+  await c.cmd({ cmd: "playPause" });
+  await play;
+});
+
+test("playback settings: Disable Loop When Jumping, automation and arrangement on song jumps", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const s = (await c.state()).settings;
+  assert.deepEqual([s.disableLoopOnJump, s.reEnableAutomation, s.backToArrangement, s.keepPlayingQueued], [true, false, false, false]);
+  await c.at(10, { loop: true });
+  const off = c.expectCmd({ cmd: "loop", on: false });
+  await c.cmd({ cmd: "next" });
+  await off;
+  await c.cmd({ cmd: "settings", disableLoopOnJump: false, reEnableAutomation: true, backToArrangement: true });
+  let from = c.cmds.length;
+  const re = c.expectCmd({ cmd: "reEnableAutomation" });
+  const back = c.expectCmd({ cmd: "backToArrangement" });
+  await c.cmd({ cmd: "next" });
+  await re;
+  await back;
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "loop"));
+  // a section jump is not a song jump
+  from = c.cmds.length;
+  const sec = c.expectCmd({ cmd: "jump", time: 16 });
+  await c.cmd({ cmd: "section", index: 1 });
+  await sec;
+  await new Promise((r) => setTimeout(r, 100));
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "reEnableAutomation" || x.cmd === "backToArrangement"));
+});
+
+test("OSC: pause, playPause, reEnableAutomation and backToArrangement", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.at(50, { is_playing: true });
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  for (const [address, want] of [
+    ["/global/pause", { cmd: "seek", time: 50 }],
+    ["/global/playPause", { cmd: "seek", time: 50 }],
+    ["/global/reEnableAutomation", { cmd: "reEnableAutomation" }],
+    ["/global/backToArrangement", { cmd: "backToArrangement" }],
+  ]) {
+    const got = c.expectCmd(want);
+    sendOsc(c, osc, address, []);
+    await got;
+  }
+});
+
+test("Section Count-In: playback starts bars before the section, the click soloed meanwhile", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const s = (await c.state()).settings;
+  assert.deepEqual([s.countIn, s.countInBars, s.countInSoloClick], [false, 1, false]);
+  assert.equal((await c.cmd({ cmd: "settings", countInBars: 3 })).status, 400); // 1, 2 or 4 bars
+  await c.cmd({ cmd: "settings", countIn: true, countInBars: 2, countInSoloClick: true });
+  let seek = c.expectCmd({ cmd: "seek", time: 8 }); // Chorus at 16, two 4/4 bars earlier
+  let solo = c.expectCmd({ cmd: "clickSolo", on: true });
+  const play = c.expectCmd({ cmd: "play" });
+  await c.cmd({ cmd: "section", index: 1 });
+  await seek;
+  await solo;
+  await play;
+  // the click goes back to normal when the section starts…
+  let unsolo = c.expectCmd({ cmd: "clickSolo", on: false });
+  await c.at(12, { is_playing: true });
+  await c.at(16.1, { is_playing: true });
+  await unsolo;
+  // …or when playback stops during the count-in
+  await c.at(16.1, { is_playing: false });
+  solo = c.expectCmd({ cmd: "clickSolo", on: true });
+  await c.cmd({ cmd: "section", index: 1 });
+  await solo;
+  unsolo = c.expectCmd({ cmd: "clickSolo", on: false });
+  await c.at(9, { is_playing: true });
+  await c.at(9.5, { is_playing: false });
+  await unsolo;
+});
+
+test("Section Count-In: not while playing, never before the start of the set", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "settings", countIn: true, countInBars: 4 });
+  const seek = c.expectCmd({ cmd: "seek", time: 0 }); // Verse at 8: four bars earlier would be -8
+  await c.cmd({ cmd: "section", index: 0 });
+  await seek;
+  await c.at(20, { is_playing: true });
+  const j = c.expectCmd({ cmd: "jump", time: 8 });
+  await c.cmd({ cmd: "section", index: 0 });
+  await j;
+});
+
+test("Remove Played Songs Automatically: a song played to its end leaves the setlist", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  assert.equal((await c.state()).settings.removePlayed, false);
+  await c.cmd({ cmd: "settings", removePlayed: true });
+  await c.at(31.9, { is_playing: true }); // Intro Song ends with STOP at 32
+  const stop = c.expectCmd({ cmd: "stop" });
+  const next = c.expectCmd({ cmd: "jump", time: 40 });
+  await c.at(32.1, { is_playing: true });
+  await stop;
+  await next;
+  await waitFor(async () => (await c.state()).setlist.find((s) => s.name === "Intro Song").skip, "Intro Song removed");
+  assert.ok(!c.cmds.some((x) => x.cmd === "played")); // OpenSet's own marker, never sent to Live
+});
+
+test("Tools (AbleSet): clip colors from names, place and remove section locators", async (t) => {
+  const c = await setup(t);
+  const tools = ["setClipColorsFromNames", "placeSectionLocators", "removeSectionLocators"];
+  assert.equal((await c.cmd({ cmd: tools[0] })).status, 400); // Live is not connected
+  await c.connect();
+  for (const cmd of tools) {
+    const got = c.expectCmd({ cmd });
+    assert.equal((await c.cmd({ cmd })).status, 200);
+    await got;
+  }
+  // the locator tools move Live's playhead: not while playing
+  await c.at(10, { is_playing: true });
+  assert.equal((await c.cmd({ cmd: "placeSectionLocators" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "removeSectionLocators" })).status, 400);
+});
+
+test("General settings: default view, when to open the browser, floating window", async (t) => {
+  const opened = [];
+  const c = await setup(t, { openBrowser: (url, opts) => opened.push([url, opts]) });
+  const s = (await c.state()).settings;
+  assert.deepEqual([s.defaultView, s.openBrowser, s.floatingWindow, s.autoLaunchLive], ["setlist", "start", false, false]);
+  assert.deepEqual(opened, [[`http://localhost:${c.srv.httpPort}`, { app: false }]]); // "start": right away
+  assert.equal((await c.cmd({ cmd: "settings", defaultView: "kitchen" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "settings", openBrowser: "sometimes" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "settings", defaultView: "stage", openBrowser: "off" })).status, 200);
+});
+
+test("Open on Start: with 'live' the browser opens once, when Live connects", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-open-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ settings: { openBrowser: "live", floatingWindow: true } }));
+  const opened = [];
+  const c = await setup(t, { baseDir, openBrowser: (url, opts) => opened.push([url, opts]) });
+  assert.deepEqual(opened, []);
+  await c.connect();
+  await waitFor(() => opened.length === 1, "browser opened");
+  assert.deepEqual(opened[0], [`http://localhost:${c.srv.httpPort}`, { app: true }]);
+  await c.at(12);
+  assert.equal(opened.length, 1);
+});
+
+test("Auto-Launch the Last Live Project: the last .als opens when Live is not running", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-launch-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const als = path.join(baseDir, "Show.als");
+  fs.writeFileSync(als, "x");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ lastProject: als, settings: { autoLaunchLive: true } }));
+  const files = [];
+  const c = await setup(t, { baseDir, liveRunning: () => false, openFile: (f) => files.push(f) });
+  assert.deepEqual(files, [als]);
+  assert.equal((await c.state()).lastProjectName, "Show.als");
+  const busy = [];
+  await setup(t, { baseDir, liveRunning: () => true, openFile: (f) => busy.push(f) }); // Live already open
+  assert.deepEqual(busy, []);
+});
+
+test("menu (AbleSet): open, folder, hostname, Remote Script and quit, from this computer only", async (t) => {
+  const calls = [];
+  const c = await setup(t, {
+    openBrowser: (url, opts) => calls.push(["browser", url, opts]),
+    openFile: (f) => calls.push(["file", f]),
+    installScript: () => ({ status: "updated", path: "/x/Remote Scripts/OpenSet" }),
+    quit: () => calls.push(["quit"]),
+    platform: "darwin",
+  });
+  calls.length = 0; // the browser opened at start
+  const host = (action, body = {}) =>
+    fetch(c.url("/api/host/" + action), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await host("open", { app: true })).status, 200);
+  assert.equal((await host("folder")).status, 200);
+  assert.equal((await host("hostname")).status, 200);
+  const installed = await host("installScript");
+  assert.deepEqual(await installed.json(), { status: "updated", path: "/x/Remote Scripts/OpenSet" });
+  assert.deepEqual((await c.state()).scriptInstall, { status: "updated", path: "/x/Remote Scripts/OpenSet" });
+  assert.equal((await host("nope")).status, 404);
+  assert.equal((await host("quit")).status, 200);
+  await waitFor(() => calls.some((x) => x[0] === "quit"), "quit");
+  assert.deepEqual(calls, [
+    ["browser", `http://localhost:${c.srv.httpPort}`, { app: true }],
+    ["file", c.baseDir],
+    ["file", "x-apple.systempreferences:com.apple.Sharing-Settings.extension"],
+    ["quit"],
+  ]);
+  if (LAN_IP) assert.equal((await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/host/quit`, { method: "POST" })).status, 403);
+});
+
+test("Check for Updates: this version against the latest release", async (t) => {
+  const version = require("../package.json").version;
+  const url = "https://github.com/Darkglassd3v/openset/releases/tag/v99.0.0";
+  const c = await setup(t, { latestRelease: async () => ({ tag: "v99.0.0", url }) });
+  assert.deepEqual(await (await fetch(c.url("/api/update"))).json(), { current: version, latest: "99.0.0", newer: true, url });
+  const same = await setup(t, { latestRelease: async () => ({ tag: "v" + version, url }) });
+  assert.equal((await (await fetch(same.url("/api/update"))).json()).newer, false);
+  const off = await setup(t, { latestRelease: async () => { throw new Error("offline"); } });
+  assert.match((await (await fetch(off.url("/api/update"))).json()).error, /offline/);
+});
+
+test("Preferred Network: addresses and QR codes of the chosen network", async (t) => {
+  const interfaces = {
+    en0: [{ family: "IPv4", internal: false, address: "192.168.1.50" }],
+    en5: [{ family: "IPv4", internal: false, address: "10.0.0.7" }],
+  };
+  const c = await setup(t, { netInfo: () => ({ platform: "linux", hostname: null, interfaces }) });
+  const connect = async () => (await fetch(c.url("/api/connect"))).json();
+  let r = await connect();
+  assert.equal(r.urls.length, 2);
+  assert.deepEqual(r.networks, [{ name: "en0", address: "192.168.1.50" }, { name: "en5", address: "10.0.0.7" }]);
+  assert.equal((await c.state()).settings.network, "");
+  await c.cmd({ cmd: "settings", network: "en5" });
+  r = await connect();
+  assert.deepEqual(r.urls.map((u) => u.url), [`http://10.0.0.7:${c.srv.httpPort}`]);
+  assert.equal((await c.cmd({ cmd: "settings", network: 5 })).status, 400);
+});
+
 test("debug logs: Live connection events, file log and log package", async (t) => {
   const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();
@@ -233,10 +491,21 @@ test("devices: connected browsers are listed with name, address, view and lock",
   const c = await setup(t);
   const tab = await browser(c, t, { name: "ipad-1, stage", view: "stage", locked: false });
   const listed = await waitFor(async () => (await c.state()).devices.find((d) => d.name === "ipad-1, stage"), "device");
-  assert.deepEqual({ ...listed, latencyMs: undefined }, { name: "ipad-1, stage", ip: "127.0.0.1", view: "stage", locked: false, latencyMs: undefined });
+  assert.deepEqual({ ...listed, latencyMs: undefined }, { name: "ipad-1, stage", ip: "127.0.0.1", view: "stage", locked: false, latencyMs: undefined, settings: {} });
   tab.ws.send(JSON.stringify({ type: "device", name: 7, view: "nowhere" })); // ignored
   tab.ws.close();
   await waitFor(async () => (await c.state()).devices.length === 0, "device gone");
+});
+
+test("Device Settings: each browser's own settings are listed on one page", async (t) => {
+  const c = await setup(t);
+  await browser(c, t, {
+    name: "ipad-1",
+    settings: { speakSongs: true, speakCount: false, "stage.lyrics": true, voice: "Alice", deep: { x: 1 }, "bad key!": true, long: "x".repeat(100) },
+  });
+  const d = await waitFor(async () => (await c.state()).devices.find((x) => x.name === "ipad-1" && x.settings.speakSongs), "device settings");
+  // flat booleans, numbers and short strings only
+  assert.deepEqual(d.settings, { speakSongs: true, speakCount: false, "stage.lyrics": true, voice: "Alice" });
 });
 
 test("devices: the latency to each browser is measured with WebSocket pings", async (t) => {
@@ -488,6 +757,27 @@ test("password: other devices need it to give commands; wrong guesses are slowed
   assert.equal((await post("/api/cmd", { cmd: "next" }, { "X-OpenSet-Password": "palco-2026" })).status, 429);
 });
 
+test("password: an old token after an OpenSet restart is not a wrong password", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const ws = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
+  const msgs = [];
+  ws.on("message", (b) => msgs.push(JSON.parse(b)));
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  const access = (n) => waitFor(() => msgs.filter((m) => m.type === "access")[n], "access message " + n);
+  await access(0);
+  // a browser reconnecting after each restart or Wi-Fi blip sends its old token again and again
+  for (let i = 1; i <= 6; i++) {
+    ws.send(JSON.stringify({ type: "auth", token: "f".repeat(64) }));
+    const a = await access(i);
+    assert.equal(a.control, false);
+    assert.equal(a.tokenRejected, true); // the browser forgets it
+  }
+  ws.send(JSON.stringify({ type: "auth", password: "palco-2026" }));
+  assert.equal((await access(7)).control, true);
+});
+
 test("HTTP /api/cmd: valid, invalid and unknown commands", async (t) => {
   const c = await setup(t);
   await c.connect();
@@ -730,8 +1020,10 @@ test("/api/load-als works from this computer only", async (t) => {
   const s = await c.state();
   assert.equal(s.offline, true);
   assert.deepEqual(s.setlist.map((x) => x.name), ["Uno", "Due"]);
+  assert.equal(s.lastProjectName, "show.als"); // for Auto-Launch the Last Live Project
+  assert.equal(JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8")).lastProject, file);
   assert.equal((await post(c.url("/api/load-als"), {})).status, 400);
-  assert.equal((await post(c.url("/api/load-als"), { file: file + ".nope" })).status, 500);
+  assert.equal((await post(c.url("/api/load-als"), { file: path.join(c.baseDir, "missing.als") })).status, 500);
   if (LAN_IP) {
     const lan = await post(`http://${LAN_IP}:${c.srv.httpPort}/api/load-als`, { file });
     assert.equal(lan.status, 403);
@@ -831,6 +1123,48 @@ test("peers: commands are mirrored to a backup computer, once, without loops", a
   await waitFor(async () => !(await main.state()).peers[0].online, "peer offline");
 });
 
+test("AbleNet: connected scene, Sync Playback Now and Automatic Drift Correction", async (t) => {
+  const http = require("http");
+  // a fake main computer playing at 120 BPM; offset: its distance from this computer
+  let peer = { is_playing: true, beat: 33.5 };
+  const srv = http.createServer((_req, res) => {
+    res.setHeader("Content-Type", "application/json");
+    res.end(JSON.stringify({ connected: true, tempo: 120, sig_num: 4, sig_den: 4, setlist: [], current: -1, settings: { scene: "main" }, ...peer }));
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  t.after(() => srv.close());
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect();
+  const s = (await c.state()).settings;
+  assert.deepEqual([s.scene, s.driftCorrection], ["main", false]);
+  assert.equal((await c.cmd({ cmd: "settings", scene: "spare" })).status, 400);
+  await c.cmd({ cmd: "settings", scene: "backup" });
+  await c.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${srv.address().port}`] });
+  await waitFor(async () => (await c.state()).peers[0]?.playing, "peer playing");
+  assert.equal((await c.state()).peers[0].scene, "main");
+
+  // Sync Playback Now: start from the next bar line the main computer reaches
+  const seek = c.expectCmd({ cmd: "seek", time: 36 });
+  const play = c.expectCmd({ cmd: "play" });
+  assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 200);
+  await seek;
+  await play;
+
+  // drift correction, off by default
+  const t0 = Date.now();
+  await c.at(40, { is_playing: true });
+  const follow = (offset) => (peer = { is_playing: true, get beat() { return 40 + ((Date.now() - t0) / 1000) * 2 + offset; } });
+  follow(0.3); // the main computer is ahead
+  await new Promise((r) => setTimeout(r, 200));
+  assert.ok(!c.cmds.some((x) => x.cmd === "nudge"));
+  await c.cmd({ cmd: "settings", driftCorrection: true });
+  await c.expectCmd({ cmd: "nudge", dir: "up" });
+  follow(-0.3);
+  await c.expectCmd({ cmd: "nudge", dir: "down" });
+  // already playing: nothing to sync
+  assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400);
+});
+
 test("peers: invalid lists are rejected", async (t) => {
   const c = await setup(t);
   for (const urls of [["ftp://x"], ["http://a b"], [1], "http://x", Array(9).fill("http://10.0.0.1:39080")])
@@ -902,6 +1236,16 @@ test("lyrics: JSON files with accented names and Live +LYRICS tracks", async (t)
   res = await fetch(c.url("/api/lyrics/Intro%20Song"));
   assert.equal(res.status, 200);
   assert.deepEqual((await res.json()).lines[0].segments, [{ chord: "Bm", text: "Ciao" }]);
+
+  // the Remote Script resends the same clips every ~10 s: the lyrics on screen must not reload
+  const same = (await c.state()).lyricsRev;
+  c.sendLive({
+    type: "clips",
+    tracks: [{ name: "Vox +LYRICS [+2]", clips: [{ name: "[Am]Ciao", start: 0, end: 4 }] }],
+  });
+  c.sendLive({ ...LIVE, tempo: 97 });
+  await waitFor(async () => (await c.state()).tempo === 97, "state after the clips");
+  assert.equal((await c.state()).lyricsRev, same);
 });
 
 test("a busy HTTP or Live state port rejects start() instead of crashing", async (t) => {
@@ -1126,7 +1470,8 @@ test("prefs: a corrupt setlist.json falls back to defaults, an unwritable one is
   );
   const c = await setup(t, { baseDir });
   const s = await c.state();
-  assert.deepEqual(s.settings, { alwaysStop: true, autoJump: true, autoplay: false, jumpMode: "quantized", safeMode: false });
+  const { alwaysStop, autoJump, autoplay, jumpMode, safeMode } = s.settings; // valid values kept, bad ones dropped
+  assert.deepEqual({ alwaysStop, autoJump, autoplay, jumpMode, safeMode }, { alwaysStop: true, autoJump: true, autoplay: false, jumpMode: "quantized", safeMode: false });
   assert.deepEqual(s.saved, []);
   assert.deepEqual(s.midi, []);
 
@@ -1172,4 +1517,363 @@ test("CLI: a busy port prints a hint and exits with 1", async (t) => {
   assert.match(stderr, /OpenSet cannot start: .*EADDRINUSE.*already running/);
   // the version is the first thing printed at start-up
   assert.equal(stdout.split(/\r?\n/)[0], `OpenSet ${require("../package.json").version}`);
+});
+
+// ---------------- audit 0.6.0: security (A3) ----------------
+
+const pause = (ms) => new Promise((r) => setTimeout(r, ms));
+
+test("A3: a malformed or huge WebSocket frame closes that socket, not OpenSet", async (t) => {
+  const c = await setup(t);
+  const sock = net.connect(c.srv.httpPort, "127.0.0.1");
+  t.after(() => sock.destroy());
+  await new Promise((r) => sock.once("connect", r));
+  sock.write(
+    "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+  );
+  await new Promise((r) => sock.once("data", r)); // 101 Switching Protocols
+  sock.write(Buffer.from([0x83, 0x80, 0, 0, 0, 0])); // reserved opcode 3
+  await pause(100);
+  assert.equal((await fetch(c.url("/api/state"))).status, 200);
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  t.after(() => ws.terminate());
+  await new Promise((r) => ws.once("open", r));
+  ws.on("error", () => {});
+  const closed = new Promise((r) => ws.once("close", r));
+  ws.send("x".repeat(300 * 1024));
+  assert.equal(await closed, 1009); // message too big
+  assert.equal((await fetch(c.url("/api/state"))).status, 200);
+});
+
+function rawRequest(port, { method = "GET", path: p = "/", headers = {}, body = "" }) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: "127.0.0.1", port, method, path: p, headers }, (res) => {
+      res.resume();
+      res.on("end", () => resolve(res));
+    });
+    req.on("error", reject);
+    req.end(body);
+  });
+}
+
+test("A3: other web sites and DNS rebinding get no trust from this computer", async (t) => {
+  const opened = [];
+  const c = await setup(t, { openFile: (f) => opened.push(f) });
+  const json = { "Content-Type": "application/json" };
+  // a page on another site posting to localhost (CSRF)
+  let res = await rawRequest(c.srv.httpPort, { method: "POST", path: "/api/host/folder", headers: { ...json, Origin: "http://evil.example" }, body: "{}" });
+  assert.equal(res.statusCode, 403);
+  assert.deepEqual(opened, []);
+  // a rebound name pointing at 127.0.0.1 is not "this computer"
+  res = await rawRequest(c.srv.httpPort, { method: "POST", path: "/api/host/folder", headers: { ...json, Host: "evil.example:" + c.srv.httpPort }, body: "{}" });
+  assert.equal(res.statusCode, 403);
+  assert.deepEqual(opened, []);
+  // the app itself still works: same origin, or no Origin (curl, Companion)
+  res = await rawRequest(c.srv.httpPort, { method: "POST", path: "/api/host/folder", headers: { ...json, Origin: `http://127.0.0.1:${c.srv.httpPort}`, Host: `127.0.0.1:${c.srv.httpPort}` }, body: "{}" });
+  assert.equal(res.statusCode, 200);
+  assert.equal((await fetch(c.url("/"))).headers.get("x-frame-options"), "DENY");
+  // cross-site WebSocket
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`, { origin: "http://evil.example" });
+  const status = await new Promise((r) => {
+    ws.once("unexpected-response", (_req, resp) => r(resp.statusCode));
+    ws.once("open", () => r("open"));
+    ws.once("error", () => r("error"));
+  });
+  ws.terminate();
+  assert.equal(status, 403);
+});
+
+test("A3: passwords of at least 6 characters; parallel guesses are all counted", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "abcde" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "palco-2026" })).status, 200);
+  const guesses = await Promise.all(
+    Array.from({ length: 20 }, (_, i) =>
+      fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-OpenSet-Password": "guess" + i },
+        body: JSON.stringify({ cmd: "stop" }),
+      }).then((r) => r.status)
+    )
+  );
+  assert.ok(guesses.filter((s) => s === 429).length >= 15, String(guesses));
+});
+
+test("A3: OSC answers only the address that asks, 4 subscriptions per address, 64 messages per packet", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const lan = await udpSocket(LAN_IP);
+  const victim = await udpSocket("127.0.0.1");
+  const ports = await Promise.all(Array.from({ length: 6 }, () => udpSocket(LAN_IP)));
+  t.after(() => [lan, victim, ...ports].forEach((s) => s.close()));
+  const toServer = (buf) => lan.send(buf, c.srv.udpPort, LAN_IP);
+  let reflected = 0;
+  victim.on("message", () => reflected++);
+  toServer(encode("/getValues", ["127.0.0.1", victim.address().port]));
+  toServer(encode("/subscribe", ["127.0.0.1", victim.address().port]));
+  await pause(200);
+  await c.at(50);
+  await pause(200);
+  assert.equal(reflected, 0); // a LAN device cannot point OpenSet at someone else
+
+  const counts = ports.map(() => 0);
+  ports.forEach((s, i) => s.on("message", () => counts[i]++));
+  for (const s of ports) {
+    toServer(encode("/subscribe", [LAN_IP, s.address().port]));
+    await pause(20);
+  }
+  await pause(200);
+  counts.fill(0);
+  await c.at(10);
+  await pause(200);
+  assert.deepEqual(counts.map((n) => n > 0), [false, false, true, true, true, true]); // the 4 newest
+
+  const one = await udpSocket(LAN_IP);
+  t.after(() => one.close());
+  let got = 0;
+  one.on("message", () => got++);
+  const get = encode("/getValues", [LAN_IP, one.address().port]);
+  toServer(get);
+  await pause(300);
+  const perRequest = got;
+  got = 0;
+  const parts = [Buffer.from("#bundle\0", "latin1"), Buffer.alloc(8)];
+  for (let i = 0; i < 100; i++) {
+    const size = Buffer.alloc(4);
+    size.writeInt32BE(get.length);
+    parts.push(size, get);
+  }
+  toServer(Buffer.concat(parts));
+  await pause(600);
+  assert.ok(perRequest > 0 && got <= 64 * perRequest, `${got} datagrams for 100 requests of ${perRequest}`);
+});
+
+test("A3: setPassword and peers only from this computer", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  const lan = (body) =>
+    fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await lan({ cmd: "setPassword", password: "palco-2026" })).status, 400);
+  assert.equal((await lan({ cmd: "peers", urls: ["http://10.0.0.9:39080"] })).status, 400);
+  const s = await c.state();
+  assert.equal(s.passwordSet, false);
+  assert.deepEqual(s.peers, []);
+});
+
+test("A3: only .als files are loaded or opened at start", async (t) => {
+  const c = await setup(t);
+  const res = await fetch(c.url("/api/load-als"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ file: "/etc/hostname" }) });
+  assert.equal(res.status, 400);
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-launch-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const script = path.join(baseDir, "evil.sh");
+  fs.writeFileSync(script, "x");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ lastProject: script, settings: { autoLaunchLive: true } }));
+  const files = [];
+  await setup(t, { baseDir, liveRunning: () => false, openFile: (f) => files.push(f) });
+  assert.deepEqual(files, []);
+});
+
+test("A3: a peer that redirects is not followed", async (t) => {
+  const target = http.createServer((_q, r) => r.end(JSON.stringify({ connected: true, is_playing: false, setlist: [], current: -1, settings: {} })));
+  await new Promise((r) => target.listen(0, "127.0.0.1", r));
+  const redirector = http.createServer((q, r) => {
+    r.writeHead(302, { Location: `http://127.0.0.1:${target.address().port}${q.url}` });
+    r.end();
+  });
+  await new Promise((r) => redirector.listen(0, "127.0.0.1", r));
+  t.after(() => { target.close(); redirector.close(); });
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${redirector.address().port}`] });
+  await waitFor(async () => (await c.state()).peers.length === 1, "peer polled");
+  await pause(200);
+  assert.equal((await c.state()).peers[0].online, false);
+});
+
+test("A3: Safe Mode: midi only from this computer", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, is_playing: true });
+  await c.cmd({ cmd: "settings", safeMode: true });
+  const lan = (body) =>
+    fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await lan({ cmd: "next", midi: true })).status, 400);
+  assert.equal((await c.cmd({ cmd: "next", midi: true })).status, 200); // the host's own MIDI pedal
+});
+
+test("A3: lyrics files are read only for songs in the setlist", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  fs.mkdirSync(path.join(c.baseDir, "lyrics"));
+  fs.writeFileSync(path.join(c.baseDir, "lyrics", "Ghost.json"), JSON.stringify({ lines: [{ beat: 0, text: "x" }] }));
+  assert.equal((await fetch(c.url("/api/lyrics/Ghost"))).status, 404);
+});
+
+test("A3: setlist.json is readable by this user only", { skip: process.platform === "win32" && "no Unix modes" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  assert.equal(fs.statSync(path.join(c.baseDir, "setlist.json")).mode & 0o777, 0o600);
+});
+
+// ---------------- audit 0.6.0: engine, server, AbleNet (A4) ----------------
+
+async function rawWebSocket(t, port) {
+  const sock = net.connect(port, "127.0.0.1");
+  t.after(() => sock.destroy());
+  await new Promise((r) => sock.once("connect", r));
+  sock.write(
+    "GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n" +
+      "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n"
+  );
+  await new Promise((r) => sock.once("data", r));
+  return sock;
+}
+
+test("A4: a queued jump to the next section is done when the playhead gets there by itself", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, is_playing: true, beat: 10 });
+  await c.cmd({ cmd: "settings", jumpMode: "section" });
+  await c.cmd({ cmd: "nextSection" });
+  assert.equal((await c.state()).queued.time, 16);
+  for (const b of [12, 15.9, 16.1]) await c.at(b, { is_playing: true });
+  assert.equal((await c.state()).queued, null);
+  const from = c.cmds.length;
+  for (const b of [19, 22, 25, 28, 31.9, 32.1]) await c.at(b, { is_playing: true });
+  await waitFor(() => c.cmds.slice(from).some((x) => x.cmd === "stop"), "STOP at 32");
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "jump" && x.time === 16), "Chorus not replayed");
+});
+
+test("A4: count-in: none at beat 0 (no click left soloed), and the pre-roll does not run the song before", async (t) => {
+  const c = await setup(t);
+  const cues = [{ name: "A", time: 0 }, { name: ">Intro", time: 0 }, { name: "STOP", time: 32 }, { name: "B", time: 40 }, { name: ">Verse", time: 44 }];
+  await c.connect({ ...LIVE, cues, beat: 4 });
+  await c.cmd({ cmd: "settings", countIn: true, countInSoloClick: true, countInBars: 4 });
+  let from = c.cmds.length;
+  await c.cmd({ cmd: "section", index: 0 });
+  await waitFor(() => c.cmds.slice(from).some((x) => x.cmd === "play"), "play");
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "clickSolo"), JSON.stringify(c.cmds.slice(from)));
+
+  await c.at(41);
+  from = c.cmds.length;
+  await c.cmd({ cmd: "section", index: 0 }); // Verse at 44: count-in from 28, inside A
+  await waitFor(() => c.cmds.slice(from).some((x) => x.cmd === "seek" && x.time === 28), "seek 28");
+  for (const b of [28.1, 30, 31.9, 32.1, 34, 37, 40, 43.9, 44.1]) await c.at(b, { is_playing: true });
+  assert.ok(!c.cmds.slice(from).some((x) => x.cmd === "stop"), "A's STOP must not end the count-in");
+  await waitFor(() => c.cmds.slice(from).some((x) => x.cmd === "clickSolo" && x.on === false), "click back at the section");
+});
+
+test("A4: Re-Enable Automation on a song jump arrives at the song start, not a bar early", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "SONG END", time: 16 }, { name: "B", time: 24 }] });
+  await c.cmd({ cmd: "settings", reEnableAutomation: true });
+  const jumped = c.expectCmd({ cmd: "jump", time: 24 });
+  await c.at(11.9, { is_playing: true });
+  await c.at(12.1, { is_playing: true });
+  await jumped;
+  await pause(100);
+  assert.ok(!c.cmds.some((x) => x.cmd === "reEnableAutomation"), "not before the boundary");
+  const extra = c.expectCmd({ cmd: "reEnableAutomation" });
+  await c.at(24.05, { is_playing: true });
+  await extra;
+});
+
+test("A4: when Live goes silent, it is not playing and the queue is dropped", async (t) => {
+  const c = await setup(t, { liveTimeoutMs: 300 });
+  await c.connect({ ...LIVE, is_playing: true });
+  await c.cmd({ cmd: "settings", jumpMode: "song" });
+  await c.cmd({ cmd: "next" });
+  assert.ok((await c.state()).queued);
+  await waitFor(async () => !(await c.state()).connected, "Live silent", 3000);
+  const s = await c.state();
+  assert.equal(s.is_playing, false);
+  assert.equal(s.queued, null);
+});
+
+test("A4: an unreadable setlist.json is kept aside before anything overwrites it", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-corrupt-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), '{"saved": {"Tour 2026": ');
+  const c = await setup(t, { baseDir });
+  await c.cmd({ cmd: "settings", safeMode: true });
+  const copies = fs.readdirSync(baseDir).filter((f) => /^setlist\.corrupt-.*\.json$/.test(f));
+  assert.equal(copies.length, 1);
+  assert.equal(fs.readFileSync(path.join(baseDir, copies[0]), "utf-8"), '{"saved": {"Tour 2026": ');
+  assert.ok((await (await fetch(c.url("/api/logs"))).json()).lines.some((l) => l.includes("setlist.corrupt-")));
+});
+
+test("A4: WebSocket: silent clients are dropped, the state is compressed, a heartbeat keeps browsers sure", async (t) => {
+  const c = await setup(t, { pingMs: 50 });
+  const sock = await rawWebSocket(t, c.srv.httpPort); // never answers pings
+  await waitFor(() => sock.destroyed || sock.readableEnded, "silent socket closed", 2000);
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  t.after(() => ws.terminate());
+  const types = [];
+  ws.on("message", (b) => types.push(JSON.parse(b).type));
+  await new Promise((r) => ws.once("open", r));
+  assert.match(ws.extensions, /permessage-deflate/);
+  await waitFor(() => types.includes("tick"), "heartbeat", 1000);
+});
+
+test("A4: AbleNet: this computer's own settings are not copied to the backup", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  await backup.cmd({ cmd: "settings", scene: "backup", network: "en0" });
+  await main.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${backup.srv.httpPort}`] });
+  await main.cmd({ cmd: "settings", scene: "main", network: "wlan0", safeMode: true });
+  await waitFor(async () => (await backup.state()).settings.safeMode, "shared setting mirrored");
+  const s = (await backup.state()).settings;
+  assert.deepEqual([s.scene, s.network], ["backup", "en0"]);
+});
+
+function fakePeer(t, state) {
+  const srv = http.createServer((_q, res) => res.end(JSON.stringify({ connected: true, tempo: 120, sig_num: 4, sig_den: 4, setlist: [], current: -1, settings: { scene: "main" }, ...state() })));
+  t.after(() => srv.close());
+  return new Promise((r) => srv.listen(0, "127.0.0.1", () => r(`http://127.0.0.1:${srv.address().port}`)));
+}
+
+test("A4: AbleNet: only a backup corrects its drift; removed peers are forgotten", async (t) => {
+  let t0 = Date.now();
+  // half a beat ahead of this computer, at 120 BPM: inside the nudge range
+  const url = await fakePeer(t, () => ({ is_playing: true, beat: 8.5 + (Date.now() - t0) / 500 }));
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect({ ...LIVE, is_playing: true, beat: 8 });
+  t0 = Date.now();
+  await c.cmd({ cmd: "settings", driftCorrection: true }); // this computer is the main one
+  await c.cmd({ cmd: "peers", urls: [url] });
+  await waitFor(async () => (await c.state()).peers[0]?.playing, "peer playing");
+  await pause(200);
+  assert.ok(!c.cmds.some((x) => x.cmd === "nudge"), "the main computer does not follow its backup");
+
+  await c.at(8, { is_playing: false });
+  await c.cmd({ cmd: "peers", urls: [] });
+  await pause(150);
+  assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400); // no ghost of the removed peer
+});
+
+test("A4: AbleNet: a backup that refuses the copied commands (password) is shown", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  await backup.cmd({ cmd: "setPassword", password: "palco-2026" });
+  await main.connect();
+  await main.cmd({ cmd: "peers", urls: [`http://${LAN_IP || "127.0.0.1"}:${backup.srv.httpPort}`] });
+  await main.cmd({ cmd: "play" });
+  if (LAN_IP) await waitFor(async () => (await main.state()).peers[0]?.denied === true, "denied shown");
+});
+
+test("A4: a chunked message that cannot be read goes to the log", async (t) => {
+  const c = await setup(t);
+  c.sendLive({ type: "chunk", id: 7, i: 0, n: 1, data: "{bad" });
+  await waitFor(async () => (await (await fetch(c.url("/api/logs"))).json()).lines.some((l) => l.includes("chunk")), "logged");
+});
+
+test("A4: the HTTP port of the last run is tried first, so saved addresses keep working", async (t) => {
+  const free = () => new Promise((r) => { const s = net.createServer().listen(0, "127.0.0.1", () => { const p = s.address().port; s.close(() => r(p)); }); });
+  const p1 = await free();
+  const p2 = await free();
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-port-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const a = await setup(t, { baseDir, httpPort: [p1, p2] });
+  assert.equal(a.srv.httpPort, p1);
+  await a.srv.close();
+  const b = await setup(t, { baseDir, httpPort: [p2, p1] });
+  assert.equal(b.srv.httpPort, p1);
 });

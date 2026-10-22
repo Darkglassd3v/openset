@@ -41,3 +41,11 @@ test("pasted setlist: close matches, numbering, notes and stops; the rest is ski
   // each song is used once
   assert.deepEqual(parseSetlistText("Roads\nroads", SONGS).unmatched, ["roads"]);
 });
+
+test("pasted setlist: Apple Notes line breaks and \r, long lines stay fast (audit A3)", () => {
+  const r = parseSetlistText("Roads\u2028Perché\rHey Brother", SONGS);
+  assert.deepEqual(r.order.slice(0, 3), ["Roads", "Perché", "Hey Brother"]);
+  const t0 = Date.now();
+  parseSetlistText("a" + " ".repeat(98000) + "b\nRoads {x", SONGS);
+  assert.ok(Date.now() - t0 < 300, `took ${Date.now() - t0} ms`);
+});

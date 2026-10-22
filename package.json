@@ -1,13 +1,14 @@
 {
   "name": "openset",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Open-source live setlist controller for Ableton Live (AbleSet-style)",
   "main": "server/index.js",
   "bin": "server/index.js",
   "scripts": {
     "start": "node server/index.js",
     "test": "node --test",
-    "coverage": "node --test --experimental-test-coverage"
+    "coverage": "node --test --experimental-test-coverage",
+    "e2e": "playwright test"
   },
   "dependencies": {
     "express": "^4.19.0",
@@ -16,5 +17,8 @@
   },
   "engines": {
     "node": ">=18"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.49.1"
   }
 }

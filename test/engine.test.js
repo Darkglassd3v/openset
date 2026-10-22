@@ -233,3 +233,80 @@ test("jump modes Quantized and Manual leave the queue to the server", () => {
   for (const m of ["quantized", "manual"])
     assert.deepEqual(play(songs, [15.9, 16.1, 31.9, 32.1], { ...queued(72), ...mode(m) }), [jump(40)], m);
 });
+
+test("Always Keep Playing When Jumping to Queued Songs: no stop before a queued song", () => {
+  const stopSet = set(QSET.map((c) => (c.name === "SONG END" ? { name: "STOP", time: 32 } : c)));
+  const keep = (m, extra = {}) => mode(m, { keepPlayingQueued: true, ...extra });
+  assert.deepEqual(play(stopSet, [31.9, 32.1], { ...queued(72), ...keep("song") }), [jump(72)]);
+  assert.deepEqual(play(set(QSET), [31.9, 32.1], { ...queued(72), ...keep("dynamic", { alwaysStop: true }) }), [jump(72)]);
+  // nothing queued: a STOP still stops
+  assert.deepEqual(play(stopSet, [31.9, 32.1], keep("song")), [STOP, jump(40)]);
+});
+
+test("Remove Played Songs Automatically: the song end reports the played song first", () => {
+  const removing = mode("quantized", { removePlayed: true });
+  const played = (name) => ({ cmd: "played", name });
+  assert.deepEqual(play(set(QSET), [31.9, 32.1], removing), [played("A"), jump(40)]);
+  // the next song starts right at the end: no jump, the song is still reported
+  const tight = set([{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "C", time: 16 }]);
+  assert.deepEqual(play(tight, [7.9, 8.1], removing), [played("A")]);
+  // off by default
+  assert.deepEqual(play(tight, [7.9, 8.1]), []);
+});
+
+// ---------------- audit 0.6.0 (A4) ----------------
+
+// one result per update, to see when a command is sent
+function steps(songs, beats, extra = {}) {
+  const engine = createEngine();
+  const out = [];
+  for (let i = 1; i < beats.length; i++)
+    out.push(engine.update({ songs, prevBeat: beats[i - 1], beat: beats[i], playing: true, loop: false, quantBeats: 0, settings: {}, ...extra }));
+  return out;
+}
+
+test("A4: with Live's loop on, the song end does not fire while the loop runs; a queued jump still leaves", () => {
+  const songs = set([{ name: "A", time: 0 }, { name: ">Outro", time: 16 }, { name: "SONG END", time: 32 }, { name: "B", time: 40 }]);
+  const loop = { loop: true, loopStart: 16, loopLength: 16, quantBeats: 4 };
+  assert.deepEqual(play(songs, [27.9, 28.1, 31.9], loop), []);
+  const queued = { ...loop, settings: { jumpMode: "song" }, queued: { time: 40, type: "song" } };
+  assert.deepEqual(play(songs, [27.9, 28.1], queued), [jump(40)]);
+  // loop region already behind the playhead: Live plays on, so does the engine
+  assert.deepEqual(play(songs, [27.9, 28.1], { ...loop, loopStart: 0, loopLength: 4 }), [jump(40)]);
+});
+
+test("A4: after a stop the boundaries fire again on the next pass", () => {
+  const songs = set([{ name: "A", time: 0 }, { name: "STOP", time: 32 }, { name: "B", time: 40 }]);
+  const e = createEngine();
+  const u = (prevBeat, beat, playing = true) => e.update({ songs, prevBeat, beat, playing, loop: false, quantBeats: 0, settings: {} });
+  assert.deepEqual(u(31.9, 32.1), [STOP, jump(40)]);
+  u(32.1, 40, false);
+  u(40, 0, false); // cued A again while stopped
+  u(0, 0.1);
+  assert.deepEqual(u(31.9, 32.1), [STOP, jump(40)]);
+});
+
+test("A4: a +LOOP section reached by a jump or by Play from its start loops", () => {
+  const songs = set([{ name: "A", time: 0 }, { name: ">Intro +LOOP", time: 0 }, { name: ">Verse", time: 8 }, { name: "B", time: 16 }]);
+  const loopCmd = { cmd: "loop", on: true, start: 0, length: 8 };
+  assert.deepEqual(play(songs, [20, 0.1]), [loopCmd]); // jumped back while playing
+  assert.deepEqual(play(songs, [40, 0.1]), [loopCmd]);
+  const e = createEngine();
+  const base = { songs, loop: false, quantBeats: 0, settings: {} };
+  e.update({ ...base, prevBeat: 0, beat: 0, playing: false });
+  assert.deepEqual(e.update({ ...base, prevBeat: 0, beat: 0.05, playing: true }), [loopCmd]); // Play from the start
+});
+
+test("A4: a jump to a section without a Live locator goes at the boundary, not a step early", () => {
+  // Chorus, Bridge and Outro come from clips of the Sections track: only A and B are locators
+  const songs = set([{ name: "A", time: 0 }, { name: ">Chorus", time: 16 }, { name: ">Bridge +SKIP", time: 24 }, { name: ">Outro", time: 32 }, { name: "B", time: 48 }]);
+  assert.deepEqual(steps(songs, [19.9, 20.1, 23.9, 24.1], { quantBeats: 4, cueTimes: [0, 48] }), [[], [], [jump(32)]]);
+  // with a real locator Live quantizes the jump: sent one step early
+  assert.deepEqual(steps(songs, [19.9, 20.1], { quantBeats: 4, cueTimes: [0, 32, 48] }), [[jump(32)]]);
+});
+
+test("A4: a late report (Live busy) is not a seek: the STOP in between still fires", () => {
+  const songs = set([{ name: "A", time: 0 }, { name: "STOP", time: 32 }, { name: "B", time: 40 }]);
+  assert.deepEqual(play(songs, [29.2, 33.7], { dt: 2.25, tempo: 120 }), [STOP, jump(40)]);
+  assert.deepEqual(play(songs, [10, 33.7], { dt: 0.1, tempo: 120 }), []); // a real seek
+});

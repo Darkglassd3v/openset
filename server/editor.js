@@ -82,7 +82,8 @@ function parseSetlistText(text, songs) {
   const stopAfter = [];
   const notes = {};
   const unmatched = [];
-  for (const raw of String(text).split(/\r?\n/)) {
+  // \r alone and U+2028/2029 (Apple Notes) are line breaks too
+  for (const raw of String(text).split(/\r\n|[\n\r\u2028\u2029]/)) {
     const line = raw.trim();
     if (!line) continue;
     if (/^--.*--$/.test(line)) {
@@ -90,7 +91,11 @@ function parseSetlistText(text, songs) {
       if (last && !stopAfter.includes(last)) stopAfter.push(last);
       continue;
     }
-    const [, title, note] = line.replace(/^\d+\s*[.)\-]\s*/, "").match(/^(.*?)\s*(?:\{([^}]*)\})?$/);
+    // "Title {note}"; indexOf, not a regex: a regex here took seconds on one long pasted line
+    const body = line.replace(/^\d+\s*[.)\-]\s*/, "");
+    const open = body.endsWith("}") ? body.lastIndexOf("{") : -1;
+    const note = open >= 0 && !body.slice(open + 1, -1).includes("}") ? body.slice(open + 1, -1) : null;
+    const title = (note === null ? body : body.slice(0, open)).trim().slice(0, 200);
     const i = closestSong(songs, title, used);
     if (i < 0) {
       unmatched.push(line);

@@ -7,11 +7,17 @@
 //   STOP, AUTOSTOP, =STOP    end of the song: stop playback
 //   *note, [ClyphX] ...      ignored
 // Attributes anywhere in a name:
-//   {description} #tag [3:20] [nosong] [+2] [-3b] [.class]
+//   {description} #tag [3:20] [nosong] [+2] [-3b] [.class] [blue]
 //   +LOOP[:N] +LOOPFULL +PAUSE +SKIP +END +JUMP +STAY +LYRICS   (flags)
 //   Section >>> Target       after this section jump to Target (or SONG END)
 
 const EPS = 0.001;
+// AbleSet's colors, for [color] in names
+const COLORS = ["gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose"];
+// one per column of Live's clip color palette (color index = row * 14 + column), like AbleSet
+// shortcut: matched by hue (column 0 holds Live's red, 6 its teal); AbleSet's own table is an
+// image in its docs, adjust if a user reports a mismatch
+const CLIP_COLORS = ["red", "orange", "amber", "yellow", "lime", "green", "teal", "cyan", "sky", "blue", "indigo", "purple", "pink", "gray"];
 const END_NAMES = { "SONG END": "END", STOP: "STOP", AUTOSTOP: "STOP" };
 
 function parseName(raw) {
@@ -19,7 +25,8 @@ function parseName(raw) {
   let transition = null;
   const arrow = text.indexOf(">>>");
   if (arrow >= 0) {
-    transition = parseName(text.slice(arrow + 3)).name || null;
+    // the target ends at a further ">>>"; no recursion, so thousands of arrows cannot overflow the stack
+    transition = parseName(text.slice(arrow + 3).split(">>>")[0]).name || null;
     text = text.slice(0, arrow);
   }
   let description = null;
@@ -40,6 +47,7 @@ function parseName(raw) {
   let duration = null;
   let nosong = false;
   let transpose = null;
+  let color = null;
   const classes = [];
   text = text.replace(/\[([^\]]*)\]/g, (_, attr) => {
     const a = attr.trim();
@@ -49,10 +57,11 @@ function parseName(raw) {
     else if ((m = a.match(/^([+-]\d{1,2})(b?)$/)))
       transpose = { semitones: parseInt(m[1], 10), flats: m[2] === "b" };
     else if (a.startsWith(".")) classes.push(a.slice(1));
-    return " "; // colors and other attributes are dropped
+    else if (COLORS.includes(a.toLowerCase())) color = a.toLowerCase();
+    return " "; // other attributes are dropped
   });
   const name = text.replace(/\s+/g, " ").trim();
-  return { name, description, tags, duration, nosong, transpose, classes, flags, transition };
+  return { name, description, tags, duration, nosong, transpose, classes, flags, transition, color };
 }
 
 function buildSetlist(cues) {
@@ -83,6 +92,7 @@ function buildSetlist(cues) {
         flags: p.flags,
         transition: p.transition,
         duration: p.duration,
+        color: p.color || current.color, // the song's unless the section has its own
       });
       continue;
     }
@@ -112,6 +122,7 @@ function buildSetlist(cues) {
       nosong: p.nosong,
       transpose: p.transpose,
       classes: p.classes,
+      color: p.color,
       sections: [],
       endAt: null,
       playStart: c.time,
@@ -121,6 +132,8 @@ function buildSetlist(cues) {
 
   songs.forEach((s, i) => {
     if (s.end == null && i + 1 < songs.length) s.end = songs[i + 1].time;
+    // a section after SONG END is outside the song: it would loop or jump past its end
+    if (s.end != null) s.sections = s.sections.filter((x) => x.time < s.end - EPS);
     s.sections.forEach((sec, j) => {
       sec.end = j + 1 < s.sections.length ? s.sections[j + 1].time : s.end;
     });
@@ -135,18 +148,33 @@ function buildSetlist(cues) {
   return songs;
 }
 
-// Clips on a MIDI track named "Sections" define sections, like in AbleSet.
+// The sections track (AbleSet): named "Sections…" or flagged +SECTIONS
+const isSectionsTrack = (name) => /^sections\b/i.test(String(name || "").trim()) || /(^|\s)\+SECTIONS(?=\s|$)/.test(name || "");
+
+// Clips on the sections track define sections, like in AbleSet. With +CC or
+// +CLIPCOLORS the clip color becomes the section color; a bare ">" locator
+// on a clip (jumpable while playing) takes the clip's name and color.
 function cuesFromLive(cues, tracks) {
-  const track = (tracks || []).find((t) => /^sections\b/i.test((t.name || "").trim()));
+  const track = (tracks || []).find((t) => isSectionsTrack(t.name));
   if (!track) return cues;
+  const clips = track.clips || [];
+  const clipColors = /(^|\s)\+(CC|CLIPCOLORS)(?=\s|$)/.test(track.name);
   const key = (t) => Math.round(t * 1000);
   const isSection = (c) => ((c.name || "").trim().startsWith(">") ? 1 : 0);
-  const taken = new Set(cues.filter(isSection).map((c) => key(c.time)));
-  const extra = (track.clips || [])
-    .filter((c) => !taken.has(key(c.start)))
-    .map((c) => ({ name: ">" + String(c.name || "").replace(/^>+/, ""), time: c.start }));
+  // a color written in the clip name comes last, so it wins
+  const label = (c) =>
+    (clipColors && Number.isInteger(c.color) && c.color >= 0 ? `[${CLIP_COLORS[c.color % 14]}] ` : "") +
+    String(c.name || "").replace(/^>+/, "");
+  const byStart = new Map(clips.map((c) => [key(c.start), c]));
+  const named = cues.map((c) => {
+    const raw = (c.name || "").trim();
+    const clip = /^>>?$/.test(raw) && byStart.get(key(c.time));
+    return clip ? { ...c, name: raw + label(clip) } : c;
+  });
+  const taken = new Set(named.filter(isSection).map((c) => key(c.time)));
+  const extra = clips.filter((c) => !taken.has(key(c.start))).map((c) => ({ name: ">" + label(c), time: c.start }));
   // a song locator sorts before a section at the same time
-  return [...cues, ...extra].sort((a, b) => a.time - b.time || isSection(a) - isSection(b));
+  return [...named, ...extra].sort((a, b) => a.time - b.time || isSection(a) - isSection(b));
 }
 
 // prefs: { order: [name], skip: [name], stopAfter: [name], notes: {name: text} }
@@ -295,6 +323,9 @@ module.exports = {
   parseName,
   buildSetlist,
   cuesFromLive,
+  isSectionsTrack,
+  COLORS,
+  CLIP_COLORS,
   applyOrder,
   songAt,
   sectionAt,

@@ -50,6 +50,13 @@ OpenSet e AbleSet possono restare aperti insieme: Live parla con OpenSet
 sulla porta privata 127.0.0.1:39061. Se AbleSet occupa la porta OSC 39051,
 OpenSet parte con l'OSC spento e lo scrive nel riquadro in alto.
 
-Se qualcosa non va: Opzioni -> Debug -> Crea pacchetto log, e invia il file
-openset-{{VERSION}}-log-<data>.txt con due righe su cosa e' successo.
-Il registro completo e' openset.log nella cartella dei dati.
+ESPORTARE I LOG (se qualcosa non funziona)
+  1. Subito dopo il problema lascia aperti OpenSet e Live.
+  2. Nella pagina di OpenSet apri Opzioni e scorri fino a Debug.
+  3. Premi "Crea pacchetto log": il browser salva
+     openset-{{VERSION}}-log-<data>.txt nella cartella Download.
+  4. Invia quel file con due righe: cosa stavi facendo e cosa e' successo.
+  Se la pagina di OpenSet non si apre, invia openset.log (e openset.old.log)
+  dalla cartella dei dati. Per aprirla, nel Terminale:
+     open ~/Library/Application\ Support/OpenSet
+  Se OpenSet si chiude appena aperto, copia anche il testo della sua finestra.

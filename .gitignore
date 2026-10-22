@@ -5,3 +5,5 @@ pkg-*/
 .idea/
 setlist.json
 __pycache__/
+test-results/
+playwright-report/

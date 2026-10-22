@@ -58,3 +58,13 @@ test("release: one zip per platform with the versioned program, guide PDF and IN
     assert.doesNotMatch(list(z), /__pycache__|remote-script\/tests/);
   }
 });
+
+test("local release build: a second run starts from pkg's original Windows binary", () => {
+  // win-icon.mjs turns fetched-* into a patched built-*: left in the cache, pkg-fetch would skip
+  // the download and the next build would fail (or ship the old version's icon and version)
+  const script = fs.readFileSync(path.join(__dirname, "..", "scripts", "build-release-local.sh"), "utf-8");
+  const rm = script.indexOf("rm -f");
+  const fetch = script.indexOf("npx -y pkg-fetch");
+  assert.match(script.slice(rm, fetch), /built-v18\*-win-x64/);
+  assert.ok(rm >= 0 && rm < fetch, "removes the patched built-v18*-win-x64 before pkg-fetch");
+});

@@ -3,6 +3,30 @@
 Tutte le novità di OpenSet, dalla versione più recente. La guida PDF di ogni
 rilascio riporta la sezione della sua versione.
 
+## 0.6.0 — 2026-10-22
+
+### Novità
+
+- **Riproduzione come AbleSet**: *Stop invece di pausa* (il pulsante e la barra spaziatrice fermano invece di mettere in pausa), *«Brano precedente» torna prima all'inizio*, *Disattiva il loop quando salti*, *Riattiva l'automazione* e *Riporta le tracce all'Arrangement* a ogni salto di brano, *Con un brano in coda continua a suonare* anche se il brano finisce con STOP.
+- **Count-in di sezione**: da fermo la sezione scelta parte 1, 2 o 4 battute prima; con *Solo del click* durante il count-in si sente solo la traccia del click (prima traccia o gruppo con «click», tracce `+CLICK`, Lifesine).
+- **Togli i brani suonati**: un brano suonato fino alla fine esce dalla scaletta (si rimette dall'editor).
+- **Colori come AbleSet**: `[blue]`, `[red]`… nel nome di brani e sezioni; con `+CC` sulla traccia `Sections` le sezioni prendono il colore delle clip di Live; `+SECTIONS` segna la traccia delle sezioni. Scaletta, sezioni e striscia sono colorate.
+- **Strumenti**: *Colori delle clip dai nomi*, *Metti i locator sulle sezioni* e *Togli i locator messi da OpenSet*.
+- **Generale**: *Vista all'apertura* per i dispositivi nuovi, *Apri OpenSet nel browser* all'avvio, quando Live si collega o mai, anche in una finestra senza schede, e *Apri Live con l'ultimo progetto*.
+- **Due computer**: ogni computer è *principale* o *riserva*; la riserva corregge da sola lo scarto con il phase nudge di Live e da ferma si allinea con *Sincronizza ora*. Le impostazioni di ogni dispositivo si vedono in Opzioni.
+- **Menu OpenSet** in Opzioni: apri nel browser o in una finestra, cartella dei dati, reinstalla il Remote Script, cambia il nome del computer, rete da usare per i dispositivi, controlla aggiornamenti, esci.
+- **Guida PDF nuova**: copertina, indice cliccabile, capitoli con l'intestazione su ogni pagina, prima le funzioni di base e in fondo novità e correzioni.
+
+### Correzioni
+
+- **Motore**: con il loop di Live acceso non salta più al brano dopo; un salto in coda verso la sezione o il brano successivo non li fa più ripetere; dopo uno stop STOP, `+SKIP`, `+LOOP` e SONG END scattano di nuovo; una sezione `+LOOP` raggiunta con un salto va in loop; i salti verso sezioni senza locator non tagliano più l'ultima battuta; un rallentamento di Live non fa perdere uno STOP.
+- **Count-in**: a inizio brano (battuta 0) il click non resta più in solo per tutto il brano, e il pre-roll non fa scattare lo STOP del brano prima.
+- **Remote Script**: il solo del click e il phase nudge non restano accesi (traccia cancellata, chiusura dello script, Live fermato durante il count-in); se un pacchetto si perde, scaletta e clip arrivano di nuovo entro 10 s; lo script non si blocca più dopo un errore. Dopo l'aggiornamento riavvia Live.
+- **Interfaccia**: un cambio di tempo non ricostruisce più la scaletta (tocchi, note e trascinamenti non si perdono); se il collegamento con OpenSet cade compare «OpenSet non raggiungibile…» e si riapre da solo, anche dopo che l'iPad si è addormentato; Spazio funziona dopo un clic; i testi non restano su «Nessun testo» per un errore di rete; funziona sugli iPad con iOS 12-14; incolla con la password, trascinamento e ricerca corretti; niente zoom di Safari sui campi.
+- **Sicurezza**: un messaggio malformato da un dispositivo in rete non chiude più OpenSet; le pagine di altri siti aperte sul computer non possono comandarlo; la password ha almeno 6 caratteri, si imposta solo dal computer con OpenSet e i tentativi in parallelo contano tutti; l'OSC risponde solo a chi chiede; un `.als` difettoso o enorme non blocca il server; `setlist.json` è leggibile solo dall'utente.
+- **Dati e rete**: incollare una scaletta da Note di Apple non chiude più OpenSet; `setlist.json` si scrive in modo sicuro e, se illeggibile, viene copiato a parte invece di essere sovrascritto; i dispositivi addormentati non riempiono la memoria; lo stato inviato ai dispositivi è compresso (da ~30 KB a ~2 KB); OpenSet riusa la porta dell'ultima volta, così le icone sull'iPad restano valide; una riserva con la password viene segnalata.
+- **Due computer**: la riserva tiene le sue impostazioni (scena, rete, finestre); solo la riserva corregge lo scarto; un computer tolto dalla lista viene dimenticato.
+
 ## 0.5.1 — 2026-10-22
 
 - **OpenSet e AbleSet insieme**: Live manda lo stato a OpenSet su una porta privata (`127.0.0.1:39061`), quindi AbleSet aperto sulla porta OSC `39051` non porta più via i messaggi di Live. Se la `39051` è occupata, OpenSet parte con l'OSC spento e lo dice. Dopo l'aggiornamento chiudi e riapri Live.
