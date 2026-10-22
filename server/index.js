@@ -28,7 +28,8 @@ const { userLibraries, installRemoteScript } = require("./install");
 const { deviceUrls, lanInterfaces, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
-const { validAuth, hashPassword, checkPassword, createLimiter, createTokens } = require("./auth");
+const crypto = require("crypto");
+const { validAuth, hashPassword, checkPassword, checkProof, createLimiter, createTokens } = require("./auth");
 const { createLog, liveLogFiles, liveLogLines } = require("./log");
 const { nudgeFor, syncTarget } = require("./ablenet");
 const { version: VERSION } = require("../package.json");
@@ -149,7 +150,7 @@ function defaultPrefs() {
     setlistName: null,
     midi: [],
     peers: [],
-    auth: null, // web app password: { salt, hash }
+    auth: null, // web app password: { salt, iter, key } (PBKDF2), or { salt, hash } from OpenSet 0.6
   };
 }
 
@@ -288,7 +289,11 @@ function start(opts = {}) {
         : [],
       midi: cleanMidi(saved.midi) || [],
       peers: cleanPeers(saved.peers) || [],
-      auth: validAuth(saved.auth) ? { salt: saved.auth.salt, hash: saved.auth.hash } : null,
+      auth: !validAuth(saved.auth)
+        ? null
+        : saved.auth.key
+          ? { salt: saved.auth.salt, iter: saved.auth.iter, key: saved.auth.key }
+          : { salt: saved.auth.salt, hash: saved.auth.hash },
       lastProject: typeof saved.lastProject === "string" ? saved.lastProject : null,
       httpPort: Number.isInteger(saved.httpPort) ? saved.httpPort : null,
     };
@@ -1322,23 +1327,36 @@ function start(opts = {}) {
   const clientIp = (req) => String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
   const canControl = (ws) => !prefs.auth || ws.local || ws.authed;
 
+  const newNonce = () => crypto.randomBytes(16).toString("hex");
   function sendAccess(ws, token, extra = {}) {
+    const a = prefs.auth;
+    // the numbers the page needs to prove it knows the password (not with a password from OpenSet 0.6)
+    const challenge = a && a.key ? { challenge: { salt: a.salt, iter: a.iter, nonce: ws.nonce } } : {};
     if (ws.readyState === 1)
-      ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!prefs.auth, ...(token ? { token } : {}), ...extra }));
+      ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!a, ...challenge, ...(token ? { token } : {}), ...extra }));
   }
 
-  async function wsAuth(ws, { password, token }) {
+  async function wsAuth(ws, { password, token, proof }) {
     let ok = false;
     if (!limiter.blocked(ws.ip)) {
       if (tokens.valid(token, ws.ip)) ok = true;
-      else if (password !== undefined) {
-        // counted before scrypt: guesses sent in parallel are all counted.
+      else if (proof !== undefined || password !== undefined) {
+        // counted before checking: guesses sent in parallel are all counted.
         // An old token alone (OpenSet restarted) is not a wrong password.
         limiter.fail(ws.ip);
-        ok = await checkPassword(prefs.auth, password);
+        if (proof !== undefined) ok = checkProof(prefs.auth, ws.nonce, proof);
+        else {
+          ok = await checkPassword(prefs.auth, password);
+          // saved by OpenSet 0.6: from now on the page proves it knows the password instead of sending it
+          if (ok && prefs.auth && !prefs.auth.key) {
+            prefs = { ...prefs, auth: hashPassword(password) };
+            savePrefs();
+          }
+        }
       }
       if (ok) limiter.ok(ws.ip);
     }
+    ws.nonce = newNonce(); // one attempt per number: a proof seen on the network cannot be used again
     ws.authed = ok;
     sendAccess(ws, ok ? (tokens.valid(token, ws.ip) ? token : tokens.issue(ws.ip)) : null, !ok && token !== undefined ? { tokenRejected: true } : {});
   }
@@ -1413,6 +1431,7 @@ function start(opts = {}) {
     ws.ip = ip;
     ws.local = localReq(req);
     ws.authed = false;
+    ws.nonce = newNonce();
     ws.on("error", () => ws.terminate()); // a malformed frame closes this socket, never OpenSet
     devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null, settings: {} });
     ws.on("pong", () => {
