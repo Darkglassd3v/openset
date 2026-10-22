@@ -208,6 +208,18 @@ class OpenSetTest(unittest.TestCase):
         self.os._handle({"cmd": "clickSolo", "on": False})
         self.assertEqual([t.solo for t in self.song.tracks], [False, False, False, False, False, True])
 
+    def test_clip_colors_and_sections_flag(self):
+        clip = FakeClip("Verse", 0.0, 8.0)
+        clip.color_index = 23
+        self.song.tracks = [FakeTrack("Markers +SECTIONS +CC", [clip])]
+        self.received()
+        self.os._send_clips()
+        clips = [m for m in self.received() if m.get("type") == "clips"]
+        self.assertEqual(
+            clips[0]["tracks"],
+            [{"name": "Markers +SECTIONS +CC", "clips": [{"name": "Verse", "start": 0.0, "end": 8.0, "color": 23}]}],
+        )
+
     def test_cues_are_resent_only_when_they_change(self):
         self.received()
         self.os._send_state()

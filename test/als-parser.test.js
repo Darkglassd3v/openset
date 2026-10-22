@@ -89,6 +89,21 @@ test("parseAls: clips of the Sections and +LYRICS tracks", () => {
   ]);
 });
 
+test("parseAls: clip colors and the +SECTIONS flag", () => {
+  const xml = `<Ableton><LiveSet><Tracks>
+    <MidiTrack Id="1"><Name><EffectiveName Value="Markers +SECTIONS +CC" /></Name>
+      <DeviceChain><MainSequencer><ClipTimeable><ArrangerAutomation><Events>
+        <MidiClip Id="0" Time="0"><CurrentStart Value="0" /><CurrentEnd Value="8" /><Name Value="Verse" /><Color Value="23" /></MidiClip>
+        <MidiClip Id="1" Time="8"><CurrentStart Value="8" /><CurrentEnd Value="16" /><Name Value="Chorus" /><ColorIndex Value="9" /></MidiClip>
+      </Events></ArrangerAutomation></ClipTimeable></MainSequencer></DeviceChain>
+    </MidiTrack>
+  </Tracks></LiveSet></Ableton>`;
+  const res = parseAls(write("colors.als", zlib.gzipSync(xml)));
+  assert.deepEqual(res.tracks, [
+    { name: "Markers +SECTIONS +CC", clips: [{ name: "Verse", start: 0, end: 8, color: 23 }, { name: "Chorus", start: 8, end: 16, color: 9 }] },
+  ]);
+});
+
 test("parseAls: no tracks section gives an empty list", () => {
   assert.deepEqual(parseAls(write("none.als", zlib.gzipSync(XML))).tracks, []);
 });

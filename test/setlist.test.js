@@ -63,6 +63,15 @@ test("parseName: nosong, negative transpose, unknown brackets dropped", () => {
   assert.deepEqual(p.transpose, { semitones: -3, flats: false });
 });
 
+test("parseName: AbleSet colors in square brackets", () => {
+  assert.equal(parseName("Galvanize [blue]").color, "blue");
+  assert.equal(parseName("Galvanize [Blue]").name, "Galvanize");
+  assert.equal(parseName("Intro [rose] [3:20]").color, "rose");
+  assert.equal(parseName("Intro [rose] [3:20]").duration, 200);
+  assert.equal(parseName("Song [notacolor]").color, null);
+  assert.equal(parseName("Plain").color, null);
+});
+
 test("parseName: flags with counts", () => {
   assert.deepEqual(parseName("Chorus +LOOP:4").flags, { LOOP: 4 });
   assert.deepEqual(parseName("Bridge +PAUSE +SKIP").flags, { PAUSE: true, SKIP: true });
@@ -213,6 +222,47 @@ test("cuesFromLive: clips on the Sections track become sections", () => {
   );
   const [s] = buildSetlist(cues);
   assert.deepEqual(s.sections.map((x) => [x.name, x.time]), [["Verse", 0], ["Chorus", 16]]);
+});
+
+test("buildSetlist: song colors; sections take the song color unless they have their own", () => {
+  const [a, b] = buildSetlist([
+    { name: "Galvanize [blue]", time: 0 },
+    { name: ">Verse", time: 0 },
+    { name: ">Chorus [red]", time: 8 },
+    { name: "Plain", time: 16 },
+    { name: ">Intro", time: 16 },
+  ]);
+  assert.equal(a.color, "blue");
+  assert.deepEqual(a.sections.map((x) => x.color), ["blue", "red"]);
+  assert.equal(b.color, null);
+  assert.deepEqual(b.sections.map((x) => x.color), [null]);
+});
+
+test("cuesFromLive: with +CC or +CLIPCOLORS sections take the clip color, one per column of Live's palette", () => {
+  // color index = row * 14 + column; columns 9 and 1 are blue and orange
+  const clips = [
+    { name: "Verse", start: 0, end: 8, color: 9 },
+    { name: "Chorus", start: 8, end: 16, color: 14 + 1 },
+    { name: "Bridge [green]", start: 16, end: 24, color: 9 }, // a color in the name wins
+  ];
+  for (const name of ["SECTIONS +CC", "Sections +CLIPCOLORS"]) {
+    const [s] = buildSetlist(cuesFromLive([{ name: "A [red]", time: 0 }], [{ name, clips }]));
+    assert.deepEqual(s.sections.map((x) => [x.name, x.color]), [["Verse", "blue"], ["Chorus", "orange"], ["Bridge", "green"]], name);
+  }
+  // without the flag the clip color is ignored
+  const [t] = buildSetlist(cuesFromLive([{ name: "A [red]", time: 0 }], [{ name: "Sections", clips }]));
+  assert.deepEqual(t.sections.map((x) => x.color), ["red", "red", "green"]);
+});
+
+test("cuesFromLive: any track with the +SECTIONS flag is the sections track", () => {
+  const [s] = buildSetlist(cuesFromLive([{ name: "A", time: 0 }], [{ name: "Markers +SECTIONS", clips: [{ name: "Verse", start: 0, end: 8 }] }]));
+  assert.deepEqual(s.sections.map((x) => x.name), ["Verse"]);
+});
+
+test("cuesFromLive: a '>' locator on a section clip takes the clip's name and color", () => {
+  const clips = [{ name: "Verse", start: 0, end: 8, color: 0 }, { name: "Chorus", start: 8, end: 16, color: 9 }];
+  const [s] = buildSetlist(cuesFromLive([{ name: "A", time: 0 }, { name: ">", time: 8 }], [{ name: "Sections +CC", clips }]));
+  assert.deepEqual(s.sections.map((x) => [x.name, x.color, x.time]), [["Verse", "rose", 0], ["Chorus", "blue", 8]]);
 });
 
 test("cuesFromLive: no tracks returns the cues unchanged", () => {
