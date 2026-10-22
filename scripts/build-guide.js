@@ -392,7 +392,7 @@ const CSS = (v) => `
     font: 9pt/1.45 ui-monospace, "SF Mono", Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
 
   /* cover */
-  .cover { height: 296mm; background: #0d0d11; color: #e8e6df; display: flex; flex-direction: column; align-items: center;
+  .cover { height: 297mm; overflow: hidden; background: #0d0d11; color: #e8e6df; display: flex; flex-direction: column; align-items: center;
     justify-content: center; text-align: center; padding: 30mm; break-after: page; position: relative; }
   .cover-logo svg { width: 70mm; height: 70mm; border-radius: 14mm; box-shadow: 0 0 0 1px #2a2a33; }
   .cover h1 { font-size: 46pt; font-weight: 800; letter-spacing: -1.5px; margin: 12mm 0 0; }
