@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 fatto, A2 (UI) in corso; in attesa dei revisori di sicurezza, logica e ponytail-audit
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), A1 fatto, A2 (UI) in corso, poi A3 (sicurezza); in attesa dei revisori di logica e ponytail-audit
 
 ## Da fare
 
@@ -89,7 +89,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ### Audit completo dopo W7, prima del rilascio W8 (richiesto dall'utente il 2026-10-22: i bug trovati si correggono nella 0.6.0)
 - Via libera dell'utente il 2026-10-22: audit, correzioni, commit, push, PR e merge (stato salvato anche con `/ecc:ck save`)
-- [ ] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP) + revisione della logica di riproduzione (in corso) + revisione della UI (fatta: A2)
+- [ ] `ponytail:ponytail-audit` su tutta l'app + `security-review` (LAN, password, OSC, HTTP: fatto, A3) + revisione della logica di riproduzione (in corso) + revisione della UI (fatta: A2)
 - [ ] `superpowers:systematic-debugging` sul bug della scaletta che sparisce, con il pacchetto log della 0.5.1 (in attesa del pacchetto)
 - [x] agente `ecc:python-reviewer` sul Remote Script (Python 3.7 di Live 11, API di Live): 13 punti, correzioni in A1
 
@@ -122,6 +122,24 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
   16. ricerca: risposte arrivate in ritardo ignorate
 - [ ] GREEN: `public/index.html`, server (limitatore), più 8 (MIDI in una sola scheda con `navigator.locks`) e 15 (campi 16 px sui telefoni: niente zoom di Safari), senza test automatico
 - Non corretto: brani con lo stesso nome (ripresa) modificati insieme, perché il protocollo usa il nome (da rivedere con gli id)
+
+#### A3 — Sicurezza (agente `ecc:security-reviewer`, prove su un server vero; nessun XSS, path traversal o RCE dalla rete)
+- [ ] RED `server.test.js` (+ `editor`, `setlist`, `als-parser`):
+  1. un frame WebSocket malformato non chiude OpenSet (`ws.on("error")`, `maxPayload` 64 KB)
+  2. richieste da altri siti: `Origin` diverso da `Host` rifiutato (WebSocket e POST), `Host` solo IP, `localhost`, `*.local` o nome del computer (DNS rebinding), `X-Frame-Options: DENY`
+  3. limitatore della password: il tentativo conta prima di scrypt (richieste in parallelo), password di almeno 6 caratteri
+  4. OSC `/subscribe` e `/getValues`: risposta solo all'indirizzo che chiede (niente riflessione verso altri), al massimo 4 iscrizioni per indirizzo; 14. al massimo 64 messaggi per pacchetto
+  5. UI: la password non protegge l'OSC (testo corretto)
+  6. `editor.js`: righe lunghe non bloccano il server (regex quadratica)
+  7. nomi con migliaia di `>` non fanno crollare OpenSet (ricorsione in `parseName`), nomi tagliati a 256 caratteri
+  8. `.als`: decompressione limitata (64 MB) e lettura senza regex quadratiche sui tag non chiusi
+  9. `setPassword` e `peers` solo da questo computer; 12. computer di riserva senza redirect
+  10. `/api/load-als` solo file `.als`; all'avvio automatico si apre solo un `.als`
+  13. `midi` vale solo da questo computer, `mirror` solo dai computer di riserva (Safe Mode)
+  16. testi: il file si legge solo per un brano della scaletta (nomi riservati di Windows)
+  18. `setlist.json` leggibile solo dall'utente (0600)
+- [ ] GREEN: `server/index.js`, `server/auth.js`, `server/editor.js`, `server/setlist.js`, `server/als-parser.js`, UI
+- Non corretti: password e token in chiaro su HTTP (serve HTTPS: versione dedicata); token senza scadenza; Node 18 dentro i programmi (pkg 5.8.1 arriva a Node 18: passare a Node SEA in una versione dedicata); limitatore per /64 IPv6; tetto alle connessioni WebSocket
 
 ### Esclusi (con motivo)
 Show in Dock e licenze (non applicabili); Multi-File Project, Delay Before
