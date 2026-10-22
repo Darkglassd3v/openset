@@ -81,3 +81,14 @@ test("release workflow: one macOS job, no Actions artifacts (only release assets
   assert.match(wf, /pull_request:[\s\S]*paths:/);
   assert.match(wf, /if: startsWith\(github\.ref, 'refs\/tags\/'\)/);
 });
+
+test("release workflow: only the zips are attached (the guide is inside them), with short notes", () => {
+  // user request (2026-10-22): a separate PDF may be skipped by whoever downloads; no long install text
+  const wf = fs.readFileSync(path.join(__dirname, "..", ".github", "workflows", "release.yml"), "utf-8");
+  const files = wf.slice(wf.indexOf("files:"), wf.indexOf("files:") + 120);
+  assert.match(files, /release\/\*\.zip/);
+  assert.doesNotMatch(files, /\.pdf/);
+  assert.match(wf, /node scripts\/release-notes\.js/);
+  assert.match(wf, /body_path: release-notes\.md/);
+  assert.doesNotMatch(wf, /Expand-Archive|xattr -dr/);
+});
