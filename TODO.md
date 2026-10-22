@@ -19,6 +19,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [ ] Release senza artefatti delle Actions (scelta dell'utente, 2026-10-22): `release.yml` con un solo job su macOS, provato sulle PR che toccano il rilascio, pubblica solo dal tag; poi tag `v0.6.0` spostato sul nuovo `main` e pushato (release pubblica)
   - [x] RED `packaging.test.js`: niente `upload-artifact`/`download-artifact`, un solo job su `macos-latest`, `codesign` del programma arm64, prova sulle PR, pubblicazione solo dai tag
   - [x] GREEN: `.github/workflows/release.yml` (prova sulla PR prima del tag)
+- [ ] Dopo la release 0.6.0: workflow di release riutilizzabile (`workflow_call`) in un repo centrale (es. `Darkglassd3v/.github`) per tutti i progetti dell'utente, senza artefatti delle Actions (richiesta dell'utente, 2026-10-22)
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`); scegliere dove pubblicare le release (vedi «Da decidere»)
 
 ## Da fare
