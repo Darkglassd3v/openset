@@ -15,7 +15,8 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): audit (prima di W8), audit (A1-A4) e guida (G1) fatti; W8: PR, merge e build locale
+- [x] v0.6.0: PR #3 (merge `279f7fa`), tag `v0.6.0` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), 4 zip e guida PDF in `build/release-0.6.0/`, CI verde su Windows, macOS e Ubuntu
+- [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`); scegliere dove pubblicare le release (vedi «Da decidere»)
 
 ## Da fare
 
@@ -90,7 +91,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### W8 — Rilascio v0.6.0
 - [x] Copertura (righe 99.28%, rami 93.47%), CHANGELOG 0.6.0 (Novità e Correzioni), README, report TDD `docs/releases/0.6.0/v0.6.0.tdd.md`, versione 0.6.0 (VERSION, package.json, Remote Script)
-- [ ] PR verso `main`, CI verde (le build), revisione, merge; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/`
+- [x] PR #3 verso `main`, CI verde (le build), merge `279f7fa`; build locale dei 4 zip `openset-0.6.0-*.zip` + `OpenSet-0.6.0-Guida.pdf` in `build/release-0.6.0/` (la revisione della PR è l'audit A1-A4)
 
 ### Audit completo dopo W7, prima del rilascio W8 (richiesto dall'utente il 2026-10-22: i bug trovati si correggono nella 0.6.0)
 - Via libera dell'utente il 2026-10-22: audit, correzioni, commit, push, PR e merge (stato salvato anche con `/ecc:ck save`)
@@ -177,6 +178,7 @@ for Live).
 
 ## Fatto
 
+- [x] v0.6.0 rilasciata (impostazioni di AbleSet, audit completo A1-A4 con test della UI in Playwright, guida PDF strutturata): vedi `docs/releases/0.6.0/v0.6.0.tdd.md`
 - [x] v0.5.1 (OpenSet e AbleSet insieme, scaletta conservata, motivi a schermo, log e pacchetto log, build locale): vedi `docs/releases/0.5.1/v0.5.1.tdd.md`
 - [x] v0.5.0 rilasciata (modalità di salto, editor, dispositivi, Safe Mode e password, versione nei nomi, icone, guida PDF): vedi `docs/releases/0.5.0/v0.5.0.tdd.md`
 - [x] v0.4.0 rilasciata (cartella dati, apertura automatica, installazione del Remote Script, QR, porta 80): vedi `docs/releases/0.4.0/`
@@ -190,6 +192,7 @@ for Live).
 
 ## Da decidere con l'utente
 
+- Dove pubblicare le release (chiesto il 2026-10-22): repo privato + repo pubblico solo per le release, oppure itch.io, oppure codice pubblico come ora
 - Brani aggiunti a mano dalla UI, senza progetto Live (solo scaletta e testi):
   proposto il 2026-10-20, in attesa di risposta.
 
