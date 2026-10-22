@@ -30,6 +30,8 @@ function events(songs, idx, opts) {
     const n = nextSong(songs, idx);
     const queuedHere = wait === "song" || wait === "section";
     const target = queuedHere ? q.time : n >= 0 ? songs[n].playStart : null;
+    // AbleSet: Always Keep Playing When Jumping to Queued Songs
+    if (queuedHere && opts.keepPlayingQueued) return goto(at, target);
     if (song.endMarker === "STOP" || opts.alwaysStop || song.stopAfter || target == null) {
       const cmds = [{ cmd: "stop" }];
       if (target != null && (queuedHere || (song.jumpAfterStop ?? opts.autoJump))) cmds.push({ cmd: "jump", time: target });

@@ -355,6 +355,12 @@
       <option value="dynamic">Dinamico: sezioni a fine sezione, brani a fine brano</option>
       <option value="manual">Manuale: allo stop</option></select></label>
     <p>Fuori da «Subito», il brano o la sezione scelti vanno in coda: <kbd>J</kbd> salta, <kbd>⇧</kbd> <kbd>J</kbd> salta subito, <kbd>C</kbd> annulla.</p>
+    <label><input type="checkbox" data-set="keepPlayingQueued"> Con un brano in coda continua a suonare anche se il brano finisce con STOP</label>
+    <label><input type="checkbox" data-set="restartBeforeBack"> «Brano precedente» torna prima all'inizio del brano corrente</label>
+    <label><input type="checkbox" data-set="stopInsteadOfPause"> Stop invece di pausa (anche la barra spaziatrice): la pausa riparte da dove si è fermato</label>
+    <label><input type="checkbox" data-set="disableLoopOnJump"> Disattiva il loop quando salti a un brano o a una sezione</label>
+    <label><input type="checkbox" data-set="reEnableAutomation"> Riattiva l'automazione di Live a ogni salto di brano</label>
+    <label><input type="checkbox" data-set="backToArrangement"> Riporta le tracce all'Arrangement (Back to Arrangement) a ogni salto di brano</label>
 
     <h2>Sicurezza</h2>
     <label><input type="checkbox" data-set="safeMode"> Safe Mode: mentre suona, niente cambi di brano dalla web app e conferma prima dello stop</label>
@@ -500,11 +506,11 @@ const store = {
 };
 const QUANT = ["Nessuna", "8 battute", "4 battute", "2 battute", "1 battuta", "1/2", "1/2T", "1/4", "1/4T", "1/8", "1/8T", "1/16", "1/16T", "1/32"];
 const ACTIONS = {
-  playStop: "Play / Stop", play: "Play", stop: "Stop", next: "Brano successivo", prev: "Brano precedente",
+  playPause: "Play / Pausa", playStop: "Play / Stop", play: "Play", pause: "Pausa", stop: "Stop", next: "Brano successivo", prev: "Brano precedente",
   nextSection: "Sezione successiva", prevSection: "Sezione precedente", loopToggle: "Loop sezione",
 };
 const KEYS = {
-  " ": "playStop", ArrowRight: "next", PageDown: "next", ArrowLeft: "prev", PageUp: "prev",
+  " ": "playPause", ArrowRight: "next", PageDown: "next", ArrowLeft: "prev", PageUp: "prev",
   ArrowDown: "nextSection", ArrowUp: "prevSection", l: "loopToggle",
   j: "jumpToQueued", c: "clearQueue",
 };
@@ -596,15 +602,18 @@ $("authCancel").onclick = () => { $("authPanel").hidden = true; };
 
 // Safe Mode: a stop while playing needs a second press within 3 s
 let stopArmed = 0;
+// the transport button pauses unless "Stop invece di pausa" (AbleSet: Stop by Default Instead of Pausing)
+const haltCmd = () => (state && state.settings.stopInsteadOfPause ? "stop" : "pause");
+const haltLabel = () => (haltCmd() === "stop" ? "Stop" : "Pausa");
 function stopGuarded(cmd) {
   if (!(state && state.settings.safeMode && state.is_playing) || Date.now() - stopArmed < 3000) {
     stopArmed = 0;
-    $("btnStop").textContent = "Stop";
+    $("btnStop").textContent = haltLabel();
     return send({ cmd });
   }
   stopArmed = Date.now();
-  $("btnStop").textContent = "Conferma stop";
-  setTimeout(() => { if (Date.now() - stopArmed >= 3000) $("btnStop").textContent = "Stop"; }, 3100);
+  $("btnStop").textContent = "Conferma " + haltLabel().toLowerCase();
+  setTimeout(() => { if (Date.now() - stopArmed >= 3000) $("btnStop").textContent = haltLabel(); }, 3100);
 }
 
 // ---------- this device: name, view and lock, as seen by the server ----------
@@ -660,6 +669,7 @@ function render() {
   $("bpm").textContent = Math.round(st.tempo || 0) + " BPM";
   $("btnPlay").textContent = st.is_playing ? "Playing" : "Play";
   $("btnPlay").classList.toggle("playing", !!st.is_playing);
+  if (!stopArmed) $("btnStop").textContent = haltLabel();
   $("btnLoop").classList.toggle("on", !!st.loop);
   $("btnLoop").setAttribute("aria-pressed", String(!!st.loop));
 
@@ -1326,7 +1336,7 @@ $("queueBar").addEventListener("click", (e) => {
   if (e.detail > 0) b.blur();
 });
 $("btnPlay").onclick = () => { if (!state || !state.is_playing) send({ cmd: "play" }); };
-$("btnStop").onclick = () => stopGuarded("stop");
+$("btnStop").onclick = () => stopGuarded(haltCmd());
 $("btnLoop").onclick = () => send({ cmd: "loopToggle" });
 $("btnPrev").onclick = () => send({ cmd: "prev" });
 $("btnNext").onclick = () => send({ cmd: "next" });
@@ -1344,7 +1354,7 @@ document.addEventListener("keydown", (e) => {
   const cmd = KEYS[e.key];
   if (!cmd) return;
   e.preventDefault();
-  if (cmd === "playStop" && state && state.is_playing) stopGuarded(cmd);
+  if (cmd === "playPause" && state && state.is_playing) stopGuarded(haltCmd());
   else send({ cmd });
 });
 

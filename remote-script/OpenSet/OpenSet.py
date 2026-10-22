@@ -224,6 +224,10 @@ class OpenSet(ControlSurface):
             s.tempo = float(msg.get("bpm", s.tempo))
         elif cmd == "quant":
             s.clip_trigger_quantization = _quantization(int(msg.get("value", 4)))
+        elif cmd == "reEnableAutomation":
+            s.re_enable_automation()
+        elif cmd == "backToArrangement":
+            s.back_to_arranger = False  # False sends every track back to the Arrangement
         elif cmd == "resync":
             self._cues_sent = None
             self._clips_sent = None

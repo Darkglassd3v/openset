@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W1 GREEN
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): in pausa su richiesta dell'utente (scelta delle skill); audit completo in corso in background; poi W2
 
 ## Da fare
 
@@ -44,7 +44,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 #### W1 — Playback
 - [x] RED: `engine.test.js` (keepPlayingQueued), `server.test.js` (restartBeforeBack, pause/playPause/stopInsteadOfPause, disableLoopOnJump, reEnableAutomation, backToArrangement, OSC), `test_openset.py` (comandi a Live)
-- [ ] GREEN: motore, server, Remote Script, UI (Opzioni → Riproduzione, Spazio e Stop)
+- [x] GREEN: motore (`keepPlayingQueued`), server (impostazioni, `pause`, `playPause`, `reEnableAutomation`, `backToArrangement`, OSC), Remote Script, UI (Opzioni → Riproduzione, pulsante Pausa/Stop, Spazio = play/pausa)
 - Voci: Restart Song Before Jumping Back; Stop by Default Instead of Pausing (spazio = stop); Disable Loop When Jumping; Re-Enable Automation on Song Jump; Reset Tracks Back to Arrangement on Song Jump; Always Keep Playing When Jumping to Queued Songs
 
 #### W2 — Section Count-In

@@ -66,7 +66,20 @@ function defaultPrefs() {
     stopAfter: [],
     notes: {},
     measured: {}, // song name -> seconds measured during real playback
-    settings: { alwaysStop: false, autoJump: true, autoplay: false, jumpMode: "quantized", safeMode: false },
+    // AbleSet's Settings → Playback
+    settings: {
+      alwaysStop: false,
+      autoJump: true,
+      autoplay: false,
+      jumpMode: "quantized",
+      safeMode: false,
+      restartBeforeBack: true,
+      stopInsteadOfPause: false,
+      disableLoopOnJump: true,
+      reEnableAutomation: false,
+      backToArrangement: false,
+      keepPlayingQueued: false,
+    },
     saved: {},
     backups: [], // saved setlists replaced by a newer save: { name, at, data }, newest first
     setlistName: null,
@@ -320,6 +333,13 @@ function start(opts = {}) {
 
   function sendToLive(obj) {
     stateUdp.send(Buffer.from(JSON.stringify(obj)), cfg.livePort, cfg.liveHost);
+    // AbleSet: Re-Enable Automation / Reset Tracks Back to Arrangement on Song Jump
+    const { reEnableAutomation, backToArrangement } = prefs.settings;
+    if ((obj.cmd === "jump" || obj.cmd === "seek") && (reEnableAutomation || backToArrangement) &&
+        setlist().some((s) => Math.abs(s.playStart - obj.time) < S.EPS)) {
+      if (reEnableAutomation) sendToLive({ cmd: "reEnableAutomation" });
+      if (backToArrangement) sendToLive({ cmd: "backToArrangement" });
+    }
   }
 
   function handleLive(msg) {
@@ -510,6 +530,7 @@ function start(opts = {}) {
   // A jump from the user. In the queued jump modes, while playing, it waits
   // for the engine (end of section/song) or for J / Shift+J / a stop.
   function jumpTo(time, type = "section") {
+    if (prefs.settings.disableLoopOnJump && liveState.loop) sendToLive({ cmd: "loop", on: false });
     if (prefs.settings.jumpMode !== "quantized" && liveState.is_playing) {
       queued = { time, type };
       changed();
@@ -543,6 +564,18 @@ function start(opts = {}) {
       case "playStop":
         sendToLive({ cmd: liveState.is_playing ? "stop" : "play" });
         return true;
+      case "pause":
+        // Live's Stop goes back to the start marker: park the playhead where it stopped
+        sendToLive({ cmd: "stop" });
+        sendToLive({ cmd: "seek", time: liveState.beat });
+        return true;
+      case "playPause":
+        if (!liveState.is_playing) return handleCommand({ cmd: "play" });
+        return handleCommand({ cmd: prefs.settings.stopInsteadOfPause ? "stop" : "pause" });
+      case "reEnableAutomation":
+      case "backToArrangement":
+        sendToLive({ cmd: msg.cmd });
+        return true;
       case "jump":
         if (safe && num(msg.time) && S.songAt(list, msg.time) !== cur) return false;
         return num(msg.time) && jumpTo(msg.time, list.some((s) => Math.abs(s.playStart - msg.time) < S.EPS) ? "song" : "section");
@@ -563,7 +596,8 @@ function start(opts = {}) {
       }
       case "prev": {
         // like AbleSet: back to the start of the song first, unless forced
-        if (song && !msg.force && liveState.beat - song.playStart > 1) return jumpTo(song.playStart, "song");
+        if (song && !msg.force && prefs.settings.restartBeforeBack && liveState.beat - song.playStart > 1)
+          return jumpTo(song.playStart, "song");
         if (safe) return false;
         const p = S.prevSong(list, cur);
         if (p >= 0) jumpTo(list[p].playStart, "song");
@@ -740,11 +774,17 @@ function start(opts = {}) {
       case "/global/continuePlaying":
         return runOsc({ cmd: "continue" });
       case "/global/stop":
-      case "/global/pause":
         return runOsc({ cmd: "stop" });
+      case "/global/pause":
+        return runOsc({ cmd: "pause" });
       case "/global/playPause":
+        return runOsc({ cmd: "playPause" });
       case "/global/playStop":
         return runOsc({ cmd: "playStop" });
+      case "/global/reEnableAutomation":
+        return runOsc({ cmd: "reEnableAutomation" });
+      case "/global/backToArrangement":
+        return runOsc({ cmd: "backToArrangement" });
       case "/global/quantization":
         return runOsc({ cmd: "quant", value: QUANT_NAMES.indexOf(String(a)) });
       case "/global/tempo":

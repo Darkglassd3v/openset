@@ -1210,7 +1210,8 @@ test("prefs: a corrupt setlist.json falls back to defaults, an unwritable one is
   );
   const c = await setup(t, { baseDir });
   const s = await c.state();
-  assert.deepEqual(s.settings, { alwaysStop: true, autoJump: true, autoplay: false, jumpMode: "quantized", safeMode: false });
+  const { alwaysStop, autoJump, autoplay, jumpMode, safeMode } = s.settings; // valid values kept, bad ones dropped
+  assert.deepEqual({ alwaysStop, autoJump, autoplay, jumpMode, safeMode }, { alwaysStop: true, autoJump: true, autoplay: false, jumpMode: "quantized", safeMode: false });
   assert.deepEqual(s.saved, []);
   assert.deepEqual(s.midi, []);
 
