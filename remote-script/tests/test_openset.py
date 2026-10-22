@@ -197,6 +197,17 @@ class OpenSetTest(unittest.TestCase):
         self.assertIn("re_enable_automation", self.song.calls)
         self.assertIs(self.song.back_to_arranger, False)
 
+    def test_click_solo_during_count_in(self):
+        names = ["Drums", "CLICK", "Click 2", "Guide +CLICK", "Lifesine", "Bass"]
+        self.song.tracks = [FakeTrack(n) for n in names]
+        for t in self.song.tracks:
+            t.solo = t.name == "Bass"  # soloed by the user before the count-in
+        self.os._handle({"cmd": "clickSolo", "on": True})
+        # the first track or group with "click", +CLICK tracks and Lifesine (AbleSet)
+        self.assertEqual([t.solo for t in self.song.tracks], [False, True, False, True, True, True])
+        self.os._handle({"cmd": "clickSolo", "on": False})
+        self.assertEqual([t.solo for t in self.song.tracks], [False, False, False, False, False, True])
+
     def test_cues_are_resent_only_when_they_change(self):
         self.received()
         self.os._send_state()

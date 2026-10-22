@@ -248,6 +248,49 @@ test("OSC: pause, playPause, reEnableAutomation and backToArrangement", async (t
   }
 });
 
+test("Section Count-In: playback starts bars before the section, the click soloed meanwhile", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const s = (await c.state()).settings;
+  assert.deepEqual([s.countIn, s.countInBars, s.countInSoloClick], [false, 1, false]);
+  assert.equal((await c.cmd({ cmd: "settings", countInBars: 3 })).status, 400); // 1, 2 or 4 bars
+  await c.cmd({ cmd: "settings", countIn: true, countInBars: 2, countInSoloClick: true });
+  let seek = c.expectCmd({ cmd: "seek", time: 8 }); // Chorus at 16, two 4/4 bars earlier
+  let solo = c.expectCmd({ cmd: "clickSolo", on: true });
+  const play = c.expectCmd({ cmd: "play" });
+  await c.cmd({ cmd: "section", index: 1 });
+  await seek;
+  await solo;
+  await play;
+  // the click goes back to normal when the section starts…
+  let unsolo = c.expectCmd({ cmd: "clickSolo", on: false });
+  await c.at(12, { is_playing: true });
+  await c.at(16.1, { is_playing: true });
+  await unsolo;
+  // …or when playback stops during the count-in
+  await c.at(16.1, { is_playing: false });
+  solo = c.expectCmd({ cmd: "clickSolo", on: true });
+  await c.cmd({ cmd: "section", index: 1 });
+  await solo;
+  unsolo = c.expectCmd({ cmd: "clickSolo", on: false });
+  await c.at(9, { is_playing: true });
+  await c.at(9.5, { is_playing: false });
+  await unsolo;
+});
+
+test("Section Count-In: not while playing, never before the start of the set", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "settings", countIn: true, countInBars: 4 });
+  const seek = c.expectCmd({ cmd: "seek", time: 0 }); // Verse at 8: four bars earlier would be -8
+  await c.cmd({ cmd: "section", index: 0 });
+  await seek;
+  await c.at(20, { is_playing: true });
+  const j = c.expectCmd({ cmd: "jump", time: 8 });
+  await c.cmd({ cmd: "section", index: 0 });
+  await j;
+});
+
 test("debug logs: Live connection events, file log and log package", async (t) => {
   const c = await setup(t, { liveTimeoutMs: 300 });
   await c.connect();

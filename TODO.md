@@ -15,7 +15,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 ## In corso
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
-- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W2 RED
+- [ ] v0.6.0 su `release/v0.6.0` (da `main` d93fe1d): W2 GREEN
 
 ## Da fare
 
@@ -48,7 +48,9 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - Voci: Restart Song Before Jumping Back; Stop by Default Instead of Pausing (spazio = stop); Disable Loop When Jumping; Re-Enable Automation on Song Jump; Reset Tracks Back to Arrangement on Song Jump; Always Keep Playing When Jumping to Queued Songs
 
 #### W2 — Section Count-In
-- [ ] Count-in prima della sezione scelta (1, 2 o 4 battute); solo della traccia click (prima traccia o gruppo con «click», tracce `+CLICK`, «Lifesine») durante il count-in
+- [x] RED: `server.test.js` (impostazioni, seek e play N battute prima, solo del click fino alla sezione o allo stop, niente count-in mentre suona, mai prima di 0), `test_openset.py` (`clickSolo`)
+- [ ] GREEN: server, Remote Script, UI
+- Voci: Count-in prima della sezione scelta (1, 2 o 4 battute); solo della traccia click (prima traccia o gruppo con «click», tracce `+CLICK`, «Lifesine») durante il count-in
 
 #### W3 — Setlist
 - [ ] Remove Played Songs Automatically
