@@ -17,7 +17,7 @@ except ImportError:
     # Legacy fallback
     from _Framework.ControlSurface import ControlSurface
 
-VERSION = "0.6.1"                    # OpenSet version, same as package.json (checked by the tests)
+VERSION = "0.6.2"                    # OpenSet version, same as package.json (checked by the tests)
 SERVER_ADDR = ("127.0.0.1", 39061)   # where the Node server listens; 39051 is AbleSet's OSC port
 LISTEN_PORT = 39050                  # where this script listens for commands
 TICK_MS = 100                        # state broadcast interval

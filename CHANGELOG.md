@@ -3,6 +3,18 @@
 Tutte le novità di OpenSet, dalla versione più recente. La guida PDF di ogni
 rilascio riporta la sezione della sua versione.
 
+## 0.6.2 — 2026-10-24
+
+### Correzioni
+
+- **Brani con lo stesso nome**: una ripresa con lo stesso nome di un altro brano ora si toglie, si sposta e prende le note da sola. Prima ogni modifica cambiava anche l'altro brano.
+- **Password**: sbloccando OpenSet da un iPad la password non passa più sulla rete in chiaro. Il dispositivo manda solo una prova calcolata da lei; uno sbloccato chiede di nuovo la password dopo 24 ore senza usarlo o se cambia indirizzo.
+- **Protezioni di rete**: solo OpenSet può comandare Live, e nessun dispositivo può aprire connessioni senza limite. Chi prova password a caso da IPv6 non scappa più cambiando indirizzo; un altro programma dello stesso computer non manda più comandi a Live. Dopo l'aggiornamento riavvia Live.
+- **Due computer**: un computer di riserva spento non rallenta più gli altri. Togliere e rimettere una riserva con password non la lascia più segnata come «rifiuta i comandi».
+- **User Library spostata**: se in Live la User Library non è nella cartella standard, OpenSet la trova da solo per installare il Remote Script.
+- **Set grandi**: con centinaia di locator Live è più leggero. Il Remote Script li rilegge una volta al secondo invece di dieci.
+- **Log**: se OpenSet resta acceso per giorni, `openset.log` non cresce più senza limite.
+
 ## 0.6.1 — 2026-10-23
 
 ### Correzioni

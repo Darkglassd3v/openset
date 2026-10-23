@@ -63,7 +63,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
 - [x] C5 (RED `e9102ef`, GREEN) User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
 - [x] C6 (RED `4962104`, GREEN) Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
 - [x] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Causa trovata: non era OpenSet ma lo strumento usato per misurare (Chrome comandato da `chrome-devtools`). Misurato in Chrome normale, dal computer e dall'indirizzo di rete, con Live collegato e 300 locator: primo stato in 40-100 ms, «Live connesso» in 100-220 ms; anche la versione di allora (`f883623`) è veloce. Test di guardia in `e2e/ui.spec.js` (primo stato entro 1 s)
-- [ ] Rilascio 0.6.2: copertura, CHANGELOG, report TDD, versione, `code-review` e correzione di tutto quello che trova, PR, CI, merge, tag
+- [ ] Rilascio 0.6.2: copertura (righe 99.30%, rami 93.52%), CHANGELOG, report TDD `docs/releases/0.6.2/v0.6.2.tdd.md`, versione, guida e README fatti; poi `code-review` e correzione di tutto quello che trova, PR, CI, merge, tag
 
 ### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
 Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.
