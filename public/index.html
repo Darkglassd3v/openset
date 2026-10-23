@@ -813,8 +813,16 @@ function tryAuth() {
   authTried = true;
   const pw = $("authPw").value;
   const c = access.challenge;
-  // a password saved by OpenSet 0.6 has no challenge: sent this one time, then OpenSet stores it the new way
-  if (!c) return send({ type: "auth", password: pw });
+  // a password saved by OpenSet 0.6 (legacy): sent this one time, then OpenSet stores it the new way.
+  // One OpenSet cannot read: nothing is sent, it is set again on the computer
+  if (!c && access.legacy) return send({ type: "auth", password: pw });
+  if (!c) {
+    authBusy = false;
+    $("authGo").disabled = false;
+    authTried = false;
+    $("authStatus").textContent = "OpenSet non riesce a leggere la password salvata: reimpostala dal computer con OpenSet (Opzioni → Sicurezza).";
+    return;
+  }
   $("authStatus").textContent = "Controllo la password…";
   // only a proof travels (SCRAM, made with a one-time number). After a repaint:
   // computing the key takes a moment on older iPads

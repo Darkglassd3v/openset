@@ -29,7 +29,7 @@ const { deviceUrls, lanInterfaces, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
 const crypto = require("crypto");
-const { readAuth, hashPassword, hashPasswordAsync, checkPassword, checkProof, createLimiter, createTokens, connectionAllowed } = require("./auth");
+const { readAuth, hashPassword, checkPassword, checkProof, createLimiter, createTokens, connectionAllowed } = require("./auth");
 const { createLog, liveLogFiles, liveLogLines } = require("./log");
 const { nudgeFor, syncTarget } = require("./ablenet");
 const { version: VERSION } = require("../package.json");
@@ -1023,16 +1023,26 @@ function start(opts = {}) {
       case "devices":
         return deviceCommand(msg);
       case "setPassword": {
-        // "" removes it; only browsers that may command get here
+        // "" removes it; only browsers that may command get here. A promise: computed without
+        // blocking (Live keeps playing), and the HTTP answer waits for it
         const pw = msg.password;
         if (pw !== "" && (typeof pw !== "string" || pw.length < 6 || pw.length > 128)) return false;
-        prefs = { ...prefs, auth: pw ? hashPassword(pw) : null };
-        savePrefs();
-        tokens.clear();
-        for (const ws of wss.clients) [ws.authed, ws.token] = [false, null];
-        for (const ws of wss.clients) sendAccess(ws);
-        changed();
-        return true;
+        const seq = ++passwordSeq; // two changes in a row: the last one asked wins
+        return (pw ? hashPassword(pw) : Promise.resolve(null))
+          .then((auth) => {
+            if (seq !== passwordSeq) return true;
+            prefs = { ...prefs, auth };
+            savePrefs();
+            tokens.clear();
+            for (const ws of wss.clients) [ws.authed, ws.token] = [false, null];
+            for (const ws of wss.clients) sendAccess(ws);
+            changed();
+            return true;
+          })
+          .catch((e) => {
+            log.error(`[auth] cannot set the password: ${e.message}`);
+            return false;
+          });
       }
     }
     return false;
@@ -1365,7 +1375,7 @@ function start(opts = {}) {
 
   app.post("/api/cmd", route(async (req, res) => {
     if (!(await httpAllowed(req, res))) return;
-    if (runCommand(req.body, "web", localReq(req))) res.json({ ok: true });
+    if (await runCommand(req.body, "web", localReq(req))) res.json({ ok: true });
     else res.status(400).json({ error: "Unknown or invalid command" });
   }));
 
@@ -1378,12 +1388,37 @@ function start(opts = {}) {
   const canControl = (ws) => !prefs.auth || ws.local || ws.authed;
 
   const newNonce = () => crypto.randomBytes(16).toString("hex");
+  let passwordSeq = 0;
   function sendAccess(ws, token, extra = {}) {
     const a = prefs.auth;
-    // the numbers the page needs to prove it knows the password (not with a password from OpenSet 0.6)
-    const challenge = a && a.storedKey ? { challenge: { salt: a.salt, iter: a.iter, nonce: ws.nonce } } : {};
+    // the numbers the page needs to prove it knows the password; with a 0.6 password (legacy) the
+    // page sends it once; one OpenSet cannot read (unreadable) is set again on this computer
+    const challenge = !a
+      ? {}
+      : a.storedKey
+        ? { challenge: { salt: a.salt, iter: a.iter, nonce: ws.nonce } }
+        : a.hash
+          ? { legacy: true }
+          : { unreadable: true };
     if (ws.readyState === 1)
       ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!a, ...challenge, ...(token ? { token } : {}), ...extra }));
+  }
+
+  async function upgradePassword(ws, auth, password) {
+    let upgraded;
+    try {
+      upgraded = await hashPassword(password);
+    } catch (e) {
+      return log.error(`[auth] cannot update the 0.6 password: ${e.message}`); // still unlocked, kept as it was
+    }
+    if (prefs.auth !== auth) return; // changed on this computer meanwhile: that one stays
+    prefs = { ...prefs, auth: upgraded };
+    savePrefs();
+    // the other open pages stop sending it too: only the numbers, no access message
+    // (that would open their password panel)
+    const { salt, iter } = upgraded;
+    for (const c of wss.clients)
+      if (c !== ws && c.readyState === 1) c.send(JSON.stringify({ type: "challenge", challenge: { salt, iter, nonce: c.nonce } }));
   }
 
   async function wsAuth(ws, { password, token, proof }) {
@@ -1399,17 +1434,11 @@ function start(opts = {}) {
         limiter.fail(ws.ip);
         if (proof !== undefined) ok = checkProof(prefs.auth, ws.nonce, proof);
         else {
-          ok = await checkPassword(prefs.auth, password);
+          const auth = prefs.auth;
+          // a password changed on this computer while this one was being checked does not unlock
+          ok = (await checkPassword(auth, password)) && prefs.auth === auth;
           // saved by OpenSet 0.6: from now on the page proves it knows the password instead of sending it
-          if (ok && prefs.auth && prefs.auth.hash) {
-            prefs = { ...prefs, auth: await hashPasswordAsync(password) };
-            savePrefs();
-            // the other open pages stop sending it too: only the numbers, no access message
-            // (that would open their password panel)
-            const { salt, iter } = prefs.auth;
-            for (const c of wss.clients)
-              if (c !== ws && c.readyState === 1) c.send(JSON.stringify({ type: "challenge", challenge: { salt, iter, nonce: c.nonce } }));
-          }
+          if (ok && auth.hash) await upgradePassword(ws, auth, password);
         }
       }
       if (ok) limiter.ok(ws.ip);
@@ -1433,7 +1462,8 @@ function start(opts = {}) {
     }
     const pw = req.get("x-openset-password");
     if (pw !== undefined || bearer) limiter.fail(ip); // before scrypt: parallel guesses are all counted
-    if (pw !== undefined && (await checkPassword(prefs.auth, pw))) {
+    const auth = prefs.auth;
+    if (pw !== undefined && (await checkPassword(auth, pw)) && prefs.auth === auth) {
       limiter.ok(ip);
       return true;
     }
@@ -1514,7 +1544,7 @@ function start(opts = {}) {
         if (msg && msg.type === "device") deviceInfo(devices.get(ws), msg);
         else if (msg && msg.type === "auth") wsAuth(ws, msg).catch((e) => log.error(`[auth] ${e.message}`));
         else if (!canControl(ws)) sendAccess(ws); // read-only: tell the browser to ask for the password
-        else runCommand(msg, "web", ws.local);
+        else Promise.resolve(runCommand(msg, "web", ws.local)).catch((e) => log.error(`[ws] ${e.message}`));
       } catch (e) {
         log.error(`[ws] ${e.message}`);
       }

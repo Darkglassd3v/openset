@@ -296,7 +296,9 @@ ${h3("sicurezza", "Sicurezza")}
     La password non passa sulla rete: il dispositivo manda solo una prova calcolata da lei, e OpenSet ne conserva solo una
     verifica che non basta per sbloccare. Un dispositivo sbloccato resta sbloccato finché lo usi; dopo 24 ore senza usarlo,
     o se si ricollega da un'altra rete (con IPv4 anche da un altro indirizzo), la chiede di nuovo. Scegli una password lunga, meglio una frase: chi ascolta la rete del
-    locale vede la prova e potrebbe provare a indovinare una password corta.</li>
+    locale vede la prova e potrebbe provare a indovinare una password corta. OpenSet usa HTTP senza cifratura (come AbleSet):
+    su una rete Wi-Fi che usano anche altri, chi legge il traffico può copiare lo sblocco di un dispositivo. Meglio una rete
+    Wi-Fi della band, con la sua password.</li>
 </ul>
 ${h3("strumenti", "Strumenti")}
 <ul>

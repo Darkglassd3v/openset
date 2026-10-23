@@ -67,7 +67,7 @@ const scramProof = (pw, a, nonce) => {
 };
 
 test("R2: only a check of the password is stored (SCRAM stored key), with 100000 iterations", async () => {
-  const a = hashPassword("palco-2026");
+  const a = await hashPassword("palco-2026");
   assert.match(a.salt, /^[0-9a-f]{32}$/);
   assert.equal(a.iter, 100000);
   assert.equal(a.storedKey, sha(clientKey("palco-2026", a)).toString("hex"));
@@ -78,7 +78,7 @@ test("R2: only a check of the password is stored (SCRAM stored key), with 100000
 });
 
 test("R2: a proof made from the password unlocks; what is in setlist.json does not", async () => {
-  const a = hashPassword("palco-2026");
+  const a = await hashPassword("palco-2026");
   const nonce = "ab".repeat(16);
   const proof = scramProof("palco-2026", a, nonce);
   assert.equal(checkProof(a, nonce, proof), true);
