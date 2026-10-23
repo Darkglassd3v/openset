@@ -745,7 +745,11 @@ function connect() {
       else render();
     }
     if (msg.type === "cue") onCue(msg.cue);
-    if (msg.type === "osc") { Object.assign(CV.osc, msg.values); if (view === "canvas") cvUpdate(); }
+    if (msg.type === "osc") {
+      Object.assign(CV.osc, msg.values);
+      (msg.removed || []).forEach((k) => delete CV.osc[k]); // a value that went away
+      if (view === "canvas") cvUpdate();
+    }
     if (msg.type === "device") onDeviceCommand(msg);
     if (msg.type === "access") onAccess(msg);
     // a 0.6 password just updated by another device: from now on this page sends a proof too
@@ -1266,6 +1270,7 @@ $("manSave").onclick = () => {
   const name = $("manName").value.trim();
   const seconds = parseDuration($("manTime").value);
   if (!name || seconds === null) { $("manStatus").textContent = "Servono un titolo e una durata, per esempio 3:20."; return; }
+  if ($("manLyrics").value.length > 20000) { $("manStatus").textContent = "Il testo supera i 20000 caratteri: accorcialo."; return; }
   send({ cmd: manualEdit ? "updateManualSong" : "addManualSong", ...(manualEdit ? { id: manualEdit } : {}), name, seconds, lyrics: $("manLyrics").value });
   $("manualPanel").hidden = true;
 };
@@ -1769,18 +1774,156 @@ const cvColor = (c) => (CV_COLORS.includes(c) && c ? `var(--c-${c})` : "");
 
 // ${…} in templates and the scripts: what AbleSet offers there
 const cvOsc = (key, index = 0) => { const v = CV.osc[key]; return v === undefined ? undefined : index === "all" ? v : v[index]; };
-const cvShared = (key, fallback) => (state && state.shared && Object.hasOwn(state.shared, key) ? state.shared[key] : fallback);
+const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k); // Object.hasOwn: Safari 15.4 only
+const cvShared = (key, fallback) => (state && state.shared && hasOwn(state.shared, key) ? state.shared[key] : fallback);
 const cvLocals = (() => { try { return JSON.parse(store.get("openset.locals", "{}")) || {}; } catch { return {}; } })();
-const cvLocal = (key, fallback) => (Object.hasOwn(cvLocals, key) ? cvLocals[key] : fallback);
+const cvLocal = (key, fallback) => (hasOwn(cvLocals, key) ? cvLocals[key] : fallback);
 const cvDuration = (s) => { s = Math.max(0, Math.round(Number(s) || 0)); const two = (n) => String(n).padStart(2, "0"); const h = Math.floor(s / 3600); return (h ? h + ":" : "") + two(Math.floor((s % 3600) / 60)) + ":" + two(s % 60); };
-const cvFns = new Map();
-function cvEval(expr) {
-  if (!cvFns.has(expr)) {
-    let f;
-    try { f = new Function("osc", "shared", "local", "formatDuration", "now", `return (${expr});`); } catch { f = () => "⚠"; }
-    cvFns.set(expr, f);
+
+// canvas-expr: begin
+// Canvas templates (${…}) and «Acceso quando»: a small language, never JavaScript (a canvas may
+// come from any device allowed to command OpenSet, and this page may run on the computer with
+// OpenSet). Numbers, "…"/'…' text, true, false, null, undefined; osc(), shared(), local(),
+// formatDuration(), now(), Math.round/floor/ceil/min/max/abs; ! - * / % + < <= > >= === !== == !=
+// && || ?: and (…); .length, [number] and a few methods of text, numbers and lists. Else: an error.
+var CV_FNS = { osc: 1, shared: 1, local: 1, formatDuration: 1, now: 1 };
+var CV_MATH = { round: 1, floor: 1, ceil: 1, min: 1, max: 1, abs: 1 };
+var CV_METHODS = { toFixed: 1, toUpperCase: 1, toLowerCase: 1, padStart: 1, padEnd: 1, trim: 1, join: 1, includes: 1, slice: 1, indexOf: 1 };
+function cvExpr(src, fns) {
+  var toks = [];
+  var re = /\s*(?:(\d+(?:\.\d+)?)|("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')|([A-Za-z_$][\w$]*)|(===|!==|==|!=|<=|>=|&&|\|\||[-+*\/%!<>?:().,\[\]]))/y;
+  var at = 0;
+  src = String(src);
+  while (at < src.length) {
+    if (/^\s*$/.test(src.slice(at))) break;
+    re.lastIndex = at;
+    var m = re.exec(src);
+    if (!m) throw new Error("canvas: cannot read «" + src.slice(at, at + 10) + "»");
+    at = re.lastIndex;
+    if (m[1]) toks.push({ k: "num", v: Number(m[1]) });
+    else if (m[2]) toks.push({ k: "str", v: m[2].slice(1, -1).replace(/\\(.)/g, "$1") });
+    else if (m[3]) toks.push({ k: "id", v: m[3] });
+    else toks.push({ k: "op", v: m[4] });
   }
-  try { return cvFns.get(expr)(cvOsc, cvShared, cvLocal, cvDuration, Date.now); } catch { return "⚠"; }
+  var pos = 0;
+  var peek = function (v) { var t = toks[pos]; return t && t.k === "op" && t.v === v ? t : null; };
+  var take = function (v) { if (!peek(v)) throw new Error("canvas: «" + v + "» expected"); pos++; };
+  var args = function () {
+    var out = [];
+    take("(");
+    if (!peek(")")) { out.push(ternary()); while (peek(",")) { pos++; out.push(ternary()); } }
+    take(")");
+    return out;
+  };
+  var primary = function () {
+    var t = toks[pos++];
+    if (!t) throw new Error("canvas: value expected");
+    if (t.k === "num" || t.k === "str") return { t: "lit", v: t.v };
+    if (t.k === "op" && t.v === "(") { var e = ternary(); take(")"); return e; }
+    if (t.k === "id") {
+      var lits = { "true": true, "false": false, "null": null, "undefined": undefined };
+      if (hasOwnLit(lits, t.v)) return { t: "lit", v: lits[t.v] };
+      if (CV_FNS[t.v] === 1 && peek("(")) return { t: "call", f: t.v, a: args() };
+      if (t.v === "Math" && peek(".")) {
+        pos++;
+        var f = toks[pos++];
+        if (!f || f.k !== "id" || CV_MATH[f.v] !== 1) throw new Error("canvas: Math function not allowed");
+        return { t: "math", f: f.v, a: args() };
+      }
+    }
+    throw new Error("canvas: «" + t.v + "» not allowed");
+  };
+  var hasOwnLit = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+  var postfix = function () {
+    var e = primary();
+    for (;;) {
+      if (peek(".")) {
+        pos++;
+        var n = toks[pos++];
+        if (!n || n.k !== "id") throw new Error("canvas: name expected");
+        if (n.v === "length" && !peek("(")) e = { t: "len", o: e };
+        else if (CV_METHODS[n.v] === 1 && peek("(")) e = { t: "meth", o: e, m: n.v, a: args() };
+        else throw new Error("canvas: «." + n.v + "» not allowed");
+      } else if (peek("[")) {
+        pos++;
+        var i = ternary();
+        take("]");
+        e = { t: "idx", o: e, i: i };
+      } else return e;
+    }
+  };
+  var unary = function () {
+    if (peek("!") || peek("-")) { var op = toks[pos++].v; return { t: "un", op: op, a: unary() }; }
+    return postfix();
+  };
+  var level = function (ops, next) {
+    return function () {
+      var e = next();
+      while (toks[pos] && toks[pos].k === "op" && ops.indexOf(toks[pos].v) >= 0) e = { t: "bin", op: toks[pos++].v, a: e, b: next() };
+      return e;
+    };
+  };
+  var mul = level(["*", "/", "%"], unary);
+  var add = level(["+", "-"], mul);
+  var rel = level(["<", "<=", ">", ">="], add);
+  var eq = level(["===", "!==", "==", "!="], rel);
+  var and = level(["&&"], eq);
+  var or = level(["||"], and);
+  var ternary = function () {
+    var c = or();
+    if (!peek("?")) return c;
+    pos++;
+    var a = ternary();
+    take(":");
+    return { t: "if", c: c, a: a, b: ternary() };
+  };
+  var tree = ternary();
+  if (pos < toks.length) throw new Error("canvas: «" + toks[pos].v + "» not expected");
+  var seq = function (o) { return typeof o === "string" || Array.isArray(o); };
+  var ev = function (n) {
+    switch (n.t) {
+      case "lit": return n.v;
+      case "call": return fns[n.f].apply(null, n.a.map(ev));
+      case "math": return Math[n.f].apply(null, n.a.map(ev));
+      case "un": return n.op === "!" ? !ev(n.a) : -ev(n.a);
+      case "if": return ev(n.c) ? ev(n.a) : ev(n.b);
+      case "len": { var o = ev(n.o); if (!seq(o)) throw new Error("canvas: no length"); return o.length; }
+      case "idx": { var l = ev(n.o), k = ev(n.i); if (!seq(l) || typeof k !== "number") throw new Error("canvas: [number] of a list or text only"); return l[k]; }
+      case "meth": {
+        var r = ev(n.o);
+        if (!(typeof r === "string" || typeof r === "number" || Array.isArray(r)) || typeof r[n.m] !== "function") throw new Error("canvas: «" + n.m + "» not here");
+        return r[n.m].apply(r, n.a.map(ev));
+      }
+      case "bin": {
+        if (n.op === "&&") return ev(n.a) && ev(n.b);
+        if (n.op === "||") return ev(n.a) || ev(n.b);
+        var x = ev(n.a), y = ev(n.b);
+        switch (n.op) {
+          case "+": return x + y;
+          case "-": return x - y;
+          case "*": return x * y;
+          case "/": return x / y;
+          case "%": return x % y;
+          case "<": return x < y;
+          case "<=": return x <= y;
+          case ">": return x > y;
+          case ">=": return x >= y;
+          case "===": return x === y;
+          case "!==": return x !== y;
+          case "==": return x == y; // eslint-disable-line eqeqeq
+          default: return x != y; // eslint-disable-line eqeqeq
+        }
+      }
+    }
+    throw new Error("canvas: unknown");
+  };
+  return ev(tree);
+}
+// canvas-expr: end
+
+const CV_FNS_LIVE = { osc: (k, i) => cvOsc(k, i), shared: cvShared, local: cvLocal, formatDuration: cvDuration, now: () => Date.now() };
+function cvEval(expr) {
+  try { return cvExpr(expr, CV_FNS_LIVE); } catch { return "⚠"; }
 }
 function tpl(text) {
   return String(text == null ? "" : text).replace(/\$\{([^}]*)\}/g, (_, e) => {
@@ -1788,7 +1931,6 @@ function tpl(text) {
     return v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
   });
 }
-const oscLine = (cmd, args) => [cmd, ...args.map((a) => (typeof a === "string" ? `"${a.replace(/"/g, "'")}"` : String(a)))].join(" ");
 function cvNavigate(p) {
   const path = String(p || "");
   if (/^https?:\/\//.test(path)) return void (location.href = path);
@@ -1797,32 +1939,80 @@ function cvNavigate(p) {
   const v = { performance: "stage", stage: "stage", setlist: "setlist", lyrics: "lyrics", mixer: "mixer", settings: "settings" }[first];
   if (v) showView(v);
 }
-// a script of a canvas element, with AbleSet's canvas functions; value, min, max, step for inputs and sliders
-async function cvScript(code, extra = {}) {
-  if (!code || !String(code).trim()) return;
-  const api = {
-    osc: cvOsc, shared: cvShared, local: cvLocal, formatDuration: cvDuration, now: Date.now,
-    log: (...a) => console.log("[canvas]", ...a),
-    sleep: (ms) => new Promise((r) => setTimeout(r, Number(ms) || 0)),
-    sendOsc: (cmd, ...args) => send({ cmd: "oscRun", lines: oscLine(String(cmd), args) }),
-    setShared: (key, value) => send({ cmd: "setShared", key, value }),
-    resetShared: (key) => send({ cmd: "resetShared", key }),
-    setLocal: (key, value, persist) => {
-      cvLocals[key] = value;
-      if (persist) store.set("openset.locals", JSON.stringify(cvLocals));
-      cvUpdate();
-    },
-    resetLocal: (key) => { if (key === undefined) for (const k of Object.keys(cvLocals)) delete cvLocals[k]; else delete cvLocals[key]; store.set("openset.locals", JSON.stringify(cvLocals)); cvUpdate(); },
-    int: (n) => Math.trunc(Number(n) || 0),
-    navigate: cvNavigate, pathname: "/canvas/" + (cvCurrent() || {}).name,
-    ...extra,
+
+// Canvas scripts run in a closed box: a sandboxed frame with none of this page's connection,
+// storage or rights. It asks this page for what a canvas may do: OSC commands, shared and local
+// variables, a view to show. (A canvas may come from any device allowed to command OpenSet.)
+function cvRunner() {
+  window.onmessage = function (e) {
+    var d = e.data;
+    var send = function (m) { parent.postMessage(m, "*"); };
+    var own = function (o, k) { return Object.prototype.hasOwnProperty.call(o, k); };
+    var api = {
+      osc: function (k, i) { var v = d.osc[k]; return v === undefined ? undefined : i === "all" ? v : v[i || 0]; },
+      shared: function (k, fb) { return own(d.shared, k) ? d.shared[k] : fb; },
+      local: function (k, fb) { return own(d.locals, k) ? d.locals[k] : fb; },
+      setShared: function (k, v) { d.shared[k] = v; send({ t: "setShared", key: String(k), value: v }); },
+      resetShared: function (k) { delete d.shared[k]; send({ t: "resetShared", key: String(k) }); },
+      setLocal: function (k, v, persist) { d.locals[k] = v; send({ t: "setLocal", key: String(k), value: v, persist: !!persist }); },
+      resetLocal: function (k) { send({ t: "resetLocal", key: k === undefined ? null : String(k) }); },
+      sendOsc: function (cmd) { send({ t: "osc", address: String(cmd), args: [].slice.call(arguments, 1) }); },
+      navigate: function (p) { send({ t: "navigate", path: String(p) }); },
+      log: function () { console.log.apply(console, ["[canvas]"].concat([].slice.call(arguments))); },
+      sleep: function (ms) { return new Promise(function (r) { setTimeout(r, Number(ms) || 0); }); },
+      now: function () { return Date.now(); },
+      int: function (n) { return Math.trunc(Number(n) || 0); },
+      formatDuration: function (s) {
+        s = Math.max(0, Math.round(Number(s) || 0));
+        var two = function (n) { return String(n).padStart(2, "0"); };
+        var h = Math.floor(s / 3600);
+        return (h ? h + ":" : "") + two(Math.floor((s % 3600) / 60)) + ":" + two(s % 60);
+      },
+      pathname: d.pathname,
+    };
+    for (var x in d.extra) api[x] = d.extra[x];
+    var names = Object.keys(api);
+    try {
+      Promise.resolve(new Function(names.join(","), "return (async function () {\n" + d.code + "\n})();").apply(null, names.map(function (n) { return api[n]; })))
+        .catch(function (err) { console.error("[canvas]", err); });
+    } catch (err) {
+      console.error("[canvas]", err);
+    }
   };
-  try {
-    await new Function(...Object.keys(api), `return (async () => {\n${code}\n})();`)(...Object.values(api));
-  } catch (e) {
-    console.error("[canvas]", e);
-  }
 }
+let cvBox = null;
+let cvBoxReady = false;
+const cvBoxQueue = [];
+function cvScript(code, extra = {}) {
+  if (!code || !String(code).trim()) return;
+  if (!cvBox) {
+    cvBox = document.createElement("iframe");
+    cvBox.setAttribute("sandbox", "allow-scripts"); // its own empty origin: no cookies, storage or access to this page
+    cvBox.hidden = true;
+    cvBox.title = "Script dei canvas";
+    cvBox.onload = () => { cvBoxReady = true; cvBoxQueue.splice(0).forEach((m) => cvBox.contentWindow.postMessage(m, "*")); };
+    cvBox.srcdoc = "<script>(" + cvRunner.toString() + ")()<\/script>";
+    document.body.appendChild(cvBox);
+  }
+  const msg = { code: String(code), osc: CV.osc, shared: (state && state.shared) || {}, locals: cvLocals, extra, pathname: "/canvas/" + (cvCurrent() || {}).name };
+  if (cvBoxReady) cvBox.contentWindow.postMessage(msg, "*");
+  else cvBoxQueue.push(msg);
+}
+// what a canvas script asks for: only these, never the commands of this computer (password, script…)
+addEventListener("message", (e) => {
+  if (!cvBox || e.source !== cvBox.contentWindow || !e.data || typeof e.data !== "object") return;
+  const m = e.data;
+  if (m.t === "osc") send({ cmd: "oscRun", address: String(m.address), args: Array.isArray(m.args) ? m.args : [] });
+  else if (m.t === "setShared") send({ cmd: "setShared", key: m.key, value: m.value });
+  else if (m.t === "resetShared") send({ cmd: "resetShared", key: m.key });
+  else if (m.t === "setLocal" || m.t === "resetLocal") {
+    if (m.t === "setLocal") cvLocals[m.key] = m.value;
+    else if (m.key === null) Object.keys(cvLocals).forEach((k) => delete cvLocals[k]);
+    else delete cvLocals[m.key];
+    if (m.persist || m.t === "resetLocal") store.set("openset.locals", JSON.stringify(cvLocals));
+    cvUpdate();
+  } else if (m.t === "navigate") cvNavigate(m.path);
+});
 
 // the canvas on screen: the one being edited, the one this device chose, or the first
 function cvCurrent() {
@@ -2027,11 +2217,14 @@ $("canvas").addEventListener("pointerdown", (ev) => {
   if (e.props.onPress) send({ cmd: "oscRun", lines: e.props.onPress });
   if (e.props.script) cvScript(e.props.script);
   if (e.props.link) cvNavigate(e.props.link);
+  // released, or the touch was taken away (a scroll, a system gesture): the release commands go too
   const up = () => {
     removeEventListener("pointerup", up);
+    removeEventListener("pointercancel", up);
     if (e.props.onRelease) send({ cmd: "oscRun", lines: e.props.onRelease });
   };
   addEventListener("pointerup", up);
+  addEventListener("pointercancel", up);
 });
 $("canvas").addEventListener("click", (ev) => {
   if (CV.edit) return;
@@ -2070,7 +2263,9 @@ $("canvas").addEventListener("keydown", (ev) => {
 // ---- editing: select, drag to move, drag the corner to resize, fields for the rest ----
 function newCanvas() {
   let n = 1;
-  while (CV.list["Canvas " + n]) n++;
+  // the names saved on the server too: the Canvas view may not have read the list yet
+  const taken = (name) => hasOwn(CV.list, name) || (state.canvases || []).indexOf(name) >= 0;
+  while (taken("Canvas " + n)) n++;
   CV.edit = { name: "Canvas " + n, elements: [] };
   CV.sel = null;
   showView("canvas");
@@ -2185,6 +2380,7 @@ $("canvas").addEventListener("click", async (ev) => {
 async function cvCommand(body) {
   try {
     const r = await fetch("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body) });
+    if (r.status === 400 && body.cmd === "saveCanvas") throw new Error("esiste già un canvas con questo nome, o qualcosa non è valido");
     if (!r.ok) throw new Error(String(r.status));
     return true;
   } catch (e) {

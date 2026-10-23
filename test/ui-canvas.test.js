@@ -52,5 +52,6 @@ test("V1: canvas templates never run JavaScript: anything else is refused", () =
     "`x`",
     'osc("x").__proto__',
   ])
-    assert.throws(() => ctx.cvExpr(e, fns), Error, e);
+    // refused by the language itself (the error comes from the page's realm: matched by its message)
+    assert.throws(() => ctx.cvExpr(e, fns), (err) => /^canvas: /.test(err.message), e);
 });

@@ -502,7 +502,9 @@ test("V1: what a canvas holds cannot act as this page: templates are not JavaScr
   await connected(page);
   const title = await page.title();
   await tab(page, "canvas");
-  await expect(page.locator("#canvas")).toContainText("⚠|121 BPM|Fermo");
+  // the JavaScript stops at its first "}": "⚠" and the rest as plain text, never run
+  await expect(page.locator("#canvas")).toContainText("|121 BPM|Fermo");
+  await expect(page.locator("#canvas")).toContainText("⚠");
   await page.click("#canvas .cv-btn");
   await expect.poll(() => openset.cmds.some((c) => c.cmd === "play")).toBe(true); // the script still works
   await expect.poll(async () => (await openset.state()).shared.x).toBe('a;b\nc "d"'); // the text arrives whole (V8)
