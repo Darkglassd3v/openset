@@ -62,6 +62,12 @@ test("F6: mute and solo per group; +NEVERMUTE tracks are never muted and are sol
   // another group still soloed: the +NEVERMUTE tracks stay soloed
   const two = band.map((t) => ([0, 1, 3, 4].includes(t.i) ? { ...t, solo: true } : t));
   assert.deepEqual(mixerCommands(two, "VOX", { solo: false }), [{ track: 1, name: band[1].name, solo: false }]);
+  // a group made only of +NEVERMUTE tracks is not «another soloed group»
+  const alone = [T(0, "Click +NM", { solo: true }), T(1, "Vox +G:VOX", { solo: true })];
+  assert.deepEqual(mixerCommands(alone, "VOX", { solo: false }), [
+    { track: 0, name: "Click +NM", solo: false },
+    { track: 1, name: "Vox +G:VOX", solo: false },
+  ]);
   assert.deepEqual(mixerCommands(band, "VOX", { volume: 1.5 }), [{ track: 1, name: band[1].name, volume: 1 }]);
   assert.equal(mixerCommands(band, "NOPE", { mute: true }), null);
   assert.equal(mixerCommands(band, "VOX", { volume: "loud" }), null);
