@@ -3030,9 +3030,10 @@ test("F11: OpenSet announces its OSC port with Bonjour while it runs, and says g
   fake.respond = (r) => sent.push(r);
   fake.destroy = () => {};
   const c = await setup(t, { mdns: () => fake });
-  const srv = sent[0].additionals.find((a) => a.type === "SRV");
+  // the announcement carries every record in its answers
+  const srv = sent[0].answers.find((a) => a.type === "SRV");
   assert.equal(srv.data.port, c.srv.udpPort);
-  assert.ok(sent[0].additionals.some((a) => a.type === "TXT" && a.data.includes("server=ableset")));
+  assert.ok(sent[0].answers.some((a) => a.type === "TXT" && a.data.includes("server=ableset")));
   await c.srv.close();
   assert.ok(sent.at(-1).answers.every((a) => a.ttl === 0));
 });

@@ -21,6 +21,7 @@ const L = require("./lyrics");
 const M = require("./mixer");
 const { createProjectScript } = require("./script");
 const MF = require("./multifile");
+const { startBonjour } = require("./bonjour");
 const C = require("./canvas");
 const osc = require("./osc");
 const { createEngine } = require("./engine");
@@ -271,6 +272,7 @@ function start(opts = {}) {
       if (c) require("child_process").spawn(c[0], c[1], { stdio: "ignore", windowsHide: true }).on("error", () => {});
     },
     saveWaitMs: 1500,
+    mdns: null, // () => multicast-dns instance: the CLI's, for Bonjour (never in tests)
     liveRunning: () => liveRunning(),
     installScript: null, // () => install result: the CLI's, for "Reinstalla il Remote Script"
     quit: null, // the CLI's process exit, for "Esci da OpenSet"
@@ -495,7 +497,22 @@ function start(opts = {}) {
     cfg.openBrowser(uiUrl, { app: prefs.settings.floatingWindow });
   }
 
+  // AbleSet: the OSC server announced with Bonjour (only when OpenSet has the OSC port)
+  let bonjour = null;
+  function announceOsc() {
+    if (!cfg.mdns || oscPort === null) return;
+    const host = os.hostname().split(".")[0].toLowerCase().replace(/[^a-z0-9-]/g, "-") || "computer";
+    const addresses = () => Object.values(os.networkInterfaces()).flat().filter((n) => n && n.family === "IPv4" && !n.internal).map((n) => n.address);
+    try {
+      bonjour = startBonjour({ mdns: cfg.mdns(), info: () => ({ name: `OpenSet (${host})`, host: `${host}-openset.local`, port: oscPort, addresses: addresses(), version: VERSION }) });
+      log.info(`[osc] announced with Bonjour as «OpenSet (${host})» on port ${oscPort}`);
+    } catch (e) {
+      log.error(`[osc] Bonjour not available: ${e.message}`);
+    }
+  }
+
   function afterListen(httpPort) {
+    announceOsc();
     uiUrl = `http://localhost${httpPort === 80 ? "" : ":" + httpPort}`;
     if (prefs.settings.openBrowser === "start") openUi();
     // AbleSet: Auto-Launch the Last Live Project, when Live is not running
@@ -2147,6 +2164,7 @@ function start(opts = {}) {
     clearInterval(pingTimer);
     clearInterval(fadeTimer);
     if (pendingSong) clearTimeout(pendingSong.timer);
+    if (bonjour) bonjour.stop();
     projectScript.stop();
     for (const c of wss.clients) c.terminate();
     wss.close();
@@ -2259,6 +2277,7 @@ if (require.main === module) {
     logger: log,
     openBrowser: args.open ? openUrl : null,
     installScript: () => installRemoteScript(path.join(BASE_DIR, "remote-script", "OpenSet"), libs),
+    mdns: () => require("multicast-dns")(),
     quit: () => process.exit(0),
   }).catch((e) => {
     const hint = e.code === "EADDRINUSE" ? " (is OpenSet already running?)" : "";
