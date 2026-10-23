@@ -474,6 +474,7 @@ function start(opts = {}) {
       peers: prefs.peers.map((url) => peerStatus.get(url) || { url, online: false }),
       queued: queued && queuedInfo(list),
       lyricsRev,
+      lyricsTracks: L.lyricsTracks(currentTracks()), // each device picks one (AbleSet: by slug)
       scriptInstall: cfg.scriptInstall,
       devices: [...devices.values()],
       passwordSet: !!prefs.auth,
@@ -1173,6 +1174,12 @@ function start(opts = {}) {
       case "/devices/unlock":
       case "/devices/toggleLock":
         return runOsc({ cmd: "devices", action: address.slice(9), devices: String(a ?? ""), page: b });
+      case "/lyrics/jumpByLines": {
+        const lyr = song && L.lyricsFromClips(song, currentTracks(), String(a));
+        if (!lyr || lyr.track !== String(a)) return false;
+        const target = lyr.lines[lineAt(lyr.lines, liveState.beat - song.time) + Math.trunc(Number(b) || 0)];
+        return !!target && runOsc({ cmd: "jump", time: song.time + target.beat });
+      }
       case "/setlist/jumpToQueued":
         return runOsc({ cmd: "jumpToQueued", now: [true, 1, "true"].includes(a) });
       case "/setlist/clearQueuedJump":
@@ -1250,8 +1257,24 @@ function start(opts = {}) {
       "/setlist/queuedName": queuedNames(st),
       "/settings/safeMode": [st.settings.safeMode ? 1 : 0],
       "/setlist/queuedIndex": st.queued ? [st.queued.song, st.queued.section] : [-1, -1],
+      ...lyricsOsc(song, st.beat),
     };
   }
+
+  // AbleSet: /lyrics/<slug>/previous|current|next, one set per +LYRICS track, as plain text
+  function lyricsOsc(song, beat) {
+    const out = {};
+    for (const { slug } of L.lyricsTracks(currentTracks())) {
+      const lyr = song && L.lyricsFromClips(song, currentTracks(), slug);
+      const lines = lyr && lyr.track === slug ? lyr.lines : [];
+      const now = lineAt(lines, beat - (song ? song.time : 0));
+      const text = (i) => [i >= 0 && i < lines.length ? L.lineText(lines[i].text) : ""];
+      Object.assign(out, { [`/lyrics/${slug}/previous`]: text(now - 1), [`/lyrics/${slug}/current`]: text(now), [`/lyrics/${slug}/next`]: text(now + 1) });
+    }
+    return out;
+  }
+  // the line being sung (-1 before the first): rel is the beat from the song start
+  const lineAt = (lines, rel) => lines.reduce((cur, l, i) => (rel >= l.beat - S.EPS ? i : cur), -1);
 
   function queuedNames(st) {
     const song = st.queued && st.setlist[st.queued.song];
@@ -1360,9 +1383,11 @@ function start(opts = {}) {
     }
   });
 
+  // a song by key (a reprise is «Name#2»), or by name for older pages; ?track=<slug>: a +LYRICS track
   app.get("/api/lyrics/:song", (req, res) => {
-    const name = req.params.song;
-    const song = setlist().find((s) => s.name === name);
+    const list = setlist();
+    const song = list.find((s) => s.key === req.params.song) || list.find((s) => s.name === req.params.song);
+    const name = song && song.name;
     let lyr = null;
     let transpose = song && song.transpose;
     // only songs of the setlist: no reads of names like CON or NUL on Windows
@@ -1372,12 +1397,12 @@ function start(opts = {}) {
       } catch {}
     }
     if (!lyr && song) {
-      lyr = L.lyricsFromClips(song, currentTracks());
+      lyr = L.lyricsFromClips(song, currentTracks(), typeof req.query.track === "string" ? req.query.track : undefined);
       if (lyr) transpose = L.addTranspose(song.transpose, lyr.transpose);
     }
     const out = L.normalizeLyrics(lyr, transpose);
     if (!out) return res.status(404).json({ error: "No lyrics for this song" });
-    res.json(out);
+    res.json(lyr.track ? { ...out, track: lyr.track } : out); // which +LYRICS track it came from
   });
 
   // setlist editor: song search (Ctrl+K) and the setlist as text to copy or paste

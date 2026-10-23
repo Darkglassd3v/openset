@@ -219,6 +219,7 @@
   .seg { position: relative; }
   .seg .ch { position: absolute; left: 0; top: -1.05em; font-size: .6em; color: var(--amber); font-weight: 700; white-space: nowrap; }
   .lyr-none { color: var(--dim); text-align: center; padding-top: 60px; font-size: 15px; line-height: 1.6; }
+  .lyr-track { display: block; text-align: center; margin-bottom: 18px; color: var(--dim); font-size: 14px; }
 
   /* ---- settings ---- */
   .settings { padding: 8px 16px 32px; max-width: 760px; }
@@ -1368,7 +1369,7 @@ function renderStage() {
   $("stNotes").textContent = (s && s.notes) || "";
   $("stLyrics").hidden = !show.lyrics;
   if (show.lyrics) {
-    const data = s && lyricsFor(s.name);
+    const data = s && lyricsFor(s);
     const lines = data ? data.lines : [];
     const rel = (st.beat || 0) - (s ? s.time : 0);
     let now = -1;
@@ -1408,14 +1409,19 @@ $("stQuick").addEventListener("click", (e) => {
 });
 
 // ---------- lyrics ----------
-async function fetchLyrics(name) {
-  lyr.cache[name] = undefined; // loading: the screen keeps what it shows
+// the +LYRICS track this device shows, by slug ("" = the first one with lines), like AbleSet
+const lyricsTrack = () => device.lyricsTrack || "";
+const lyricsId = (s) => s.key + "|" + lyricsTrack();
+async function fetchLyrics(s) {
+  const id = lyricsId(s);
+  lyr.cache[id] = undefined; // loading: the screen keeps what it shows
   try {
-    const r = await fetch("/api/lyrics/" + encodeURIComponent(name));
-    lyr.cache[name] = r.ok ? await r.json() : null; // null: this song has no lyrics
+    // by key: a reprise with the same name has its own lines
+    const r = await fetch("/api/lyrics/" + encodeURIComponent(s.key) + (lyricsTrack() ? "?track=" + encodeURIComponent(lyricsTrack()) : ""));
+    lyr.cache[id] = r.ok ? await r.json() : null; // null: this song has no lyrics
   } catch {
     // network error: retry soon, not "Nessun testo" for the rest of the show
-    setTimeout(() => { delete lyr.cache[name]; if (view === "lyrics") renderLyrics(); }, 2000);
+    setTimeout(() => { delete lyr.cache[id]; if (view === "lyrics") renderLyrics(); }, 2000);
     return;
   }
   lyr.song = null; // force a rebuild
@@ -1432,11 +1438,27 @@ function lineHtml(l, i) {
 }
 
 // cached lyrics of a song; undefined while loading (the fetch starts here)
-function lyricsFor(name) {
+function lyricsFor(s) {
   if (state.lyricsRev !== lyr.rev) { lyr.cache = {}; lyr.rev = state.lyricsRev; lyr.song = null; }
-  if (!(name in lyr.cache)) { fetchLyrics(name); return undefined; }
-  return lyr.cache[name];
+  if (!(lyricsId(s) in lyr.cache)) { fetchLyrics(s); return undefined; }
+  return lyr.cache[lyricsId(s)];
 }
+
+// with two or more +LYRICS tracks (two singers): which one this device shows
+function trackMenu(data) {
+  const tracks = state.lyricsTracks || [];
+  if (tracks.length < 2) return "";
+  const shown = lyricsTrack() || (data && data.track) || "";
+  return `<label class="lyr-track">Traccia dei testi <select id="lyrTrack">${tracks.map((t) =>
+    `<option value="${esc(t.slug)}"${t.slug === shown ? " selected" : ""}>${esc(t.name)}</option>`).join("")}</select></label>`;
+}
+$("lyrics").addEventListener("change", (e) => {
+  if (e.target.id !== "lyrTrack") return;
+  device.lyricsTrack = e.target.value;
+  saveDevice();
+  lyr.song = null;
+  renderLyrics();
+});
 
 function renderLyrics() {
   const el = $("lyrics");
@@ -1445,16 +1467,16 @@ function renderLyrics() {
     if (lyr.song !== "") { el.innerHTML = '<div class="lyr-none">Nessun brano attivo</div>'; lyr.song = ""; }
     return;
   }
-  const data = lyricsFor(s.name);
+  const data = lyricsFor(s);
   if (data === undefined) return;
-  if (lyr.song !== s.name) {
-    lyr.song = s.name;
+  if (lyr.song !== lyricsId(s)) {
+    lyr.song = lyricsId(s);
     lyr.line = -2;
-    el.innerHTML = data
+    el.innerHTML = trackMenu(data) + (data
       ? data.lines.map(lineHtml).join("")
       : `<div class="lyr-none">Nessun testo per «${esc(s.name)}».<br>
           Crea <span class="mono">lyrics/${esc(s.name)}.json</span>
-          o una traccia MIDI <span class="mono">Voce +LYRICS</span> con una clip per riga.</div>`;
+          o una traccia MIDI <span class="mono">Voce +LYRICS</span> con una clip per riga.</div>`);
   }
   if (!data) return;
   const rel = (state.beat || 0) - s.time; // beats from song start

@@ -97,6 +97,7 @@ test("lyricsFromClips: lines come from the +LYRICS track inside the song", () =>
   assert.deepEqual(lyricsFromClips(song, tracks), {
     lines: [{ beat: 0, text: "[Am]Hello" }, { beat: 8, text: "World" }],
     transpose: { semitones: 2, flats: false },
+    track: "vocals",
   });
 });
 
