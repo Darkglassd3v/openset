@@ -99,7 +99,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Caricando o salvando una scaletta mentre Live non è ancora collegato, una scaletta della 0.6.1 perdeva il suo significato: la ripresa tornava senza «tolto» e senza nota, o al contrario veniva tolta per sbaglio.
   - Con set lunghi (150 brani) l'assegnazione delle chiavi faceva molti confronti più volte al secondo: ora è proporzionale ai brani.
   - Un commento descriveva ancora il vecchio comportamento.
-- [ ] T2 Dalla terza revisione, password
+- [ ] T2 (RED fatto) Dalla terza revisione, password
   - Se una password della 0.6 veniva aggiornata proprio mentre dal computer si cambiava la password (o si toglieva un brano suonato), la modifica fatta in quell'istante veniva persa: la password vecchia poteva tornare.
   - Una password vecchia controllata mentre dal computer la si cambiava sbloccava comunque il dispositivo.
   - Con una password che OpenSet non sa leggere, gli iPad mandavano la password in chiaro a ogni tentativo (senza mai riuscire), e al primo salvataggio la password originale veniva cancellata dal file. Ora non si manda nulla, la pagina dice di reimpostarla dal computer, e il file resta com'era.

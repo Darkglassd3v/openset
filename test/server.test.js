@@ -2304,3 +2304,101 @@ test("T1: a 0.6.1 setlist loaded or saved before Live is connected keeps its mea
   await d.connect(reprise);
   assert.deepEqual(await skipsOfA(d), [[true, ""], [false, ""]]);
 });
+
+// holds back the answer of the next crypto.pbkdf2 until release(): the moment while OpenSet
+// computes; later calls go through
+function holdPbkdf2(t, { fail = false } = {}) {
+  const real = crypto.pbkdf2;
+  let release;
+  const gate = new Promise((r) => (release = r));
+  let held = 0;
+  crypto.pbkdf2 = (...a) => {
+    const cb = a.pop();
+    if (held++) return real(...a, cb);
+    real(...a, (err, key) => gate.then(() => cb(fail ? new Error("pbkdf2 failed") : err, key)));
+  };
+  t.after(() => (crypto.pbkdf2 = real));
+  return { release, held: () => held };
+}
+const legacyDir = (t, pw = "palco-2026") => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  const salt = crypto.randomBytes(16).toString("hex");
+  fs.writeFileSync(path.join(d, "setlist.json"), JSON.stringify({ auth: { salt, hash: crypto.scryptSync(pw, Buffer.from(salt, "hex"), 32).toString("hex") } }));
+  return d;
+};
+const { checkPassword: checkSaved } = require("../server/auth");
+
+test("T2: a new password set while a 0.6 one is being updated is not undone", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = legacyDir(t);
+  const c = await setup(t, { baseDir });
+  const a = await lanSocket(t, c);
+  await a.access(0);
+  const hold = holdPbkdf2(t);
+  a.send({ type: "auth", password: "palco-2026" }); // the 0.6 password: OpenSet updates it
+  await waitFor(() => hold.held() > 0, "update under way");
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "nuova-2026" })).status, 200); // meanwhile, on the computer
+  hold.release();
+  await a.access(1);
+  await pause(100);
+  const saved = JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth;
+  assert.equal(await checkSaved(saved, "nuova-2026"), true);
+});
+
+test("T2: an old password checked while the computer changes it does not unlock", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const hold = holdPbkdf2(t);
+  const pending = fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-OpenSet-Password": "palco-2026" },
+    body: '{"cmd":"stop"}',
+  });
+  await waitFor(() => hold.held() > 0, "check under way");
+  await c.cmd({ cmd: "setPassword", password: "nuova-2026" });
+  hold.release();
+  assert.equal((await pending).status, 401);
+});
+
+test("T2: setting the password on the computer does not stop OpenSet", async (t) => {
+  const c = await setup(t);
+  let syncHashes = 0;
+  const pbkdf2Sync = crypto.pbkdf2Sync;
+  crypto.pbkdf2Sync = (...a) => (syncHashes++, pbkdf2Sync(...a));
+  t.after(() => (crypto.pbkdf2Sync = pbkdf2Sync));
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "palco-2026" })).status, 200);
+  assert.equal(syncHashes, 0);
+  assert.equal((await c.state()).passwordSet, true); // already in place when the answer comes
+});
+
+test("T2: if updating a 0.6 password fails, the iPad still gets its answer", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t, { baseDir: legacyDir(t) });
+  const a = await lanSocket(t, c);
+  await a.access(0);
+  const hold = holdPbkdf2(t, { fail: true });
+  a.send({ type: "auth", password: "palco-2026" });
+  await waitFor(() => hold.held() > 0, "update under way");
+  hold.release();
+  assert.equal((await a.access(1)).control, true); // the password was right: unlocked, kept in the 0.6 form
+});
+
+test("T2: with a password OpenSet cannot read, pages are told to set it again and the file keeps it", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const future = { scheme: "argon2id", salt: "zz", data: "…" };
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: future }));
+  const c = await setup(t, { baseDir });
+  const a = await lanSocket(t, c);
+  const first = await a.access(0);
+  assert.equal(first.challenge, undefined);
+  assert.equal(first.legacy, undefined); // only a 0.6 password may be sent once
+  assert.equal(first.unreadable, true);
+  await c.cmd({ cmd: "settings", removePlayed: true }); // any save
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth, future);
+});
+
+test("T2: a 0.6 password is announced as such: the only case where the page sends it", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t, { baseDir: legacyDir(t) });
+  const a = await lanSocket(t, c);
+  assert.equal((await a.access(0)).legacy, true);
+});

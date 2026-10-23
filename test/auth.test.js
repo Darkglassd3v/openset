@@ -133,3 +133,9 @@ test("S2: wrong guesses below the limit are forgotten after a while; old entries
   l.fail("10.0.0.9");
   assert.ok(l.size() <= 2, String(l.size()));
 });
+
+test("T2: thousands of wrong guesses from changing addresses are capped in memory", () => {
+  const l = createLimiter({ now: () => 0 });
+  for (let i = 0; i < 20000; i++) l.fail(`2001:db8:${(i >> 8).toString(16)}:${(i & 255).toString(16)}::1`);
+  assert.ok(l.size() <= 10000, String(l.size()));
+});

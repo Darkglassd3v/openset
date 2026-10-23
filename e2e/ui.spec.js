@@ -305,3 +305,19 @@ test("S2: after another iPad updates a 0.6 password, this one unlocks without se
   expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
   await other.close();
 });
+
+test("T2: with a password OpenSet cannot read, the page sends nothing and says to set it again", async ({ page, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.stop();
+  fs.writeFileSync(path.join(openset.baseDir, "setlist.json"), JSON.stringify({ auth: { scheme: "argon2id", salt: "zz" } }));
+  await openset.restart();
+  const sent = [];
+  page.on("websocket", (ws) => ws.on("framesent", (f) => sent.push(String(f.payload))));
+  await page.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.click("#authGo");
+  await expect(page.locator("#authStatus")).toContainText("computer");
+  expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
+});
