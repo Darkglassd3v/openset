@@ -63,7 +63,22 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
 - [x] C5 (RED `e9102ef`, GREEN) User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
 - [x] C6 (RED `4962104`, GREEN) Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
 - [x] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Causa trovata: non era OpenSet ma lo strumento usato per misurare (Chrome comandato da `chrome-devtools`). Misurato in Chrome normale, dal computer e dall'indirizzo di rete, con Live collegato e 300 locator: primo stato in 40-100 ms, «Live connesso» in 100-220 ms; anche la versione di allora (`f883623`) è veloce. Test di guardia in `e2e/ui.spec.js` (primo stato entro 1 s)
-- [ ] Rilascio 0.6.2: copertura (righe 99.30%, rami 93.52%), CHANGELOG, report TDD `docs/releases/0.6.2/v0.6.2.tdd.md`, versione, guida e README fatti; poi `code-review` e correzione di tutto quello che trova, PR, CI, merge, tag
+- [ ] Rilascio 0.6.2: copertura (righe 99.30%, rami 93.52%), CHANGELOG, report TDD `docs/releases/0.6.2/v0.6.2.tdd.md`, versione, guida e README fatti; PR #9 aperta; `code-review` fatta, correzioni sotto; poi CI, merge, tag
+- [ ] R1 Dalla revisione, accessi (rischio: dispositivi bloccati durante il concerto)
+  - Con IPv6 tutti i dispositivi di casa o del locale stanno nella stessa rete /64: cinque password sbagliate da un telefono bloccavano per 30 s anche gli iPad della band, e un iPad che si ricollegava con il suo accesso valido lo perdeva. Ora i tentativi si contano per dispositivo, la rete /64 si blocca solo dopo molti tentativi, e un accesso valido non viene mai bloccato.
+  - Un iPad acceso e usato per più di 24 ore (prova e poi concerto) veniva bloccato al primo calo del Wi-Fi, perché l'uso contava solo quando si ricollegava. Ora ogni comando e ogni segnale di vita della connessione contano come uso.
+  - Premendo due volte Sblocca su un iPad lento, il secondo tentativo (con un numero già usato) bloccava di nuovo il dispositivo appena sbloccato. Ora un dispositivo sbloccato resta sbloccato, e il pulsante non si può premere di nuovo mentre calcola.
+  - Il limite di 100 connessioni valeva anche per il computer di OpenSet, e un dispositivo IPv6 poteva aggirare il limite per indirizzo cambiando indirizzo. Ora il computer di OpenSet non ha limiti e c'è anche un limite per rete /64.
+  - Un accesso copiato da un iPad funzionava da un altro dispositivo della stessa rete IPv6. Ora vale solo dall'indirizzo esatto.
+  - Con una password della 0.6, dopo lo sblocco del primo iPad gli altri già aperti continuavano a mandarla in chiaro. Ora ricevono subito il nuovo modo.
+  - Il messaggio «Controllo la password…» restava scritto anche dopo, e ricompariva aprendo di nuovo il pannello.
+- [ ] R2 Dalla revisione, password salvata: chi copia `setlist.json` poteva sbloccare OpenSet senza conoscere la password, e indovinare password brevi da un file o da uno sblocco ascoltato costava poco. Ora si salva solo una verifica che non basta per sbloccare (schema SCRAM), con più iterazioni, e la pagina calcola senza sprechi di memoria (gli iPad vecchi non si bloccano)
+- [ ] R3 Dalla revisione, Remote Script: con due versioni di Live e User Library diverse, OpenSet aggiornava solo una delle due (poteva restare il Remote Script vecchio). Ora lo installa in tutte. Una User Library nella radice di un disco (`D:\`) finiva in un posto sbagliato
+- [ ] R4 Dalla revisione, brani con lo stesso nome
+  - Chi aggiorna dalla 0.6.1 con una ripresa già tolta o annotata la vedeva ricomparire senza nota. Ora le impostazioni salvate prima valgono come allora finché non si modifica la scaletta.
+  - Un brano chiamato davvero «Intro#2» si confondeva con la ripresa di «Intro».
+  - Aggiungendo in Live un altro brano con lo stesso nome prima della ripresa, nota e «tolto» passavano al brano sbagliato. Ora una ripresa che resta nella stessa posizione tiene le sue impostazioni.
+- Nota: il commit `c31b597` non aggiorna `TODO.md` (storia già pubblicata sulla PR, non riscritta)
 
 ### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
 Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.
