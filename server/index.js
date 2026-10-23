@@ -39,12 +39,17 @@ const { createLog, liveLogFiles, liveLogLines } = require("./log");
 const { nudgeFor, syncTarget } = require("./ablenet");
 const { version: VERSION } = require("../package.json");
 
-// When packaged as a standalone executable (pkg), public/ and remote-script/
-// live next to the binary; from source they live in the project root.
+// As a single executable (Node SEA, scripts/build-sea.mjs), public/ and remote-script/
+// live next to the program; from source they live in the project root.
 // The CLI keeps the user's data in dataDir() instead (see datadir.js).
-const BASE_DIR = process.pkg
-  ? path.dirname(process.execPath)
-  : path.join(__dirname, "..");
+const IS_SEA = (() => {
+  try {
+    return require("node:sea").isSea();
+  } catch {
+    return false; // a Node without SEA support: running from source
+  }
+})();
+const BASE_DIR = IS_SEA ? path.dirname(process.execPath) : path.join(__dirname, "..");
 
 // port 80 gives addresses without ":port"; PORT forces one
 const HTTP_PORT = process.env.PORT ? Number(process.env.PORT) : [80, 39080];

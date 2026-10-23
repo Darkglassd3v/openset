@@ -12,6 +12,7 @@ on:
       - scripts/build-guide.js
       - scripts/make-macos-app.sh
       - scripts/win-icon.mjs
+      - scripts/build-sea.mjs
       - dist-extras/**
 
 permissions:
@@ -28,7 +29,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
 
       - name: Install dependencies
         run: npm ci
@@ -45,19 +46,11 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "${GITHUB_REF_NAME#v}" = "$VERSION"; fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
-      - name: OpenSet icon and version in the Windows program
+      # Node single executables with the newest Node 24 LTS; on this Mac both Mac programs
+      # are signed ad hoc, the Windows one gets the OpenSet icon and version
+      - name: Build the programs (Node SEA)
         run: |
-          npx -y pkg-fetch@3.4.2 -n node18 -p win -a x64
-          npm install --no-save resedit@3.1.0
-          node scripts/win-icon.mjs
-
-      - name: Build standalone binaries (pkg)
-        run: |
-          npx pkg@5.8.1 . \
-            --targets node18-linux-x64,node18-win-x64,node18-macos-x64 \
-            --out-path build
-          npx pkg@5.8.1 . --targets node18-macos-arm64 --output build/openset-macos-arm64
-          codesign --force --sign - build/openset-macos-arm64
+          node scripts/build-sea.mjs --out build
           node scripts/win-icon.mjs --check build/openset-win.exe
 
       - name: PDF guide (version, new features, steps for every platform)

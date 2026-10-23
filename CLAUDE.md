@@ -32,7 +32,7 @@ npm test                                            # test Node (node:test)
 npm run coverage                                    # test + copertura
 python3 -m unittest discover -s remote-script/tests # test del Remote Script
 npm run e2e                                         # test della UI (Playwright sul Chrome di sistema, e2e/*.spec.js)
-npx pkg@5.8.1 . --targets node18-linux-x64 --out-path build   # binario locale
+node scripts/build-sea.mjs --targets linux-x64 --out build    # programma locale (Node SEA, Node 24)
 bash scripts/build-release-local.sh   # 4 zip con la versione + guida PDF in build/release-<versione>/
 ```
 
@@ -48,7 +48,7 @@ Ogni modifica segue questo ordine. Non saltare passi.
    - REFACTOR: pulizia a test verdi. Commit `refactor: ...` (opzionale).
 3. **`ecc:test-coverage`**: `npm run coverage`, obiettivo ≥ 80% sulle righe di
    `server/`. Aggiungi test per i buchi. Commit `test: ...`.
-4. **Build**: binario pkg locale, avvio e verifica `GET /api/state`.
+4. **Build**: programma locale con `scripts/build-sea.mjs`, avvio e verifica `GET /api/state`.
 5. **Rilascio** (sul branch `release/v<versione>`, vedi "Branch"): aggiorna
    `VERSION` e `package.json`, README, `CHANGELOG.md` (sezione della versione
    con tutte le novità), report TDD in `docs/releases/<versione>/`, commit,

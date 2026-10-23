@@ -12,13 +12,16 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            target: node18-linux-x64
+            target: linux-x64
+            built: openset-linux
             ext: ""
           - os: windows-latest
-            target: node18-win-x64
+            target: win-x64
+            built: openset-win.exe
             ext: .exe
           - os: macos-latest # Apple Silicon
-            target: node18-macos-arm64
+            target: macos-arm64
+            built: openset-macos-arm64
             ext: ""
     runs-on: ${{ matrix.os }}
     defaults:
@@ -29,7 +32,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 24
           cache: npm
 
       - uses: actions/setup-python@v5
@@ -57,23 +60,15 @@ jobs:
       - name: Program name with the version
         run: echo "BIN=openset-$(node -p "require('./package.json').version")${{ matrix.ext }}" >> "$GITHUB_ENV"
 
-      - name: OpenSet icon and version in the Windows program
-        if: runner.os == 'Windows'
+      # a Node single executable with the newest Node 24 LTS (signed ad hoc on the Mac)
+      - name: Build the program (Node SEA)
         run: |
-          npx -y pkg-fetch@3.4.2 -n node18 -p win -a x64
-          npm install --no-save resedit@3.1.0
-          node scripts/win-icon.mjs
-
-      - name: Build standalone binary
-        run: npx pkg@5.8.1 . --targets ${{ matrix.target }} --output "build/$BIN"
+          node scripts/build-sea.mjs --targets ${{ matrix.target }} --out build
+          mv "build/${{ matrix.built }}" "build/$BIN"
 
       - name: Check the icon and version of the Windows program
         if: runner.os == 'Windows'
         run: node scripts/win-icon.mjs --check "build/$BIN"
-
-      - name: Ad-hoc sign (macOS arm64 refuses unsigned binaries)
-        if: runner.os == 'macOS'
-        run: codesign --force --sign - "build/$BIN"
 
       - name: macOS app bundle (the smoke test runs the program inside it)
         if: runner.os == 'macOS'
