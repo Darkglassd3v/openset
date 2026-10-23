@@ -8,6 +8,7 @@ const {
   applyOrder,
   keyTimesOf,
   migrateNames,
+  setlistByKey,
   songAt,
   sectionAt,
   nextSong,
@@ -501,4 +502,28 @@ test("S1: a second song with the name of one already there does not take its set
   const one = buildSetlist([{ name: "Intro", time: 100 }]);
   const two = buildSetlist([{ name: "Intro", time: 40 }, { name: "Intro", time: 100 }], keyTimesOf(one));
   assert.deepEqual(two.map((s) => s.key), ["Intro#2", "Intro"]);
+});
+
+test("T1: a setlist from OpenSet 0.6.1 is converted only when there are songs to tell the names apart", () => {
+  const songs = buildSetlist([{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }]);
+  const old = { order: [], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } };
+  // Live not connected yet: kept by name, and it says so
+  assert.deepEqual(setlistByKey(old, []), { ...old, keys: false });
+  assert.deepEqual(setlistByKey(old, songs), { order: [], skip: ["A", "A#2"], stopAfter: [], notes: { A: "capo 2", "A#2": "capo 2" }, keys: true });
+  // already by key: never expanded again, with or without songs
+  const keyed = { order: [], skip: ["A"], stopAfter: [], notes: {}, keys: true };
+  assert.deepEqual(setlistByKey(keyed, songs), keyed);
+  assert.deepEqual(setlistByKey(keyed, []), keyed);
+  // only the fields it gets: a saved setlist has no measured durations
+  assert.equal("measured" in migrateNames(old, songs), false);
+});
+
+test("T1: keys for a long set are found by name, not by comparing every song with every other", () => {
+  const cues = Array.from({ length: 600 }, (_, i) => ({ name: "Brano " + (i % 300), time: i * 8 }));
+  let reads = 0; // how many times a previous song's name is looked at
+  const times = Object.fromEntries(
+    Object.entries(keyTimesOf(buildSetlist(cues))).map(([k, v]) => [k, new Proxy(v, { get: (o, p) => (p === "0" && reads++, o[p]) })])
+  );
+  buildSetlist(cues, times);
+  assert.ok(reads <= 2 * cues.length, `${reads} reads for ${cues.length} songs`);
 });

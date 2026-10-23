@@ -2277,3 +2277,30 @@ test("S2: a password setting OpenSet cannot read keeps the other devices out", {
   assert.equal(lan.status, 401);
   assert.equal((await c.cmd({ cmd: "setPassword", password: "nuova-2026" })).status, 200); // set again from this computer
 });
+
+test("T1: a 0.6.1 setlist loaded or saved before Live is connected keeps its meaning", async (t) => {
+  const reprise = { ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] };
+  const old = { order: [], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } };
+  const byKey = { order: [], skip: ["A"], stopAfter: [], notes: {}, keys: true };
+  const dir = () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+    t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(d, "setlist.json"), JSON.stringify({ ...old, saved: { Tour: old, Nuova: byKey } }));
+    return d;
+  };
+  const skipsOfA = async (c) => (await c.state()).setlist.filter((s) => s.name === "A").map((s) => [s.skip, s.notes]);
+
+  const c = await setup(t, { baseDir: dir() });
+  await c.cmd({ cmd: "saveSetlist", name: "Copia" }); // Live still loading: saved as it is, by name
+  await c.cmd({ cmd: "loadSetlist", name: "Tour" });
+  await c.connect(reprise);
+  assert.deepEqual(await skipsOfA(c), [[true, "capo 2"], [true, "capo 2"]]);
+  await c.cmd({ cmd: "loadSetlist", name: "Copia" });
+  assert.deepEqual(await skipsOfA(c), [[true, "capo 2"], [true, "capo 2"]]);
+
+  // a setlist saved by key, loaded before Live is there: the reprise is not taken out
+  const d = await setup(t, { baseDir: dir() });
+  await d.cmd({ cmd: "loadSetlist", name: "Nuova" });
+  await d.connect(reprise);
+  assert.deepEqual(await skipsOfA(d), [[true, ""], [false, ""]]);
+});
