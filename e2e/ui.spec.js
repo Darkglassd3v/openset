@@ -368,3 +368,54 @@ test("F8: the project script is written and run from Opzioni on this computer, w
   await page.click("#psStop");
   await expect(page.locator("#psStatus")).toContainText("fermo");
 });
+
+test("F5: a canvas made in the web app: a Play/Pausa preset and a label with the tempo, saved and used", async ({ page, openset }) => {
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "settings");
+  await page.click("#cvNew"); // Opzioni → Canvas → Nuovo canvas: opens it to edit
+  await expect(page.locator("#canvas")).toBeVisible();
+  await page.fill("#cvName", "Palco");
+  await page.click("#cvAdd");
+  await page.click('[data-add="preset:playPause"]');
+  await page.click("#cvAdd");
+  await page.click('[data-add="label"]');
+  await page.fill('#cvProps [data-prop="text"]', "${osc('/global/tempo')} BPM");
+  await page.fill('#cvProps [data-pos="x"]', "8");
+  await page.click("#cvSave");
+  await expect(page.locator("#canvas")).toContainText("120 BPM");
+  const saved = await (await fetch(openset.url("/api/canvases"))).json();
+  expect(saved.Palco.elements.find((e) => e.type === "label").x).toBe(8); // position saved
+
+  await page.reload();
+  await connected(page);
+  await tab(page, "canvas");
+  await expect(page.locator("#canvas .cv-el")).toHaveCount(2);
+  await expect(page.locator("#canvas")).toContainText("120 BPM");
+  await page.click("#canvas .cv-btn");
+  await expect.poll(() => openset.cmds.some((c) => c.cmd === "play" || c.cmd === "continue")).toBe(true);
+});
+
+test("F5: a canvas slider sets a shared variable that a label shows on every device", async ({ page, browser, openset }) => {
+  await openset.cmd({
+    cmd: "saveCanvas",
+    canvas: {
+      name: "Luci",
+      elements: [
+        { id: "s", type: "slider", x: 0, y: 0, w: 12, h: 2, props: { variable: "luci", min: 0, max: 10, step: 1 } },
+        { id: "l", type: "label", x: 0, y: 2, w: 12, h: 2, props: { text: "Luci: ${shared('luci', 0)}" } },
+      ],
+    },
+  });
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "canvas");
+  const other = await browser.newPage();
+  await other.goto(openset.url());
+  await other.click('nav button[data-view="canvas"]');
+  await page.locator('#canvas input[type="range"]').fill("7");
+  await expect(page.locator("#canvas")).toContainText("Luci: 7");
+  await expect(other.locator("#canvas")).toContainText("Luci: 7");
+  await expect.poll(async () => (await openset.state()).shared.luci).toBe(7);
+  await other.close();
+});
