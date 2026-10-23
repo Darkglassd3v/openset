@@ -313,7 +313,8 @@ function start(opts = {}) {
       // 0600: the password hash is for this user only.
       const tmp = PREFS_FILE + ".tmp";
       fs.rmSync(tmp, { force: true });
-      fs.writeFileSync(tmp, JSON.stringify(prefs, null, 2), { mode: 0o600 });
+      const auth = prefs.auth && prefs.auth.unreadable ? prefs.auth.raw : prefs.auth; // as it was in the file
+      fs.writeFileSync(tmp, JSON.stringify({ ...prefs, auth }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, PREFS_FILE);
     } catch (e) {
       log.error(`[prefs] cannot save ${PREFS_FILE}: ${e.message}`);
@@ -1395,11 +1396,11 @@ function start(opts = {}) {
     // page sends it once; one OpenSet cannot read (unreadable) is set again on this computer
     const challenge = !a
       ? {}
-      : a.storedKey
-        ? { challenge: { salt: a.salt, iter: a.iter, nonce: ws.nonce } }
-        : a.hash
-          ? { legacy: true }
-          : { unreadable: true };
+      : a.unreadable
+        ? { unreadable: true }
+        : a.storedKey
+          ? { challenge: { salt: a.salt, iter: a.iter, nonce: ws.nonce } }
+          : { legacy: true };
     if (ws.readyState === 1)
       ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!a, ...challenge, ...(token ? { token } : {}), ...extra }));
   }

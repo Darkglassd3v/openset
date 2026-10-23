@@ -20,14 +20,15 @@ const validAuth = (a) =>
   ((HEX64.test(a.storedKey) && Number.isInteger(a.iter) && a.iter >= 1000 && a.iter <= 1e7) || HEX64.test(a.hash));
 
 // the password from setlist.json: { salt, hash } of 0.6 and { salt, iter, key } of a 0.6.2 test
-// build are still checked. One it cannot read (a newer OpenSet's) is kept as it is: saved back
-// untouched, and nobody unlocks with it until it is set again on this computer (never open)
+// build are still checked. One it cannot read (damaged, or a newer OpenSet's) is marked so, never
+// guessed from its fields: saved back untouched (raw), and nobody unlocks with it until it is set
+// again on this computer (never open)
 function readAuth(a) {
   if (!a) return null;
   if (validAuth(a)) return a.storedKey ? { salt: a.salt, iter: a.iter, storedKey: a.storedKey } : { salt: a.salt, hash: a.hash };
   if (/^[0-9a-f]{32}$/.test(a.salt) && HEX64.test(a.key) && Number.isInteger(a.iter) && a.iter >= 1000 && a.iter <= 1e7)
     return { salt: a.salt, iter: a.iter, storedKey: storedKeyOf(Buffer.from(a.key, "hex")).toString("hex") }; // key = salted password
-  return a;
+  return { unreadable: true, raw: a };
 }
 
 // computed without blocking: Live keeps playing while it runs
