@@ -2546,7 +2546,9 @@ test("F2: in a +LOOPFULL section a jump waits for the loop to finish; +LOOP jump
 test("F2: a +LOOP section from a clip, with no locator at its end, also waits for the section to end", async (t) => {
   const c = await setup(t);
   const clips = [{ name: "Verse", start: 0, end: 8 }, { name: "Chorus +LOOP", start: 8, end: 16 }, { name: "Out", start: 16, end: 24 }];
-  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 24 }], tracks: [{ name: "Sections", clips }] });
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 24 }] });
+  c.sendLive({ type: "clips", tracks: [{ name: "Sections", clips }] });
+  await waitFor(async () => (await c.state()).setlist[0].sections.length === 3, "sections from the clips");
   await c.at(10, { is_playing: true, loop: true, loop_start: 8, loop_length: 8 });
   const before = c.cmds.length;
   await c.cmd({ cmd: "song", name: "B" });

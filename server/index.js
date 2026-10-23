@@ -820,13 +820,27 @@ function start(opts = {}) {
     return true;
   }
 
+  // AbleSet: a +LOOPFULL loop is always finished before a jump, and a looped section with no
+  // locator at its end (a clip) cannot be left by Live's quantized jump: both wait for the section end
+  function loopToFinish() {
+    if (!liveState.loop) return false;
+    const list = setlist();
+    const song = list[S.songAt(list, liveState.beat)];
+    const sec = song && song.sections[S.sectionAt(song, liveState.beat)];
+    if (!sec || sec.end == null || !(sec.flags.LOOPFULL || sec.flags.LOOP)) return false;
+    const located = (useLive() ? cues : offlineProject.locators).some((c) => Math.abs(c.time - sec.end) < S.EPS);
+    return !!sec.flags.LOOPFULL || !located;
+  }
+
   // A jump from the user. In the queued jump modes, while playing, it waits
   // for the engine (end of section/song) or for J / Shift+J / a stop.
   function jumpTo(time, type = "section") {
+    const finish = liveState.is_playing && loopToFinish();
     if (prefs.settings.disableLoopOnJump && liveState.loop) sendToLive({ cmd: "loop", on: false });
     if (type === "section" && prefs.settings.countIn && !liveState.is_playing) return startCountIn(time);
-    if (prefs.settings.jumpMode !== "quantized" && liveState.is_playing) {
-      queued = { time, type };
+    if ((prefs.settings.jumpMode !== "quantized" || finish) && liveState.is_playing) {
+      // quantized mode: only this jump waits, for the end of the looped section
+      queued = { time, type, ...(prefs.settings.jumpMode === "quantized" ? { wait: "section" } : {}) };
       changed();
       return true;
     }
