@@ -357,3 +357,14 @@ test("F6: the Mixer view shows the groups; mute, solo and the volume slider comm
   await page.locator('#mixer [data-group="VOX"] input[type="range"]').fill("0.5");
   await expect.poll(() => sentTo({ track: 0, volume: 0.5 })).toBe(true);
 });
+
+test("F8: the project script is written and run from Opzioni on this computer, with its log", async ({ page, openset }) => {
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "settings");
+  await page.fill("#psCode", 'log("ciao dal palco", osc("/global/tempo"));');
+  await page.click("#psSave");
+  await expect(page.locator("#psLog")).toContainText("ciao dal palco 120", { timeout: 8000 });
+  await page.click("#psStop");
+  await expect(page.locator("#psStatus")).toContainText("fermo");
+});

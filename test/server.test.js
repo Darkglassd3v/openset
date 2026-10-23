@@ -2722,3 +2722,31 @@ test("F10: mixer commands and fades reach the backup computer's Live too", async
   await main.cmd({ cmd: "mixerFade", group: "VOX", to: 0, speed: 20 });
   await faded;
 });
+
+test("F8: the project script runs at start and when changed, reacts to OpenSet, and only this computer edits it", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-script-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const c = await setup(t, { baseDir });
+  await c.connect();
+  const code = `log("avviato");\nonOscChange("/global/isPlaying", (v) => setShared("suona", v === 1));\nonOscChange("/setlist/activeSongName", (n) => sendOsc("/shared/brano", n), true);`;
+  assert.equal((await c.cmd({ cmd: "setProjectScript", code })).status, 200);
+  await waitFor(async () => (await c.state()).shared.brano === "Intro Song", "sendOsc from the script");
+  await c.at(10, { is_playing: true });
+  await waitFor(async () => (await c.state()).shared.suona === true, "setShared from the script");
+  const info = await (await fetch(c.url("/api/script"))).json();
+  assert.equal(info.code, code);
+  assert.equal(info.running, true);
+  assert.match(info.log.map((l) => l.text).join("\n"), /avviato/);
+
+  // from another device of the network: not allowed (it runs on this computer)
+  const lan = (body) => fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await lan({ cmd: "setProjectScript", code: "log(1)" })).status, 400);
+  assert.equal((await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/script`)).status, 403);
+
+  // saved: it runs again after a restart
+  await c.srv.close();
+  const d = await setup(t, { baseDir });
+  await waitFor(async () => (await (await fetch(d.url("/api/script"))).json()).log.some((l) => l.text === "avviato"), "run at start");
+  assert.equal((await d.cmd({ cmd: "stopProjectScript" })).status, 200);
+  assert.equal((await (await fetch(d.url("/api/script"))).json()).running, false);
+});
