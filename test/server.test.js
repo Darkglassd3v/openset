@@ -1992,7 +1992,7 @@ test("C2: Remove Played Songs takes out only the reprise that was played", async
   assert.equal((await c.state()).setlist.find((s) => s.key === "A").skip, false);
 });
 
-test("C3: one address cannot open connections without limit, nor everyone together", async (t) => {
+test("C3: one address cannot open connections without limit; this computer always can", { skip: !LAN_IP && "no LAN address" }, async (t) => {
   const c = await setup(t, { wsPerIp: 2, wsMax: 3 });
   // resolves with the open socket, or with the HTTP status of a refusal
   const open = (host = "127.0.0.1") =>
@@ -2003,12 +2003,10 @@ test("C3: one address cannot open connections without limit, nor everyone togeth
       ws.on("error", () => {});
       t.after(() => ws.terminate());
     });
-  assert.ok((await open()) instanceof WebSocket);
-  assert.ok((await open()) instanceof WebSocket);
-  assert.equal(await open(), 503);
-  if (!LAN_IP) return;
   assert.ok((await open(LAN_IP)) instanceof WebSocket);
-  assert.equal(await open(LAN_IP), 503); // 3 connections in all
+  assert.ok((await open(LAN_IP)) instanceof WebSocket);
+  assert.equal(await open(LAN_IP), 503);
+  for (let i = 0; i < 4; i++) assert.ok((await open()) instanceof WebSocket); // the computer with OpenSet
 });
 
 // a browser on another device of the network, with the access messages it gets
@@ -2073,4 +2071,69 @@ test("C3: commands to Live carry the key the Remote Script sent with its state",
   const again = c.expectCmd({ cmd: "stop" });
   await c.cmd({ cmd: "stop" });
   assert.equal((await again).key, "a".repeat(32));
+});
+
+const unlockKey = (challenge, pw = "palco-2026") => crypto.pbkdf2Sync(pw, Buffer.from(challenge.salt, "hex"), challenge.iter, 32, "sha256");
+const proofFor = (challenge, pw) => crypto.createHmac("sha256", unlockKey(challenge, pw)).update(challenge.nonce).digest("hex");
+
+test("R1: a device with a valid unlock is never stopped by someone else's wrong passwords", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const a = await lanSocket(t, c);
+  a.send({ type: "auth", proof: proofFor((await a.access(0)).challenge) });
+  const { token } = await a.access(1);
+  assert.match(token, /^[0-9a-f]{64}$/);
+  // five wrong guesses from this address (in a band: another phone of the same /64)
+  for (let i = 0; i < 5; i++)
+    await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json", "X-OpenSet-Password": "x" + i }, body: "{}" });
+  const b = await lanSocket(t, c);
+  await b.access(0);
+  b.send({ type: "auth", token }); // the iPad reconnecting after a Wi-Fi blip
+  const again = await b.access(1);
+  assert.equal(again.control, true);
+  assert.equal(again.tokenRejected, undefined);
+});
+
+test("R1: an iPad in use keeps its unlock past 24 hours", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  let clock = Date.now();
+  const c = await setup(t, { now: () => clock });
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const a = await lanSocket(t, c);
+  a.send({ type: "auth", proof: proofFor((await a.access(0)).challenge) });
+  const { token } = await a.access(1);
+  clock += 23 * 3600e3;
+  a.send({ cmd: "stop" }); // used during the rehearsal
+  await pause(100);
+  clock += 23 * 3600e3;
+  const b = await lanSocket(t, c);
+  await b.access(0);
+  b.send({ type: "auth", token });
+  assert.equal((await b.access(1)).control, true);
+});
+
+test("R1: a second tap on Sblocca with an old number does not lock the device again", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const a = await lanSocket(t, c);
+  const first = (await a.access(0)).challenge;
+  a.send({ type: "auth", proof: proofFor(first) });
+  a.send({ type: "auth", proof: proofFor(first) }); // sent before the answer to the first one
+  assert.equal((await a.access(1)).control, true);
+  assert.equal((await a.access(2)).control, true);
+});
+
+test("R1: when a password from OpenSet 0.6 is upgraded, the other open pages stop sending it", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-legacy-"));
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync("palco-2026", Buffer.from(salt, "hex"), 32).toString("hex");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: { salt, hash } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const a = await lanSocket(t, c);
+  const b = await lanSocket(t, c);
+  assert.equal((await b.access(0)).challenge, undefined);
+  await a.access(0);
+  a.send({ type: "auth", password: "palco-2026" });
+  assert.equal((await a.access(1)).control, true);
+  assert.ok((await b.access(1)).challenge, "the other page can now prove instead of sending the password");
 });

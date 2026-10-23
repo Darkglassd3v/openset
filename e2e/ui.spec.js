@@ -248,3 +248,18 @@ test("C7: the first state arrives quickly after the page opens", async ({ page, 
   // ~50 ms on a developer computer; 1-2.4 s was the delay of the chrome-devtools tool used to measure
   expect(await page.evaluate(() => window.firstMessageAt)).toBeLessThan(1000);
 });
+
+test("R1: two taps on Sblocca unlock; «Controllo la password…» does not stay", async ({ page, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.cmd({ cmd: "setPassword", password: "palco-2026" });
+  await page.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.click("#authGo");
+  await page.click("#authGo", { force: true }).catch(() => {}); // a second tap while the key is computed
+  await expect(page.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  await page.waitForTimeout(500);
+  await expect(page.locator("#unlockApp")).toBeHidden();
+  await expect(page.locator("#authStatus")).toHaveText("");
+});

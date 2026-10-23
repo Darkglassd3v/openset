@@ -1,20 +1,30 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const crypto = require("crypto");
-const { createLimiter, createTokens, hashPassword, checkPassword, checkProof, validAuth } = require("../server/auth");
+const { createLimiter, createTokens, hashPassword, checkPassword, checkProof, validAuth, connectionAllowed } = require("../server/auth");
 
-test("C3: wrong passwords are counted per IPv6 /64 network, not per address", () => {
-  const l = createLimiter({ max: 2, ms: 1000, now: () => 0 });
-  // an IPv6 device can take a new address in its /64 for every guess
+test("R1: wrong passwords block that device; only many from one IPv6 network block the network", () => {
+  const l = createLimiter({ max: 2, netMax: 4, ms: 1000, now: () => 0 });
   l.fail("2001:db8:1:2::5");
-  l.fail("2001:db8:1:2:ffff::1");
-  assert.equal(l.blocked("2001:0db8:0001:0002:0:0:0:9"), true);
+  l.fail("2001:db8:1:2::5");
+  assert.equal(l.blocked("2001:db8:1:2::5"), true);
+  // on a LAN every device has an address in the same /64: the band's iPads are not blocked
+  assert.equal(l.blocked("2001:db8:1:2::6"), false);
+  // someone taking a new address for every guess: the whole /64 waits after 4
+  l.fail("2001:db8:1:2::7");
+  l.fail("2001:db8:1:2::8");
+  assert.equal(l.blocked("2001:db8:1:2::9"), true);
   assert.equal(l.blocked("2001:db8:1:3::1"), false);
+  l.ok("2001:db8:1:2::6"); // a success nearby does not reset the guesser's count
+  assert.equal(l.blocked("2001:db8:1:2::9"), true);
+  // the same address written in another way
+  const m = createLimiter({ max: 1, now: () => 0 });
+  m.fail("2001:DB8::1");
+  assert.equal(m.blocked("2001:db8:0:0::1"), true);
   // IPv4: one address is one device
-  l.fail("10.0.0.1");
-  l.fail("10.0.0.1");
-  assert.equal(l.blocked("10.0.0.1"), true);
-  assert.equal(l.blocked("10.0.0.2"), false);
+  m.fail("10.0.0.1");
+  assert.equal(m.blocked("10.0.0.1"), true);
+  assert.equal(m.blocked("10.0.0.2"), false);
 });
 
 test("C3: an unlock token expires after 24 hours without use and works only from its address", () => {
@@ -31,9 +41,10 @@ test("C3: an unlock token expires after 24 hours without use and works only from
   t += 24 * 3600e3 + 1;
   assert.equal(tokens.valid(tok, "192.168.1.20"), false);
   assert.equal(tokens.valid("f".repeat(64), "192.168.1.20"), false);
-  // IPv6: the same /64 network, where the device changes address on its own
+  // IPv6: the exact address; another device of the same Wi-Fi has another one in the same /64
   const v6 = tokens.issue("2001:db8:1:2::5");
-  assert.equal(tokens.valid(v6, "2001:db8:1:2:aaaa::7"), true);
+  assert.equal(tokens.valid(v6, "2001:db8:1:2:aaaa::7"), false);
+  assert.equal(tokens.valid(v6, "2001:DB8:1:2:0:0:0:5"), true);
   tokens.clear(); // new password
   assert.equal(tokens.valid(v6, "2001:db8:1:2::5"), false);
 });
@@ -68,4 +79,28 @@ test("C3: a proof is the HMAC of a one-time number with the key; a password save
   assert.equal(validAuth(legacy), true);
   assert.equal(await checkPassword(legacy, "palco-2026"), true);
   assert.equal(checkProof(legacy, nonce, proof), false); // no key to prove with: the page sends the password once
+});
+
+test("R1: using an unlocked device keeps its unlock alive", () => {
+  let t = 0;
+  const tokens = createTokens({ now: () => t });
+  const tok = tokens.issue("10.0.0.1");
+  t += 23 * 3600e3;
+  tokens.touch(tok); // a command or a heartbeat on the open connection
+  t += 23 * 3600e3;
+  assert.equal(tokens.valid(tok, "10.0.0.1"), true);
+});
+
+test("R1: connections: per address, per IPv6 network and in all; this computer is never refused", () => {
+  const c = (ip, local = false) => ({ ip, local });
+  const cfg = { perIp: 2, perNet: 3, max: 4 };
+  assert.equal(connectionAllowed([c("10.0.0.1"), c("10.0.0.1")], "10.0.0.1", false, cfg), false);
+  assert.equal(connectionAllowed([c("10.0.0.1"), c("10.0.0.1")], "10.0.0.2", false, cfg), true);
+  // one IPv6 device changing address cannot open more than perNet
+  assert.equal(connectionAllowed([c("2001:db8::1"), c("2001:db8::2"), c("2001:db8::3")], "2001:db8::4", false, cfg), false);
+  const four = [c("10.0.0.1"), c("10.0.0.2"), c("10.0.0.3"), c("10.0.0.4")];
+  assert.equal(connectionAllowed(four, "10.0.0.5", false, cfg), false);
+  assert.equal(connectionAllowed(four, "127.0.0.1", true, cfg), true);
+  // the computer with OpenSet does not use up the places of the band
+  assert.equal(connectionAllowed([...four.slice(0, 3), c("127.0.0.1", true), c("127.0.0.1", true)], "10.0.0.9", false, cfg), true);
 });
