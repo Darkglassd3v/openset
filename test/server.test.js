@@ -2305,21 +2305,22 @@ test("T1: a 0.6.1 setlist loaded or saved before Live is connected keeps its mea
   assert.deepEqual(await skipsOfA(d), [[true, ""], [false, ""]]);
 });
 
-// holds back the answer of the next crypto.pbkdf2 until release(): the moment while OpenSet
-// computes; later calls go through
-function holdPbkdf2(t, { fail = false } = {}) {
-  const real = crypto.pbkdf2;
+// holds back the answer of the next crypto.pbkdf2 (or scrypt, the 0.6 check) until release():
+// the moment while OpenSet computes; later calls go through
+function holdCrypto(t, fn, { fail = false } = {}) {
+  const real = crypto[fn];
   let release;
   const gate = new Promise((r) => (release = r));
   let held = 0;
-  crypto.pbkdf2 = (...a) => {
+  crypto[fn] = (...a) => {
     const cb = a.pop();
     if (held++) return real(...a, cb);
-    real(...a, (err, key) => gate.then(() => cb(fail ? new Error("pbkdf2 failed") : err, key)));
+    real(...a, (err, key) => gate.then(() => cb(fail ? new Error(`${fn} failed`) : err, key)));
   };
-  t.after(() => (crypto.pbkdf2 = real));
+  t.after(() => (crypto[fn] = real));
   return { release, held: () => held };
 }
+const holdPbkdf2 = (t, opts) => holdCrypto(t, "pbkdf2", opts);
 const legacyDir = (t, pw = "palco-2026") => {
   const d = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
   t.after(() => fs.rmSync(d, { recursive: true, force: true }));
@@ -2329,7 +2330,7 @@ const legacyDir = (t, pw = "palco-2026") => {
 };
 const { checkPassword: checkSaved } = require("../server/auth");
 
-test("T2: a new password set while a 0.6 one is being updated is not undone", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+test("T2, U1: a new password set while a 0.6 one is being updated is not undone, and the old one does not unlock", { skip: !LAN_IP && "no LAN address" }, async (t) => {
   const baseDir = legacyDir(t);
   const c = await setup(t, { baseDir });
   const a = await lanSocket(t, c);
@@ -2339,8 +2340,10 @@ test("T2: a new password set while a 0.6 one is being updated is not undone", { 
   await waitFor(() => hold.held() > 0, "update under way");
   assert.equal((await c.cmd({ cmd: "setPassword", password: "nuova-2026" })).status, 200); // meanwhile, on the computer
   hold.release();
-  await a.access(1);
-  await pause(100);
+  await a.access(1); // the new password: every page locked
+  const answer = await a.access(2); // then the answer to the old password
+  assert.equal(answer.control, false);
+  assert.equal(answer.token, undefined);
   const saved = JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth;
   assert.equal(await checkSaved(saved, "nuova-2026"), true);
 });
@@ -2411,4 +2414,100 @@ test("T3: a reinstall from the web app shows in the log and the log package whic
   assert.match(lines, /cannot write \/Live 11\/Remote Scripts\/OpenSet \(EACCES/);
   const pkg = await (await fetch(c.url("/api/log-package"))).text();
   assert.match(pkg, /Remote Script install: updated in \/Live 12\/Remote Scripts\/OpenSet; cannot write \/Live 11/);
+});
+
+test("U2: a password record that is damaged or from a newer OpenSet is never offered as a 0.6 one or as numbers to prove", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  for (const auth of [
+    { salt: "0".repeat(32), hash: "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA" }, // the page would send the password on every try
+    { salt: "0".repeat(32), hash: "AB".repeat(32) },
+    { storedKey: "a".repeat(64), iter: 100000 }, // no salt: the page could not compute anything
+    { salt: "0".repeat(32), storedKey: "a".repeat(64), iter: 2e7 }, // an old iPad would compute for minutes
+  ]) {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+    t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth }));
+    const c = await setup(t, { baseDir });
+    const a = await lanSocket(t, c);
+    const first = await a.access(0);
+    assert.deepEqual([first.unreadable, first.legacy, first.challenge], [true, undefined, undefined], JSON.stringify(auth));
+    assert.equal(first.control, false);
+    await c.cmd({ cmd: "settings", removePlayed: true }); // any save keeps it as it was
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth, auth);
+  }
+});
+
+test("U3: two iPads unlocking with the same 0.6 password at the same moment both unlock", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t, { baseDir: legacyDir(t) });
+  const a = await lanSocket(t, c);
+  const b = await lanSocket(t, c);
+  await a.access(0);
+  await b.access(0);
+  const update = holdCrypto(t, "pbkdf2");
+  a.send({ type: "auth", password: "palco-2026" }); // right: OpenSet stores it the new way
+  await waitFor(() => update.held() > 0, "A's update under way");
+  const check = holdCrypto(t, "scrypt");
+  b.send({ type: "auth", password: "palco-2026" });
+  await waitFor(() => check.held() > 0, "B's check under way");
+  update.release();
+  assert.equal((await a.access(1)).control, true); // A's update is saved while B's check runs
+  check.release();
+  assert.equal((await b.access(1)).control, true);
+});
+
+test("U3: a tool sending the 0.6 password over HTTP while an iPad updates it is let in", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t, { baseDir: legacyDir(t) });
+  const a = await lanSocket(t, c);
+  await a.access(0);
+  const update = holdCrypto(t, "pbkdf2");
+  a.send({ type: "auth", password: "palco-2026" });
+  await waitFor(() => update.held() > 0, "the iPad's update under way");
+  const check = holdCrypto(t, "scrypt");
+  const pending = fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-OpenSet-Password": "palco-2026" },
+    body: '{"cmd":"stop"}',
+  });
+  await waitFor(() => check.held() > 0, "the tool's check under way");
+  update.release();
+  assert.equal((await a.access(1)).control, true);
+  check.release();
+  assert.equal((await pending).status, 200);
+});
+
+test("U6: a backup computer whose setlist is still by song name takes the edits copied from the main one", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  // upgraded from 0.6.1, its Live still loading the set
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ order: [], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } }));
+  const c = await setup(t, { baseDir });
+  // only part of the setlist: it could not be mixed with the settings by name
+  assert.equal((await c.cmd({ cmd: "setlist", skip: ["A#2"], mirror: true })).status, 400);
+  const edit = { cmd: "setlist", order: ["B", "A", "A#2"], skip: ["A#2"], stopAfter: [], notes: { B: "capo 3" }, mirror: true };
+  assert.equal((await c.cmd(edit)).status, 200);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] });
+  assert.deepEqual(
+    (await c.state()).setlist.map((s) => [s.key, s.skip, s.notes || ""]),
+    [["B", false, "capo 3"], ["A", false, ""], ["A#2", true, ""]]
+  );
+});
+
+test("U7: a password already saved is reported as set, even if updating the pages then fails", async (t) => {
+  const c = await setup(t);
+  const S = require("../server/setlist");
+  const real = S.buildSetlist;
+  t.after(() => (S.buildSetlist = real));
+  const hold = holdPbkdf2(t);
+  const pending = c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  await waitFor(() => hold.held() > 0, "hashing");
+  S.buildSetlist = () => {
+    throw new Error("state failed");
+  };
+  hold.release();
+  const res = await pending;
+  S.buildSetlist = real;
+  assert.equal(res.status, 200);
+  assert.equal((await c.state()).passwordSet, true);
+  const lines = (await (await fetch(c.url("/api/logs"))).json()).lines.join("\n");
+  assert.match(lines, /password set, but the pages were not updated: state failed/);
+  assert.doesNotMatch(lines, /cannot set the password/);
 });

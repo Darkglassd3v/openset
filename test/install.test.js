@@ -3,7 +3,9 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { userLibraries, installRemoteScript, installSummary } = require("../server/install");
+const vm = require("vm");
+const install = require("../server/install");
+const { userLibraries, installRemoteScript, installSummary } = install;
 
 test("userLibraries: Live's default User Library on macOS and Windows", () => {
   assert.deepEqual(userLibraries("darwin", {}, "/Users/ana"), ["/Users/ana/Music/Ableton/User Library"]);
@@ -147,4 +149,38 @@ test("T3: when no User Library can be written, every failure is listed; one line
   assert.equal(installSummary({ status: "updated", paths: ["/a", "/b"], errors: [{ path: "/c", error: "EACCES: denied" }] }), "updated in /a, /b; cannot write /c (EACCES: denied)");
   assert.equal(installSummary({ status: "not-found" }), "not-found");
   assert.equal(installSummary(null), "-");
+});
+
+test("U5: at start a failed install is one error line, never an info line that reads like a location", () => {
+  const { installLog } = install;
+  assert.equal(typeof installLog, "function", "installLog in server/install.js");
+  const lib = "/L/Remote Scripts/OpenSet";
+  const failed = { status: "error", path: lib, error: "EACCES: denied", errors: [{ path: lib, error: "EACCES: denied" }] };
+  assert.deepEqual(installLog(failed, 1), [["error", `[live] Remote Script error; cannot write ${lib} (EACCES: denied)`]]);
+  assert.deepEqual(installLog({ status: "current", path: lib, paths: [lib, "/M"] }, 2), [["info", `[live] Remote Script current in ${lib}, /M`]]);
+  assert.deepEqual(installLog({ status: "updated", path: lib, paths: [lib], errors: [{ path: "/M", error: "EROFS" }] }, 2), [
+    ["info", `[live] Remote Script updated in ${lib}: restart Live and pick OpenSet as Control Surface`],
+    ["error", `[live] Remote Script updated in ${lib}; cannot write /M (EROFS)`],
+  ]);
+  assert.deepEqual(installLog({ status: "not-found" }, 1), [["info", "[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder"]]);
+  assert.deepEqual(installLog({ status: "not-found" }, 0), []); // Linux: no Live to look for
+});
+
+// the web app's note about the Remote Script, run as the page runs it
+const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf-8");
+const pageFn = (name) => (html.match(new RegExp(`^function ${name}\\(.*}$|^function ${name}\\(.*$[\\s\\S]*?^}$`, "m")) || [""])[0];
+const page = vm.createContext({});
+vm.runInContext(pageFn("esc") + "\n" + pageFn("scriptNote"), page);
+
+test("U4: the web app names every User Library it could not write, with the reason", () => {
+  const errors = [
+    { path: "/Live 12/Remote Scripts/OpenSet", error: "EACCES: permission denied" },
+    { path: "/Live 11/Remote Scripts/OpenSet", error: "EROFS: read-only file system" },
+  ];
+  const none = page.scriptNote({ status: "error", path: errors[0].path, error: errors[0].error, errors });
+  assert.match(none, /Live 12\/Remote Scripts\/OpenSet.*EACCES: permission denied/);
+  assert.match(none, /Live 11\/Remote Scripts\/OpenSet.*EROFS: read-only file system/);
+  const one = page.scriptNote({ status: "updated", path: "/Live 12/x", paths: ["/Live 12/x"], errors: errors.slice(1) });
+  assert.match(one, /installato in .*Live 12\/x/);
+  assert.match(one, /Live 11\/Remote Scripts\/OpenSet.*EROFS: read-only file system/);
 });
