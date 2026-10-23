@@ -114,8 +114,8 @@ function defaultPrefs() {
     skip: [],
     stopAfter: [],
     notes: {},
-    keys: true, // false: setlist settings saved by 0.6.1 and older, by song name (see S.applyOrder)
-    keyTimes: {}, // where the songs sharing a name were: their settings stay with them (S.buildSetlist)
+    keys: true, // false: setlist settings saved by 0.6.1 and older, by song name, converted once (S.migrateNames)
+    keyTimes: {}, // where each song was: a reprise keeps its key, and its settings (S.buildSetlist)
     measured: {}, // song key -> seconds measured during real playback
     lastProject: null, // the last .als loaded, for Auto-Launch the Last Live Project
     httpPort: null, // the port of the last run: tried first, so saved addresses keep working
@@ -280,7 +280,7 @@ function start(opts = {}) {
       ...base,
       ...(cleanSetlist(saved, base) || {}),
       settings,
-      keys: saved.keys === true,
+      keys: Object.keys(saved).length ? saved.keys === true : true, // no file yet: nothing from 0.6.1
       keyTimes:
         saved.keyTimes && typeof saved.keyTimes === "object" && !Array.isArray(saved.keyTimes)
           ? Object.fromEntries(
@@ -330,31 +330,42 @@ function start(opts = {}) {
     return useLive() ? tracks : offlineProject.tracks || [];
   }
 
-  // the setlist settings as they look now, by key: settings saved by 0.6.1 (by name) become
-  // one entry per song before OpenSet changes them itself
-  function keyedSetlist() {
-    const { order, skip, stopAfter, notes, measured } = prefs;
-    if (prefs.keys) return { order, skip, stopAfter, notes, measured, keys: true };
-    const list = setlist();
-    return {
-      order: list.map((s) => s.key),
-      skip: list.filter((s) => s.skip).map((s) => s.key),
-      stopAfter: list.filter((s) => s.stopAfter).map((s) => s.key),
-      notes: Object.fromEntries(list.filter((s) => s.notes).map((s) => [s.key, s.notes])),
-      measured: { ...measured, ...Object.fromEntries(list.filter((s) => s.measured != null).map((s) => [s.key, s.measured])) },
-      keys: true,
-    };
+  function songs() {
+    const source = useLive() ? cues : offlineProject.locators;
+    return S.buildSetlist(S.cuesFromLive(source, currentTracks()), prefs.keyTimes);
+  }
+
+  // settings saved by OpenSet 0.6.1 use song names: converted once, as soon as there are songs
+  function migrate(list) {
+    if (prefs.keys || !list.length) return;
+    prefs = { ...prefs, ...S.migrateNames(prefs, list), keys: true };
+    savePrefs();
+    log.info("[setlist] settings from OpenSet 0.6.1 converted song by song (same-name songs kept apart)");
+  }
+
+  // the locators changed: where each song is now, so reprises keep their keys, also after a
+  // restart (never cleared while there are no songs yet)
+  function songsMoved() {
+    const list = songs();
+    if (!list.length) return;
+    migrate(list);
+    const keyTimes = S.keyTimesOf(list);
+    if (JSON.stringify(keyTimes) === JSON.stringify(prefs.keyTimes)) return;
+    prefs.keyTimes = keyTimes;
+    savePrefs();
   }
 
   function setlist() {
-    const source = useLive() ? cues : offlineProject.locators;
-    const songs = S.buildSetlist(S.cuesFromLive(source, currentTracks()), prefs.keyTimes);
-    const keyTimes = S.keyTimesOf(songs);
-    if (JSON.stringify(keyTimes) !== JSON.stringify(prefs.keyTimes)) {
-      prefs.keyTimes = keyTimes; // saved quietly: it changes only when Live's locators do
-      savePrefs();
-    }
-    return S.applyOrder(songs, prefs);
+    const list = songs();
+    migrate(list);
+    return S.applyOrder(list, prefs);
+  }
+
+  // a saved setlist or backup from OpenSet 0.6.1 (by name), loaded now: by key, like the rest
+  function byKey(loaded, data) {
+    if (data.keys === true) return { order: loaded.order, skip: loaded.skip, stopAfter: loaded.stopAfter, notes: loaded.notes };
+    const { order, skip, stopAfter, notes } = S.migrateNames({ ...loaded, measured: {} }, songs());
+    return { order, skip, stopAfter, notes };
   }
 
   // Tempo map of the loaded .als: offline, or while Live plays the same set
@@ -528,7 +539,10 @@ function start(opts = {}) {
         `[live] connected: Live ${liveState.live_version || "?"}, Remote Script ${liveState.script_version || "older than 0.5.1"}, ` +
           `command port ${liveState.cmd_port === false ? "busy" : "ok"}`
       );
-    if (Array.isArray(newCues)) cues = newCues;
+    if (Array.isArray(newCues)) {
+      cues = newCues;
+      songsMoved();
+    }
     // count-in: the click goes back to normal at the section, or when playback stops
     if (countIn) {
       if (liveState.is_playing && liveState.beat < countIn.until - S.EPS) countIn.started = true;
@@ -567,10 +581,9 @@ function start(opts = {}) {
       });
       for (const c of cmds) {
         if (c.cmd !== "played") sendToLive(c, true);
-        else if (!prefs.keys || !prefs.skip.includes(c.key)) {
+        else if (!prefs.skip.includes(c.key)) {
           log.info(`[setlist] ${c.key} played to the end: removed from the setlist`);
-          const now = keyedSetlist();
-          setPrefs({ ...now, skip: [...now.skip.filter((k) => k !== c.key), c.key] });
+          setPrefs({ skip: [...prefs.skip, c.key] });
         }
       }
       if (queued && cmds.some((c) => c.cmd === "jump" && Math.abs(c.time - queued.time) < S.EPS)) queued = null;
@@ -944,7 +957,8 @@ function start(opts = {}) {
         return true;
       case "setlist": {
         const next = cleanSetlist(msg, prefs);
-        return !!next && setPrefs({ ...next, keys: true, measured: keyedSetlist().measured });
+        migrate(songs()); // missing fields come from the settings: by key first
+        return !!next && setPrefs({ ...next, keys: true });
       }
       case "settings": {
         const settings = { ...prefs.settings };
@@ -970,22 +984,22 @@ function start(opts = {}) {
         return true;
       case "saveSetlist": {
         if (!validName(msg.name)) return false;
-        const { order, skip, stopAfter, notes, keys } = prefs;
+        const { order, skip, stopAfter, notes } = prefs;
         // overwriting keeps the previous version, like AbleSet's Backup folder
         const backups = Object.hasOwn(prefs.saved, msg.name)
           ? [{ name: msg.name, at: new Date(cfg.now()).toISOString(), data: prefs.saved[msg.name] }, ...prefs.backups].slice(0, 20)
           : prefs.backups;
-        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes, keys } }, setlistName: msg.name, backups });
+        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes, keys: true } }, setlistName: msg.name, backups });
       }
       case "restoreBackup": {
         const b = prefs.backups.find((x) => x.name === msg.name && x.at === msg.at);
         const loaded = b && cleanSetlist(b.data, defaultPrefs());
-        return !!loaded && setPrefs({ ...loaded, keys: b.data.keys === true, setlistName: b.name });
+        return !!loaded && setPrefs({ ...byKey(loaded, b.data), setlistName: b.name });
       }
       case "loadSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;
         const loaded = cleanSetlist(prefs.saved[msg.name], defaultPrefs());
-        return !!loaded && setPrefs({ ...loaded, keys: prefs.saved[msg.name].keys === true, setlistName: msg.name });
+        return !!loaded && setPrefs({ ...byKey(loaded, prefs.saved[msg.name]), setlistName: msg.name });
       }
       case "deleteSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;
@@ -1428,6 +1442,7 @@ function start(opts = {}) {
     if (!isAls(file)) return res.status(400).json({ error: "Not a Live project (.als)" });
     try {
       offlineProject = parseAls(file);
+      songsMoved();
       setPrefs({ lastProject: path.resolve(file) });
       res.json({ ok: true, locators: offlineProject.locators.length });
     } catch (e) {
@@ -1538,6 +1553,7 @@ function start(opts = {}) {
       offlineProject = parseAls(cfg.alsFile);
       prefs = { ...prefs, lastProject: path.resolve(cfg.alsFile) };
       savePrefs();
+      songsMoved();
       log.info(`[als] loaded ${offlineProject.locators.length} locators from ${cfg.alsFile}`);
     } catch (e) {
       log.error(`[als] parse failed: ${e.message}`);

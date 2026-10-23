@@ -80,7 +80,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Aggiungendo in Live un altro brano con lo stesso nome prima della ripresa, nota e «tolto» passavano al brano sbagliato. Ora una ripresa che resta nella stessa posizione tiene le sue impostazioni.
   - Trovato durante la correzione: con impostazioni della 0.6.1 e «Togli i brani suonati», il primo brano suonato toglieva anche la ripresa. Ora prima della modifica le impostazioni vengono convertite brano per brano (anche le durate misurate).
 - Nota: i commit `c31b597` e `c8588cf` non aggiornano `TODO.md` (storia già pubblicata sulla PR, non riscritta)
-- [ ] S1 (RED fatto) Dalla seconda revisione, brani con lo stesso nome (rifatto più semplice: le impostazioni della 0.6.1 si convertono una volta sola, appena arriva la scaletta)
+- [x] S1 (RED `226585a`, GREEN) Dalla seconda revisione, brani con lo stesso nome (rifatto più semplice: le impostazioni della 0.6.1 si convertono una volta sola, appena arriva la scaletta)
   - Riavviando OpenSet, la posizione delle riprese si perdeva (veniva cancellata prima che Live mandasse i locator): una ripresa aggiunta prima tornava a prendersi le impostazioni dell'altra.
   - Con una scaletta nuova (senza file delle impostazioni) OpenSet partiva come se le impostazioni fossero della 0.6.1: la durata misurata di un brano valeva anche per la sua ripresa.
   - Con impostazioni della 0.6.1, un incolla o una modifica parziale perdeva «tolto» e note della ripresa; caricare una scaletta salvata perdeva la durata misurata.

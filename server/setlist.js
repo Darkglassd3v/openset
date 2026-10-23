@@ -170,13 +170,22 @@ function assignKeys(songs, keyTimes) {
   }
 }
 
-// where the songs that share a name (or whose key is not their name) are, for the next buildSetlist
+// where each song is, for the next buildSetlist: a song added later with the same name
+// as one already there gets a new key instead of taking the old one's settings
 function keyTimesOf(songs) {
-  const count = new Map();
-  for (const s of songs) count.set(s.name, (count.get(s.name) || 0) + 1);
-  const out = {};
-  for (const s of songs) if (count.get(s.name) > 1 || s.key !== s.name) out[s.key] = [s.name, s.time];
-  return out;
+  return Object.fromEntries(songs.map((s) => [s.key, [s.name, s.time]]));
+}
+
+// settings saved by OpenSet 0.6.1 and older use song names: one entry per song with that
+// name (what they meant then); names of songs not in the set stay as they are
+function migrateNames({ order = [], skip = [], stopAfter = [], notes = {}, measured = {} }, songs) {
+  const keysOf = (name) => {
+    const keys = songs.filter((s) => s.name === name).map((s) => s.key);
+    return keys.length ? keys : [name];
+  };
+  const list = (names) => [...new Set(names.flatMap(keysOf))];
+  const map = (m) => Object.fromEntries(Object.entries(m).flatMap(([name, v]) => keysOf(name).map((k) => [k, v])));
+  return { order: list(order), skip: list(skip), stopAfter: list(stopAfter), notes: map(notes), measured: map(measured) };
 }
 
 // The sections track (AbleSet): named "Sections…" or flagged +SECTIONS
@@ -208,31 +217,25 @@ function cuesFromLive(cues, tracks) {
   return [...named, ...extra].sort((a, b) => a.time - b.time || isSection(a) - isSection(b));
 }
 
-// prefs: { order: [key], skip: [key], stopAfter: [key], notes: {key: text}, measured: {key: seconds} };
-// keys: false for settings saved by OpenSet 0.6.1 and older, by name: they apply to every song with that name
+// prefs: { order: [key], skip: [key], stopAfter: [key], notes: {key: text}, measured: {key: seconds} }
 function applyOrder(songs, prefs = {}) {
   const order = prefs.order || [];
   const skip = new Set(prefs.skip || []);
   const stopAfter = new Set(prefs.stopAfter || []);
   const notes = prefs.notes || {};
   const measured = prefs.measured || {};
-  const ids = (s) => (prefs.keys === false ? [s.key, s.name] : [s.key]);
-  const lookup = (map, s) => {
-    const k = ids(s).find((x) => Object.hasOwn(map, x));
-    return k === undefined ? undefined : map[k];
-  };
   const rank = (s) => {
-    const i = ids(s).map((k) => order.indexOf(k)).find((x) => x >= 0);
-    return i === undefined ? order.length : i;
+    const i = order.indexOf(s.key);
+    return i < 0 ? order.length : i;
   };
   let n = 0;
   return songs
     .map((s) => ({
       ...s,
-      skip: ids(s).some((k) => skip.has(k)),
-      stopAfter: ids(s).some((k) => stopAfter.has(k)),
-      notes: lookup(notes, s) ?? "",
-      measured: lookup(measured, s) ?? null,
+      skip: skip.has(s.key),
+      stopAfter: stopAfter.has(s.key),
+      notes: Object.hasOwn(notes, s.key) ? notes[s.key] : "",
+      measured: Object.hasOwn(measured, s.key) ? measured[s.key] : null,
     }))
     .sort((a, b) => rank(a) - rank(b)) // stable: unlisted songs keep timeline order
     .map((s) => ({ ...s, number: s.skip || s.nosong ? null : ++n }));
@@ -365,6 +368,7 @@ module.exports = {
   CLIP_COLORS,
   applyOrder,
   keyTimesOf,
+  migrateNames,
   songAt,
   sectionAt,
   nextSong,
