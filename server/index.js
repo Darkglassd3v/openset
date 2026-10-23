@@ -102,6 +102,7 @@ const sharedScalar = (v) =>
 const validSharedKey = (k) => typeof k === "string" && /^\S{1,128}$/.test(k);
 const validSharedValue = (v) => sharedScalar(v) || (Array.isArray(v) && v.length <= 64 && v.every(sharedScalar));
 const SHARED_MAX = 500;
+const SHARED_TOTAL = 32 * 1024; // characters of all shared variables together: every page gets them ~10 times a second
 const SCRIPT_MAX = 200000; // characters of the project script
 const CANVAS_MAX = 50; // canvases per project
 // a song added by hand: { id (8 hex digits), name, seconds, lyrics? }
@@ -121,6 +122,11 @@ function cleanCanvases(obj) {
 // images a canvas can show: uploaded ones are never SVG (it may carry scripts)
 const UPLOAD_IMAGE = /^[\p{L}\p{N} ._()-]{1,100}\.(png|jpe?g|gif|webp)$/iu;
 const SERVED_IMAGE = /\.(png|jpe?g|gif|webp|svg)$/i;
+// on Windows these names are devices, not files ("COM1.png" writes to the serial port)
+const WINDOWS_DEVICE = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\.|$)/i;
+// a canvas image to another program on the local network only: lights and video, not the internet
+const localHost = (h) =>
+  /^(127|10)\.\d+\.\d+\.\d+$|^192\.168\.\d+\.\d+$|^172\.(1[6-9]|2\d|3[01])\.\d+\.\d+$|^169\.254\.\d+\.\d+$/.test(h) || h === "localhost" || /\.local$/i.test(h);
 function cleanShared(obj) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
   return Object.fromEntries(Object.entries(obj).filter(([k, v]) => validSharedKey(k) && validSharedValue(v)).slice(0, SHARED_MAX));
@@ -207,6 +213,7 @@ function defaultPrefs() {
     canvases: {}, // AbleSet's Canvas: name -> { name, elements } (server/canvas.js)
     manualSongs: [], // songs added by hand, without a Live project (S.manualSongs)
     multiFile: "", // folder of a multi-file project (one .als per song), "" when off
+    multiFileLoaded: null, // { key, cues }: the file OpenSet opened last, with its locators (JSON)
   };
 }
 
@@ -277,6 +284,7 @@ function start(opts = {}) {
       if (c) require("child_process").spawn(c[0], c[1], { stdio: "ignore", windowsHide: true }).on("error", () => {});
     },
     saveWaitMs: 1500,
+    resourcesMaxBytes: 200 * 1024 * 1024, // canvas images together: a device cannot fill the disk
     mdns: null, // () => multicast-dns instance: the CLI's, for Bonjour (never in tests)
     liveRunning: () => liveRunning(),
     installScript: null, // () => install result: the CLI's, for "Reinstalla il Remote Script"
@@ -360,6 +368,10 @@ function start(opts = {}) {
       canvases: cleanCanvases(saved.canvases),
       manualSongs: Array.isArray(saved.manualSongs) ? saved.manualSongs.filter(validManual).slice(0, 200) : [],
       multiFile: typeof saved.multiFile === "string" && saved.multiFile.length <= 1000 ? saved.multiFile : "",
+      multiFileLoaded:
+        saved.multiFileLoaded && typeof saved.multiFileLoaded.key === "string" && typeof saved.multiFileLoaded.cues === "string"
+          ? { key: saved.multiFileLoaded.key, cues: saved.multiFileLoaded.cues }
+          : null,
       keys: Object.keys(saved).length ? saved.keys === true : true, // no file yet: nothing from 0.6.1
       measuredKeys: Object.keys(saved).length ? (saved.measuredKeys ?? saved.keys) === true : true,
       keyTimes:
@@ -600,25 +612,22 @@ function start(opts = {}) {
   function changed(list) {
     const st = publicState(list);
     broadcast({ type: "state", state: st });
-    pushOsc(st);
-    // pages showing a canvas (templates use osc()) and the project script get the OSC values
+    // OSC clients, pages showing a canvas (templates use osc()) and the project script: the values once
     const pages = [...wss.clients].filter((c) => c.osc && c.readyState === 1);
-    if (!pages.length && !projectScript.running()) return;
+    if (!subscribers.size && !pages.length && !projectScript.running()) return;
     const values = oscValues(st);
+    pushOsc(st, null, values);
     for (const ws of pages) sendOscValues(ws, values);
     if (projectScript.running()) projectScript.update(values);
   }
 
-  // only the values that changed since this page's last message
+  // what changed (and went away) since this page's last message; a page that stopped
+  // reading gets nothing now, and everything it missed later
   function sendOscValues(ws, values) {
-    const changes = {};
-    for (const [k, v] of Object.entries(values)) {
-      const json = JSON.stringify(v);
-      if (ws.oscSent[k] === json) continue;
-      ws.oscSent[k] = json;
-      changes[k] = v;
-    }
-    if (Object.keys(changes).length && ws.bufferedAmount < 1 << 20) ws.send(JSON.stringify({ type: "osc", values: changes }));
+    const { changes, removed, next } = C.oscDiff(ws.oscSent, values);
+    if ((!Object.keys(changes).length && !removed.length) || ws.bufferedAmount >= 1 << 20) return;
+    ws.send(JSON.stringify({ type: "osc", values: changes, ...(removed.length ? { removed } : {}) }));
+    ws.oscSent = next;
   }
 
   // OSC to another program (canvas buttons, project script); errors only logged
@@ -631,23 +640,27 @@ function start(opts = {}) {
   }
 
   // AbleSet's OSC lines (canvas buttons): one command after the other, with //sleep, //if…
-  async function runOscLines(text) {
+  // They come from a device: Safe Mode applies (source "web"), no OSC subscriptions for other
+  // computers, and other programs only on the local network
+  async function runOscLines(steps) {
     let skip = false;
     const until = async (done) => {
       for (let i = 0; i < 1200 && !done() && !closed; i++) await new Promise((r) => setTimeout(r, 50)); // 60 s at most
     };
-    for (const st of C.parseOscLines(text)) {
+    for (const st of steps) {
       if (closed) return;
       if (st.endif) skip = false;
       else if (st.if) {
         const on = st.if === "playing" ? liveState.is_playing : st.if === "looping" ? liveState.loop : liveState.record;
         skip = st.not ? !!on : !on;
       } else if (skip) continue;
-      else if (st.sleep) await new Promise((r) => setTimeout(r, Math.min(st.sleep, 60000)));
+      else if (st.sleep !== undefined) await new Promise((r) => setTimeout(r, Math.min(st.sleep, 60000)));
       else if (st.awaitJump) await until(() => !queued);
       else if (st.awaitFileLoad) await until(() => !fileLoading);
-      else if (st.host) sendOscOut(st.host, st.port, st.address, st.args);
-      else handleOsc({ address: st.address, args: st.args }, { address: "127.0.0.1", port: 0 });
+      else if (st.host) {
+        if (localHost(st.host)) sendOscOut(st.host, st.port, st.address, st.args);
+        else log.error(`[osc] ${st.host}: only programs on the local network`);
+      } else if (!/^\/(subscribe|unsubscribe|getValues)$/.test(st.address)) handleOsc({ address: st.address, args: st.args }, { address: "127.0.0.1", port: 0 }, "web");
     }
   }
 
@@ -668,7 +681,7 @@ function start(opts = {}) {
       // "/global/play": a command to OpenSet; "host:port/address": out to another program
       if (command.startsWith("/")) {
         const plain = args.map((a) => (a && typeof a === "object" && Number.isInteger(a.int) ? a.int : a));
-        if (!handleOsc({ address: command, args: plain }, { address: "127.0.0.1", port: 0 })) addScriptLog(`sendOsc: comando non eseguito «${command}»`, true);
+        if (!handleOsc({ address: command, args: plain }, { address: "127.0.0.1", port: 0 }, "script")) addScriptLog(`sendOsc: comando non eseguito «${command}»`, true);
         return;
       }
       const m = /^([\w.-]+):(\d{1,5})(\/\S*)$/.exec(command);
@@ -740,9 +753,11 @@ function start(opts = {}) {
           `command port ${liveState.cmd_port === false ? "busy" : "ok"}`
       );
     // multi-file project: the Remote Script starts again (a new key) or new locators come: the file is in
+    let loadedNow = false;
     if (fileLoading && ((typeof key === "string" && key !== fileLoading.liveKey) || (Array.isArray(newCues) && JSON.stringify(newCues) !== fileLoading.cues))) {
       fileLoaded = fileLoading.key;
       fileLoading = null;
+      loadedNow = true;
       log.info(`[files] ${fileLoaded} loaded`);
     } else if (fileLoading && Date.now() - fileLoading.at > 60000) {
       log.error(`[files] ${fileLoading.key} did not load within a minute`);
@@ -750,7 +765,12 @@ function start(opts = {}) {
     }
     if (Array.isArray(newCues)) {
       cues = newCues;
+      if (prefs.multiFile && !fileLoading && !loadedNow) recogniseFile();
       songsMoved();
+    }
+    if (loadedNow) {
+      prefs.multiFileLoaded = { key: fileLoaded, cues: JSON.stringify(cues) }; // known again after a restart
+      savePrefs();
     }
     // count-in: the click goes back to normal at the section, or when playback stops
     if (countIn) {
@@ -937,7 +957,7 @@ function start(opts = {}) {
       source === "web" && !!msg && !msg.midi && !msg.mirror && prefs.settings.safeMode && liveState.is_playing;
     const ok = handleCommand(msg, safe);
     const shared = ok && msg.cmd === "settings" ? Object.fromEntries(Object.entries(msg).filter(([k]) => !LOCAL_SETTINGS.includes(k))) : msg;
-    if (ok && !msg.mirror && !LOCAL_ONLY.has(msg.cmd) && (msg.cmd !== "settings" || Object.keys(shared).length > 1)) {
+    if (ok && !msg.mirror && source !== "script" && !LOCAL_ONLY.has(msg.cmd) && (msg.cmd !== "settings" || Object.keys(shared).length > 1)) {
       const body = JSON.stringify({ ...shared, mirror: true });
       for (const url of prefs.peers)
         fetch(url + "/api/cmd", {
@@ -1078,6 +1098,22 @@ function start(opts = {}) {
     } else open();
     changed();
     return true;
+  }
+
+  // the song file open in Live, when OpenSet did not open it now: the one it opened last if
+  // Live still has the same locators, or the only file named like Live's first song
+  function recogniseFile() {
+    const json = JSON.stringify(cues);
+    const remembered = prefs.multiFileLoaded;
+    let key = remembered && remembered.cues === json && songFiles.some((f) => f.key === remembered.key) ? remembered.key : null;
+    if (!key) {
+      const first = S.buildSetlist(S.cuesFromLive(cues, currentTracks()), {})[0];
+      const name = first && first.name.toLowerCase();
+      const same = name ? songFiles.filter((f) => f.name.toLowerCase() === name || path.basename(f.key).toLowerCase() === name) : [];
+      key = same.length === 1 ? same[0].key : null;
+    }
+    if (key && key !== fileLoaded) log.info(`[files] ${key} is open in Live`);
+    fileLoaded = key;
   }
 
   // Next/Previous: in a multi-file project they wait songFileDelay; pressed again meanwhile, they add up
@@ -1234,7 +1270,8 @@ function start(opts = {}) {
       }
       case "prev": {
         // like AbleSet: back to the start of the song first, unless forced
-        if (song && !song.manual && !msg.force && prefs.settings.restartBeforeBack && liveState.beat - song.playStart > 1)
+        // (not with a Next still waiting: Previous takes it back)
+        if (song && !song.manual && !pendingSong && !msg.force && prefs.settings.restartBeforeBack && liveState.beat - song.playStart > 1)
           return jumpTo(song.playStart, "song");
         if (safe) return false;
         const p = S.prevSong(list, pendingSong ? pendingSong.index : cur);
@@ -1250,7 +1287,9 @@ function start(opts = {}) {
         songFiles = folder ? MF.scanSongFiles(folder) : [];
         fileLoading = fileLoaded = null;
         log.info(folder ? `[files] multi-file project ${folder}: ${songFiles.length} songs` : "[files] multi-file project off");
-        return setPrefs({ multiFile: folder });
+        prefs = { ...prefs, multiFile: folder, multiFileLoaded: null };
+        if (folder) recogniseFile();
+        return setPrefs({});
       }
       case "addManualSong":
       case "updateManualSong": {
@@ -1416,6 +1455,8 @@ function start(opts = {}) {
         const canvas = C.cleanCanvas(msg.canvas);
         if (!canvas || JSON.stringify(canvas).length > 1e6) return false;
         const canvases = { ...prefs.canvases };
+        // only a canvas's own edit replaces it: a new one or a rename onto another name is refused
+        if (canvases[canvas.name] && msg.oldName !== canvas.name) return false;
         if (typeof msg.oldName === "string" && msg.oldName !== canvas.name) delete canvases[msg.oldName];
         if (!canvases[canvas.name] && Object.keys(canvases).length >= CANVAS_MAX) return false;
         canvases[canvas.name] = canvas;
@@ -1428,11 +1469,21 @@ function start(opts = {}) {
         canvasRev++;
         return setPrefs({ canvases });
       }
-      case "oscRun":
-        // not copied to the backups as such: each command inside is, when it runs
-        if (typeof msg.lines !== "string" || msg.lines.length > 20000) return false;
-        runOscLines(msg.lines).catch((e) => log.error(`[osc] ${e.message}`));
+      case "oscRun": {
+        // lines (a button), or one command with its arguments as data (a canvas script's sendOsc:
+        // text with ";" or new lines stays whole). Not copied to the backups as such: each
+        // command inside is, when it runs
+        let steps;
+        if (typeof msg.address === "string") {
+          const a = /^(?:([\w.-]+):(\d{1,5}))?(\/[^\s/]\S*)$/.exec(msg.address);
+          const args = msg.args === undefined ? [] : msg.args;
+          if (!a || !Array.isArray(args) || args.length > 64 || !args.every(sharedScalar)) return false;
+          steps = [a[1] ? { host: a[1], port: Number(a[2]), address: a[3], args } : { address: a[3], args }];
+        } else if (typeof msg.lines === "string" && msg.lines.length <= 20000) steps = C.parseOscLines(msg.lines);
+        else return false;
+        runOscLines(steps).catch((e) => log.error(`[osc] ${e.message}`));
         return true;
+      }
       case "setProjectScript":
         // this computer only (HOST_ONLY): the script runs here, with OpenSet's rights
         if (typeof msg.code !== "string" || msg.code.length > SCRIPT_MAX) return false;
@@ -1447,6 +1498,7 @@ function start(opts = {}) {
       case "setShared": {
         if (!validSharedKey(msg.key) || !validSharedValue(msg.value)) return false;
         if (!Object.hasOwn(prefs.shared, msg.key) && Object.keys(prefs.shared).length >= SHARED_MAX) return false;
+        if (JSON.stringify({ ...prefs.shared, [msg.key]: msg.value }).length > SHARED_TOTAL) return false;
         prefs.shared = { ...prefs.shared, [msg.key]: msg.value };
         return sharedChanged();
       }
@@ -1509,8 +1561,10 @@ function start(opts = {}) {
   }
 
   // AbleSet-compatible OSC: https://ableset.com/docs/osc (subset)
-  function handleOsc({ address, args }, rinfo) {
-    const runOsc = (msg) => runCommand(msg, "osc");
+  // source: "osc" (a controller), "web" (a canvas button: Safe Mode applies), "script" (the
+  // project script: each backup runs its own, so nothing is copied)
+  function handleOsc({ address, args }, rinfo, source = "osc") {
+    const runOsc = (msg) => runCommand(msg, source);
     // AbleSet: /shared/<name> value…, several values make a list
     if (address.startsWith("/shared/")) return runOsc({ cmd: "setShared", key: address.slice(8), value: args.length === 1 ? args[0] : args });
     const [a, b] = args;
@@ -1526,7 +1580,7 @@ function start(opts = {}) {
       return on !== null && runOsc({ cmd: "mixer", group, [what]: on });
     }
     const list = setlist();
-    const cur = S.songAt(list, liveState.beat);
+    const cur = currentIndex(list); // a song played by hand counts too
     const song = list[cur];
     // AbleSet addressing: 1-based number, negative from the end, or a name
     const pick = (items, v, partial = false) => {
@@ -1735,9 +1789,9 @@ function start(opts = {}) {
   }
 
   // Sends changed values to all subscribers, or everything to one target.
-  function pushOsc(st, target) {
+  function pushOsc(st, target, values = oscValues(st)) {
     if (!target && !subscribers.size) return;
-    for (const [address, args] of Object.entries(oscValues(st))) {
+    for (const [address, args] of Object.entries(values)) {
       const key = JSON.stringify(args);
       if (!target) {
         if (lastOsc.get(address) === key) continue;
@@ -1990,7 +2044,23 @@ function start(opts = {}) {
   app.post("/api/canvas-resources", express.raw({ type: () => true, limit: "10mb" }), route(async (req, res) => {
     if (!(await httpAllowed(req, res))) return;
     const name = String(req.query.name || "");
-    if (!UPLOAD_IMAGE.test(name) || name.includes("..") || !Buffer.isBuffer(req.body)) return res.status(400).json({ error: "An image: .png, .jpg, .gif or .webp" });
+    if (!UPLOAD_IMAGE.test(name) || WINDOWS_DEVICE.test(name) || name.includes("..") || !Buffer.isBuffer(req.body))
+      return res.status(400).json({ error: "An image: .png, .jpg, .gif or .webp" });
+    // the folder's size without the file this one replaces
+    let used = 0;
+    const walk = (dir) => {
+      let entries = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {}
+      for (const e of entries) {
+        const f = path.join(dir, e.name);
+        if (e.isDirectory()) walk(f);
+        else if (f !== path.join(RES_DIR, name)) used += fs.statSync(f).size;
+      }
+    };
+    walk(RES_DIR);
+    if (used + req.body.length > cfg.resourcesMaxBytes) return res.status(413).json({ error: "Canvas/Resources is full" });
     fs.mkdirSync(RES_DIR, { recursive: true });
     fs.writeFileSync(path.join(RES_DIR, name), req.body);
     res.json({ path: name });
