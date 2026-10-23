@@ -486,3 +486,25 @@ test("F9: a multi-file project is chosen in Opzioni on this computer; the songs 
   await page.click("#mfOff");
   await expect(page.locator("#mfStatus")).toContainText("spento");
 });
+
+test("V1: what a canvas holds cannot act as this page: templates are not JavaScript, scripts run in a closed box", async ({ page, openset }) => {
+  await openset.cmd({
+    cmd: "saveCanvas",
+    canvas: {
+      name: "Prova",
+      elements: [
+        { id: "a", type: "label", x: 0, y: 0, w: 12, h: 2, props: { text: '${(function(){document.title="preso"})()}|${osc("/global/tempo") + 1} BPM|${osc("/global/isPlaying") ? "Suona" : "Fermo"}' } },
+        { id: "b", type: "button", x: 0, y: 2, w: 6, h: 3, props: { label: "Prova", script: 'document.title = "preso"; try { parent.document.title = "preso"; } catch (e) {} sendOsc("/global/play"); setShared("x", "a;b\\nc \\"d\\""); setLocal("n", 1);' } },
+      ],
+    },
+  });
+  await page.goto(openset.url());
+  await connected(page);
+  const title = await page.title();
+  await tab(page, "canvas");
+  await expect(page.locator("#canvas")).toContainText("⚠|121 BPM|Fermo");
+  await page.click("#canvas .cv-btn");
+  await expect.poll(() => openset.cmds.some((c) => c.cmd === "play")).toBe(true); // the script still works
+  await expect.poll(async () => (await openset.state()).shared.x).toBe('a;b\nc "d"'); // the text arrives whole (V8)
+  expect(await page.title()).toBe(title);
+});

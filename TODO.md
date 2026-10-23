@@ -136,6 +136,30 @@ Live finto dei test e va nella lista «Da verificare su un computer vero».
 - [x] F9 (RED `9e6edc0`, `ede0d38`, GREEN per modulo: `multifile.js`, `launch.js`, server, pagina) Progetti su più file `.als`: una cartella con un file per brano (nome con note, colori e durata come in AbleSet), la scaletta resta in `setlist.json` di OpenSet e non in `ableset.json` della cartella (il formato di AbleSet non è documentato: scriverlo potrebbe rovinare il file di AbleSet), il salto a un brano apre il suo file in Live; «Delay Before Jumping to Song File»; «Save Changes Before Loading Project»; mixer: «Sync Group Solos & Mutes Between Songs» e «Sync Group Volumes Between Songs»
 - [x] F11 (RED `35155b5`, GREEN; provato su questa rete Linux con una seconda istanza mDNS: trovato «OpenSet (prova)», porta 39051) OSC visibile in rete (Bonjour/mDNS): servizio `_osc._udp` sulla porta OSC, come AbleSet
 - [x] N1 (RED `368a010`, GREEN `8dbeabb`; CI della PR #10 verde: prova d'avvio su Linux, Windows e Mac Apple Silicon, build dei 4 programmi su macOS; controlli obbligatori del ruleset di `main` rinominati) Node recente dentro i programmi: Node 18 non riceve più aggiornamenti di sicurezza da aprile 2025 (pkg 5.8.1 non va oltre). Programmi fatti con Node SEA e un Node attuale per Windows, macOS (arm64 e Intel) e Linux, con versione nel nome, icona, firma ad hoc su macOS e guida dentro gli zip; prova di avvio in CI su ogni sistema
+- [ ] V Revisione della 1.0.0 (agente + skill code-review, 2026-10-27): correggere tutto con TDD; RED iniziato (ui-compat V5, ui-canvas V1, E2E V1)
+  - [ ] V1 Sicurezza: un tablet che può comandare salvava un canvas con JavaScript; aperto nel browser del computer con OpenSet, quel codice aveva i diritti del computer (cambiava lo script di progetto e quindi lanciava programmi). Correzione: i testi `${…}` usano un piccolo linguaggio sicuro (`cvExpr`, niente JavaScript), gli script dei pulsanti girano in un riquadro isolato (iframe sandbox) che può solo mandare comandi permessi
+  - [ ] V2 Sicurezza: le righe OSC dei pulsanti contavano come «da questo computer»: `/subscribe` di un altro computer allo stato e OSC verso qualunque indirizzo. Correzione: niente `/subscribe`/`/unsubscribe`/`/getValues` dalle righe; verso altri programmi solo indirizzi della rete locale
+  - [ ] V3 Safe Mode: un pulsante del canvas (oscRun) cambiava brano anche con il Safe Mode attivo
+  - [ ] V4 Variabili condivise: si arrivava a 32 MB di valori, mandati a ogni pagina 10 volte al secondo: tetto sul totale
+  - [ ] V5 iPad vecchi: la pagina usava `Object.hasOwn` (Safari 15.4): canvas fermo e valori «⚠»
+  - [ ] V6 Windows: «Salva il set aperto» non trovava mai la finestra di Live (AppActivate per titolo): attivare Live per processo
+  - [ ] V7 Più file: se il file era già aperto in Live o OpenSet ripartiva, nessun brano era corrente: riconoscere il file (nome del primo brano, file ricordato con i suoi locator)
+  - [ ] V8 Script del canvas: un testo con «;» o a capo arrivava tagliato (o diventava un secondo comando): comando OSC strutturato `{address, args}`
+  - [ ] V9 Riserva: i comandi dello script di progetto venivano copiati sulla riserva, che ha il suo script: eseguiti due volte
+  - [ ] V10 Immagini del canvas: nomi riservati di Windows (`CON.png`) accettati e nessun tetto allo spazio usato
+  - [ ] V11 Un pulsante con `//sleep 0` si fermava lì (il resto non partiva, errore nel log)
+  - [ ] V12 Mixer: togliendo il solo al gruppo Click (con «Click +NM») mentre un altro gruppo è in solo, il click non era più in solo
+  - [ ] V13 Più file con attesa: Avanti e poi Indietro non annullava l'Avanti, il file si apriva lo stesso
+  - [ ] V14 Brani a mano: via OSC (`jumpBySongs`, `jumpBySections`, `jumpByLines`) si contava dalla posizione di Live, non dal brano a mano corrente
+  - [ ] V15 Canvas: «Nuovo canvas» prima che l'elenco fosse caricato, o un cambio di nome, poteva sovrascrivere un canvas salvato senza chiedere
+  - [ ] V16 Canvas su Wi-Fi lento: un valore saltato restava sbagliato (segnato come mandato anche quando non partiva)
+  - [ ] V17 Canvas e script: un valore tolto (variabile azzerata, gruppo tolto) restava in `osc()`
+  - [ ] V18 Bonjour: l'arrivederci alla chiusura probabilmente non partiva (socket chiuso subito dopo)
+  - [ ] V19 Script di progetto: `shared()` poteva restituire un valore vecchio o uno rifiutato dal server
+  - [ ] V20 Brani a mano: un testo oltre 20000 caratteri veniva rifiutato senza dirlo, a pannello già chiuso
+  - [ ] V21 Canvas: il comando «al rilascio» non partiva se il tocco veniva interrotto (pointercancel)
+  - [ ] V22-V23 Efficienza: valori OSC calcolati due volte per aggiornamento; lo stesso calcolo «cosa è cambiato» in tre punti
+  - [ ] V24 Commit `5ba5088`, `88de48a`, `b5d16e9` senza aggiornamento di `TODO.md` (già pubblicati: non riscritti)
 - [ ] Rilascio 1.0.0: versione 1.0.0, CHANGELOG (Novità e Correzioni), guida (capitolo «Funzioni di AbleSet»), README, report TDD `docs/releases/1.0.0/` (copertura righe 97.41%, rami 93.06%) fatti; PR #10 in bozza con CI verde; poi revisione del codice corretta, merge, tag `v1.0.0`
 
 ### Da verificare su un computer vero (qui non si può provare)

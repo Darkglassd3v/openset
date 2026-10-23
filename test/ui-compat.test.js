@@ -15,3 +15,7 @@ test("ui: no ?? or ?. (iOS < 13.4 cannot parse the page)", () => {
 test("ui: no inset property (iOS < 14.5 ignores it)", () => {
   assert.deepEqual(style.match(/(^|[;{\s])inset\s*:/g) || [], []);
 });
+
+test("V5: no Object.hasOwn, .at() or replaceAll (Safari before 15.4 / 15.4 / 13.1 lacks them)", () => {
+  assert.deepEqual(script.match(/Object\.hasOwn\(|\.at\(-?\d|\.replaceAll\(/g) || [], []);
+});
