@@ -79,7 +79,22 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Un brano chiamato davvero «Intro#2» si confondeva con la ripresa di «Intro».
   - Aggiungendo in Live un altro brano con lo stesso nome prima della ripresa, nota e «tolto» passavano al brano sbagliato. Ora una ripresa che resta nella stessa posizione tiene le sue impostazioni.
   - Trovato durante la correzione: con impostazioni della 0.6.1 e «Togli i brani suonati», il primo brano suonato toglieva anche la ripresa. Ora prima della modifica le impostazioni vengono convertite brano per brano (anche le durate misurate).
-- Nota: il commit `c31b597` non aggiorna `TODO.md` (storia già pubblicata sulla PR, non riscritta)
+- Nota: i commit `c31b597` e `c8588cf` non aggiornano `TODO.md` (storia già pubblicata sulla PR, non riscritta)
+- [ ] S1 Dalla seconda revisione, brani con lo stesso nome (rifatto più semplice: le impostazioni della 0.6.1 si convertono una volta sola, appena arriva la scaletta)
+  - Riavviando OpenSet, la posizione delle riprese si perdeva (veniva cancellata prima che Live mandasse i locator): una ripresa aggiunta prima tornava a prendersi le impostazioni dell'altra.
+  - Con una scaletta nuova (senza file delle impostazioni) OpenSet partiva come se le impostazioni fossero della 0.6.1: la durata misurata di un brano valeva anche per la sua ripresa.
+  - Con impostazioni della 0.6.1, un incolla o una modifica parziale perdeva «tolto» e note della ripresa; caricare una scaletta salvata perdeva la durata misurata.
+  - Aggiungendo in Live un secondo brano con il nome di uno già presente (prima ce n'era uno solo), quello nuovo si prendeva note e «tolto» del vecchio.
+  - Con «Togli i brani suonati» e impostazioni della 0.6.1, l'ordine veniva congelato: un locator aggiunto dopo in Live finiva in fondo alla scaletta invece che al suo posto.
+  - La scaletta veniva ricalcolata più volte al secondo con scritture su disco: ora la posizione dei brani si salva solo quando i locator cambiano.
+- [ ] S2 Dalla seconda revisione, accessi
+  - Incollare una scaletta o scaricare il pacchetto log da un iPad sbloccato veniva rifiutato («troppi tentativi») se un altro dispositivo aveva sbagliato la password.
+  - I tentativi sbagliati sotto il limite non scadevano mai: in giorni di prove, 30 errori di battitura sparsi della band bloccavano per 30 s gli sblocchi; e la memoria cresceva con ogni indirizzo IPv6 che sbagliava.
+  - Con IPv6 l'iPad cambia da solo indirizzo (indirizzi temporanei): dopo un calo del Wi-Fi perdeva lo sblocco a metà concerto. Ora con IPv6 lo sblocco vale in tutta la rete del locale (/64), con IPv4 dall'indirizzo esatto.
+  - Una password impostata con una versione di prova di questa 0.6.2 (formato intermedio) veniva cancellata senza avviso, lasciando OpenSet aperto a tutti. Ora viene convertita, e un formato sconosciuto lascia OpenSet chiuso (si reimposta dal computer).
+  - L'aggiornamento di una password della 0.6 fermava per un attimo OpenSet (calcolo bloccante) mentre suona: ora non blocca.
+  - Dopo quell'aggiornamento gli altri iPad potevano vedere comparire il pannello della password o «Password errata» senza motivo.
+- [ ] S3 Dalla seconda revisione, Remote Script: se una delle User Library non si può scrivere, OpenSet diceva «installazione fallita» anche se l'altra (quella del Live in uso) era stata aggiornata.
 
 ### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
 Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.
