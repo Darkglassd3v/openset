@@ -144,6 +144,10 @@
   .edit-row { display: flex; align-items: center; gap: 8px; padding: 10px 14px 6px; }
   .edit-row .song-name { flex: 1; min-width: 0; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .edit-row .btn { padding: 8px 10px; font-size: 13px; }
+  /* a song added by hand has two more buttons: they wrap, the title keeps its room */
+  .song.manual .edit-row { flex-wrap: wrap; } .song.manual .edit-row .song-name { flex-basis: 120px; }
+  #manualPanel { display: grid; gap: 10px; } #manualPanel p { color: var(--dim); font-size: 13px; }
+  #manualPanel textarea { font: inherit; font-size: 16px; }
   .note {
     display: block; width: calc(100% - 28px); margin: 0 14px 10px;
     padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px;
@@ -614,6 +618,15 @@
   <textarea id="pasteText" rows="9" aria-label="Scaletta come testo"></textarea>
   <div class="row"><button class="btn primary" id="pasteApply">Applica</button><button class="btn" id="pasteCancel">Chiudi</button></div>
   <p id="pasteStatus"></p>
+</div>
+
+<div class="panel" id="manualPanel" hidden role="dialog" aria-label="Brano a mano">
+  <p>Un brano senza progetto Live (per esempio acustico): sta in scaletta e nei tempi, ha il suo testo; Live non lo suona.</p>
+  <input class="field" id="manName" maxlength="64" placeholder="Titolo" aria-label="Titolo del brano">
+  <input class="field" id="manTime" placeholder="Durata, per esempio 3:20" aria-label="Durata del brano">
+  <textarea id="manLyrics" rows="7" placeholder="Testo (facoltativo), una riga per volta" aria-label="Testo del brano"></textarea>
+  <div class="row"><button class="btn primary" id="manSave">Salva</button><button class="btn" id="manCancel">Chiudi</button></div>
+  <p id="manStatus" role="status"></p>
 </div>
 
 <div class="panel" id="authPanel" hidden role="dialog" aria-label="Sblocca i comandi">
@@ -1102,6 +1115,7 @@ function buildSetlist() {
         <button class="btn" data-act="print">Stampa</button>
         <button class="btn" data-act="clearMeasured" title="Le durate vengono misurate quando un brano suona dall'inizio alla fine">Azzera durate misurate</button>
         <button class="btn" data-act="search" title="Ctrl+K">+ Aggiungi</button>
+        <button class="btn" data-act="manual" title="Un brano senza progetto Live">+ Brano a mano</button>
         <button class="btn" data-act="skipAll">Togli tutti</button>
         <button class="btn" data-act="unskipAll">Rimetti tutti</button>
         <button class="btn" data-act="copy" title="Ctrl+C">Copia</button>
@@ -1119,7 +1133,7 @@ function buildSetlist() {
           <button class="btn" data-act="restore">Ripristina</button>` : ""}
       </div>
       <ol class="songs">${list.map((s, i) => `
-        <li class="song ${s.skip ? "skip" : ""} ${classes(s)}" data-i="${i}">
+        <li class="song ${s.skip ? "skip" : ""} ${s.manual ? "manual" : ""} ${classes(s)}" data-i="${i}">
           <div class="edit-row">
             <span class="drag" data-drag="${i}" aria-hidden="true" title="Trascina per spostare">⠿</span>
             <button class="btn" data-act="up" data-i="${i}" aria-label="Sposta su ${esc(s.name)}" ${i ? "" : "disabled"}>↑</button>
@@ -1127,6 +1141,8 @@ function buildSetlist() {
             <span class="song-name">${esc(s.name)}</span>
             <button class="btn" data-act="skip" data-i="${i}" aria-pressed="${s.skip}">Salta</button>
             <button class="btn" data-act="stopAfter" data-i="${i}" aria-pressed="${s.stopAfter}">Stop dopo</button>
+            ${s.manual ? `<button class="btn" data-act="editManual" data-i="${i}">Modifica</button>
+              <button class="btn" data-act="deleteManual" data-i="${i}">Elimina</button>` : ""}
           </div>
           <input class="note" data-i="${i}" placeholder="Note per il palco…" aria-label="Note per ${esc(s.name)}" value="${esc(s.notes || "")}">
         </li>`).join("")}
@@ -1141,7 +1157,7 @@ function buildSetlist() {
         <button class="song-head" data-act="song" data-i="${i}">
           <span class="num">${s.number != null ? s.number : "·"}</span>
           <span class="song-main">
-            <span class="song-name">${esc(s.name)}${s.stopAfter || s.endMarker === "STOP" ? '<span class="stop-tag">stop</span>' : ""}</span>
+            <span class="song-name">${esc(s.name)}${s.stopAfter || s.endMarker === "STOP" ? '<span class="stop-tag">stop</span>' : ""}${s.manual ? '<span class="stop-tag">a mano</span>' : ""}</span>
             ${s.description || s.tags.length || s.notes ? `<span class="song-desc">${esc([s.description, s.tags.map((x) => "#" + x).join(" "), s.notes].filter(Boolean).join(" · "))}</span>` : ""}
           </span>
           <span class="song-time mono" data-i="${i}">${s.seconds ? fmt(s.seconds) : "—"}</span>
@@ -1201,7 +1217,42 @@ $("setlist").addEventListener("click", (e) => {
   else if (act === "skipAll" || act === "unskipAll") editSetlist((rows) => rows.forEach((r) => { r.skip = act === "skipAll"; }));
   else if (act === "copy") copySetlist();
   else if (act === "paste") openPaste("");
+  else if (act === "manual") openManual(null);
+  else if (act === "editManual") openManual(state.setlist[i]);
+  else if (act === "deleteManual") {
+    // a second tap within 3 s deletes it
+    if (b.dataset.armed) return send({ cmd: "deleteManualSong", id: state.setlist[i].key.slice(7) });
+    b.dataset.armed = "1";
+    b.textContent = "Conferma";
+    setTimeout(() => { delete b.dataset.armed; b.textContent = "Elimina"; }, 3000);
+  }
 });
+
+// ---------- songs added by hand (no Live project) ----------
+let manualEdit = null; // id of the song being changed; null: a new one
+// "3:20", "1:02:30", or a number of minutes
+function parseDuration(text) {
+  const p = String(text).trim().split(":").map((x) => (/^\d+$/.test(x) ? Number(x) : NaN));
+  if (p.length > 3 || p.some((x) => isNaN(x)) || p.slice(1).some((x) => x > 59)) return null;
+  return p.length === 1 ? p[0] * 60 : p.reduce((a, x) => a * 60 + x, 0);
+}
+function openManual(s) {
+  manualEdit = s ? s.key.slice(7) : null;
+  $("manName").value = s ? s.name : "";
+  $("manTime").value = s ? fmt(s.seconds) : "";
+  $("manLyrics").value = s ? s.lyrics || "" : "";
+  $("manStatus").textContent = "";
+  $("manualPanel").hidden = false;
+  $("manName").focus();
+}
+$("manSave").onclick = () => {
+  const name = $("manName").value.trim();
+  const seconds = parseDuration($("manTime").value);
+  if (!name || seconds === null) { $("manStatus").textContent = "Servono un titolo e una durata, per esempio 3:20."; return; }
+  send({ cmd: manualEdit ? "updateManualSong" : "addManualSong", ...(manualEdit ? { id: manualEdit } : {}), name, seconds, lyrics: $("manLyrics").value });
+  $("manualPanel").hidden = true;
+};
+$("manCancel").onclick = () => { $("manualPanel").hidden = true; };
 $("setlist").addEventListener("change", (e) => {
   if (!e.target.classList.contains("note")) return;
   const i = +e.target.dataset.i;
@@ -1561,7 +1612,7 @@ function renderLyrics() {
           Crea <span class="mono">lyrics/${esc(s.name)}.json</span>
           o una traccia MIDI <span class="mono">Voce +LYRICS</span> con una clip per riga.</div>`);
   }
-  if (!data) return;
+  if (!data || data.static) return; // a song added by hand: its lines, not timed
   const rel = (state.beat || 0) - s.time; // beats from song start
   let now = -1;
   data.lines.forEach((l, i) => { if (rel >= l.beat - 0.001) now = i; });
