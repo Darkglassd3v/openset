@@ -76,7 +76,7 @@ test("F8: an error is logged with its line, and the script keeps its other callb
   const s = host(t);
   s.ps.start(`log("a");\nnonEsiste();`, {}, {});
   await until(() => s.errors.length, "the error");
-  assert.match(s.errors[0], /nonEsiste is not defined.*line 2|line 2.*nonEsiste is not defined/s);
+  assert.match(s.errors[0], /riga 2.*nonEsiste is not defined/);
 });
 
 test("F8: an endless loop does not stop OpenSet, and stop() ends the script", async (t) => {
