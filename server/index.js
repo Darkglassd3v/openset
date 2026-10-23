@@ -362,11 +362,12 @@ function start(opts = {}) {
     return S.applyOrder(list, prefs);
   }
 
-  // a saved setlist or backup, loaded now: by key if there are songs, otherwise as it was saved
-  function loadSaved(raw, setlistName) {
+  // a saved setlist or backup, loaded now: by key if there are songs (list: the current setlist,
+  // every song), otherwise as it was saved
+  function loadSaved(raw, setlistName, list) {
     const loaded = cleanSetlist(raw, defaultPrefs());
     if (!loaded) return false;
-    const { order, skip, stopAfter, notes, keys } = S.setlistByKey({ ...loaded, keys: raw.keys === true }, songs());
+    const { order, skip, stopAfter, notes, keys } = S.setlistByKey({ ...loaded, keys: raw.keys === true }, list);
     return setPrefs({ order, skip, stopAfter, notes, keys, setlistName });
   }
 
@@ -1000,11 +1001,11 @@ function start(opts = {}) {
       }
       case "restoreBackup": {
         const b = prefs.backups.find((x) => x.name === msg.name && x.at === msg.at);
-        return !!b && loadSaved(b.data, b.name);
+        return !!b && loadSaved(b.data, b.name, list);
       }
       case "loadSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;
-        return loadSaved(prefs.saved[msg.name], msg.name);
+        return loadSaved(prefs.saved[msg.name], msg.name, list);
       }
       case "deleteSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;

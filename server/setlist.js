@@ -185,10 +185,9 @@ function keyTimesOf(songs) {
 // name (what they meant then); names of songs not in the set stay as they are. Only the
 // fields it gets: order, skip, stopAfter (lists), notes, measured (maps)
 function migrateNames(data, songs) {
-  const keysOf = (name) => {
-    const keys = songs.filter((s) => s.name === name).map((s) => s.key);
-    return keys.length ? keys : [name];
-  };
+  const byName = new Map(); // name -> keys of its songs, built once: long setlists convert quickly
+  for (const s of songs) byName.set(s.name, [...(byName.get(s.name) || []), s.key]);
+  const keysOf = (name) => byName.get(name) || [name];
   const out = {};
   for (const f of ["order", "skip", "stopAfter"]) if (data[f]) out[f] = [...new Set(data[f].flatMap(keysOf))];
   for (const f of ["notes", "measured"])
