@@ -177,7 +177,34 @@ function assignKeys(songs, keyTimes) {
 // where each song is, for the next buildSetlist: a song added later with the same name
 // as one already there gets a new key instead of taking the old one's settings
 function keyTimesOf(songs) {
-  return Object.fromEntries(songs.map((s) => [s.key, [s.name, s.time]]));
+  return Object.fromEntries(songs.filter((s) => !s.manual).map((s) => [s.key, [s.name, s.time]]));
+}
+
+// Songs added by hand in the web app ({ id, name, seconds, lyrics }), without a Live project:
+// in the setlist and its times, never under Live's playhead (time Infinity), and Live stops
+// before them (no play start)
+function manualSongs(list) {
+  return (list || []).map((m) => ({
+    key: "manual:" + m.id,
+    name: m.name,
+    manual: true,
+    lyrics: m.lyrics || "",
+    time: Infinity,
+    end: null,
+    endMarker: null,
+    jumpAfterStop: null,
+    stopDescription: null,
+    description: null,
+    tags: [],
+    duration: m.seconds,
+    nosong: false,
+    transpose: null,
+    classes: [],
+    color: null,
+    sections: [],
+    endAt: null,
+    playStart: null,
+  }));
 }
 
 // settings saved by OpenSet 0.6.1 and older use song names: one entry per song with that
@@ -357,7 +384,8 @@ function timing(songs, cur, beat, tempo, map) {
   const s = songs[cur];
   if (s) {
     const d = secs(s);
-    const played = map ? beatsToSeconds(map, s.playStart, beat) : (beat - s.playStart) * spb;
+    // a song played by hand: Live's position says nothing about it
+    const played = s.manual ? 0 : map ? beatsToSeconds(map, s.playStart, beat) : (beat - s.playStart) * spb;
     songElapsed = Math.min(d, Math.max(0, played));
     songLeft = d - songElapsed;
     if (!s.skip) setElapsed += songElapsed;
@@ -382,6 +410,7 @@ module.exports = {
   CLIP_COLORS,
   applyOrder,
   keyTimesOf,
+  manualSongs,
   migrateNames,
   setlistByKey,
   songAt,
