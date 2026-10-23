@@ -150,7 +150,7 @@ function defaultPrefs() {
     setlistName: null,
     midi: [],
     peers: [],
-    auth: null, // web app password: { salt, iter, key } (PBKDF2), or { salt, hash } from OpenSet 0.6
+    auth: null, // web app password: { salt, iter, storedKey } (SCRAM), or { salt, hash } from OpenSet 0.6
   };
 }
 
@@ -292,8 +292,8 @@ function start(opts = {}) {
       peers: cleanPeers(saved.peers) || [],
       auth: !validAuth(saved.auth)
         ? null
-        : saved.auth.key
-          ? { salt: saved.auth.salt, iter: saved.auth.iter, key: saved.auth.key }
+        : saved.auth.storedKey
+          ? { salt: saved.auth.salt, iter: saved.auth.iter, storedKey: saved.auth.storedKey }
           : { salt: saved.auth.salt, hash: saved.auth.hash },
       lastProject: typeof saved.lastProject === "string" ? saved.lastProject : null,
       httpPort: Number.isInteger(saved.httpPort) ? saved.httpPort : null,
@@ -1334,7 +1334,7 @@ function start(opts = {}) {
   function sendAccess(ws, token, extra = {}) {
     const a = prefs.auth;
     // the numbers the page needs to prove it knows the password (not with a password from OpenSet 0.6)
-    const challenge = a && a.key ? { challenge: { salt: a.salt, iter: a.iter, nonce: ws.nonce } } : {};
+    const challenge = a && a.storedKey ? { challenge: { salt: a.salt, iter: a.iter, nonce: ws.nonce } } : {};
     if (ws.readyState === 1)
       ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!a, ...challenge, ...(token ? { token } : {}), ...extra }));
   }
@@ -1354,7 +1354,7 @@ function start(opts = {}) {
         else {
           ok = await checkPassword(prefs.auth, password);
           // saved by OpenSet 0.6: from now on the page proves it knows the password instead of sending it
-          if (ok && prefs.auth && !prefs.auth.key) {
+          if (ok && prefs.auth && !prefs.auth.storedKey) {
             prefs = { ...prefs, auth: hashPassword(password) };
             savePrefs();
             for (const c of wss.clients) if (c !== ws) sendAccess(c); // the other open pages stop sending it too

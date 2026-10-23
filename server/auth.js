@@ -1,24 +1,29 @@
-// Optional web app password: stored as a salted PBKDF2 key, checked in
-// constant time, with wrong guesses slowed down per address. A browser
-// computes the same key and sends only a proof (an HMAC of a one-time number),
-// so the password never travels on the network.
+// Optional web app password, checked in constant time, with wrong guesses
+// slowed down per device. It works like SCRAM-SHA-256 (RFC 5802): OpenSet stores
+// only a check of the password (the stored key), which is not enough to unlock;
+// a browser computes the client key from the password and sends a proof made
+// with a one-time number, so the password never travels on the network.
 
 const crypto = require("crypto");
 
 const KEY_LEN = 32;
-const ITER = 25000; // the page computes it in plain JavaScript, on old iPads too
+const ITER = 100000; // PBKDF2 rounds: the page computes them in plain JavaScript, on old iPads too
 const HEX64 = /^[0-9a-f]{64}$/;
-// { salt, iter, key }, or { salt, hash } (scrypt) saved by OpenSet 0.6 and older
+const sha = (b) => crypto.createHash("sha256").update(b).digest();
+const hmac = (k, m) => crypto.createHmac("sha256", k).update(m).digest();
+// SCRAM: client key from the salted password, and its hash, the stored key
+const storedKeyOf = (salted) => sha(hmac(salted, "Client Key"));
+// { salt, iter, storedKey }, or { salt, hash } (scrypt) saved by OpenSet 0.6 and older
 const validAuth = (a) =>
   !!a &&
   /^[0-9a-f]{32}$/.test(a.salt) &&
-  ((HEX64.test(a.key) && Number.isInteger(a.iter) && a.iter >= 1000 && a.iter <= 1e6) || HEX64.test(a.hash));
+  ((HEX64.test(a.storedKey) && Number.isInteger(a.iter) && a.iter >= 1000 && a.iter <= 1e7) || HEX64.test(a.hash));
 
 // setting a password is rare: the sync version keeps the command simple
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
-  const key = crypto.pbkdf2Sync(password, Buffer.from(salt, "hex"), ITER, KEY_LEN, "sha256").toString("hex");
-  return { salt, iter: ITER, key };
+  const salted = crypto.pbkdf2Sync(password, Buffer.from(salt, "hex"), ITER, KEY_LEN, "sha256");
+  return { salt, iter: ITER, storedKey: storedKeyOf(salted).toString("hex") };
 }
 
 // checked often, so async: the playback engine keeps running meanwhile
@@ -26,17 +31,23 @@ function checkPassword(auth, password) {
   if (!validAuth(auth) || typeof password !== "string" || password.length > 256) return Promise.resolve(false);
   const salt = Buffer.from(auth.salt, "hex");
   return new Promise((resolve) => {
-    const same = (want) => (err, key) => resolve(!err && crypto.timingSafeEqual(key, Buffer.from(want, "hex")));
-    if (auth.key) crypto.pbkdf2(password, salt, auth.iter, KEY_LEN, "sha256", same(auth.key));
-    else crypto.scrypt(password, salt, KEY_LEN, same(auth.hash));
+    if (auth.storedKey)
+      crypto.pbkdf2(password, salt, auth.iter, KEY_LEN, "sha256", (err, salted) =>
+        resolve(!err && crypto.timingSafeEqual(storedKeyOf(salted), Buffer.from(auth.storedKey, "hex")))
+      );
+    else
+      crypto.scrypt(password, salt, KEY_LEN, (err, key) => resolve(!err && crypto.timingSafeEqual(key, Buffer.from(auth.hash, "hex"))));
   });
 }
 
-// proof = HMAC-SHA256(key, nonce): only someone who knows the password can make it
+// proof = client key XOR HMAC(stored key, nonce): the stored key gives the HMAC back,
+// and the client key found must hash to the stored key. Without the password there is no client key.
 function checkProof(auth, nonce, proof) {
-  if (!validAuth(auth) || !auth.key || typeof proof !== "string" || !HEX64.test(proof)) return false;
-  const want = crypto.createHmac("sha256", Buffer.from(auth.key, "hex")).update(String(nonce)).digest();
-  return crypto.timingSafeEqual(want, Buffer.from(proof, "hex"));
+  if (!validAuth(auth) || !auth.storedKey || typeof proof !== "string" || !HEX64.test(proof)) return false;
+  const stored = Buffer.from(auth.storedKey, "hex");
+  const sig = hmac(stored, String(nonce));
+  const clientKey = Buffer.from(proof, "hex").map((x, i) => x ^ sig[i]);
+  return crypto.timingSafeEqual(sha(clientKey), stored);
 }
 
 // IPv6 address as 8 numbers (one way to write it), or null for IPv4
