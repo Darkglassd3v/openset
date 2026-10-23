@@ -2026,7 +2026,8 @@ async function lanSocket(t, c) {
   ws.on("message", (b) => msgs.push(JSON.parse(b)));
   await new Promise((r) => ws.once("open", r));
   t.after(() => ws.close());
-  return { ws, send: (m) => ws.send(JSON.stringify(m)), access: (n) => waitFor(() => msgs.filter((m) => m.type === "access")[n], "access message " + n) };
+  const nth = (type, n) => waitFor(() => msgs.filter((m) => m.type === type)[n], `${type} message ${n}`);
+  return { ws, msgs, send: (m) => ws.send(JSON.stringify(m)), access: (n) => nth("access", n), nth };
 }
 
 test("C3: a device unlocks with a proof made from the password; the password itself never travels", { skip: !LAN_IP && "no LAN address" }, async (t) => {
@@ -2130,6 +2131,10 @@ test("R1: a second tap on Sblocca with an old number does not lock the device ag
 });
 
 test("R1: when a password from OpenSet 0.6 is upgraded, the other open pages stop sending it", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  let syncHashes = 0;
+  const pbkdf2Sync = crypto.pbkdf2Sync;
+  crypto.pbkdf2Sync = (...a) => (syncHashes++, pbkdf2Sync(...a));
+  t.after(() => (crypto.pbkdf2Sync = pbkdf2Sync));
   const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-legacy-"));
   const salt = crypto.randomBytes(16).toString("hex");
   const hash = crypto.scryptSync("palco-2026", Buffer.from(salt, "hex"), 32).toString("hex");
@@ -2141,8 +2146,13 @@ test("R1: when a password from OpenSet 0.6 is upgraded, the other open pages sto
   assert.equal((await b.access(0)).challenge, undefined);
   await a.access(0);
   a.send({ type: "auth", password: "palco-2026" });
+  // the 0.6 hash is replaced without stopping OpenSet: no blocking PBKDF2 on the computer driving Live
   assert.equal((await a.access(1)).control, true);
-  assert.ok((await b.access(1)).challenge, "the other page can now prove instead of sending the password");
+  assert.equal(syncHashes, 0);
+  // the other page gets only the numbers to prove with: no access message, no password panel
+  assert.ok((await b.nth("challenge", 0)).challenge.nonce);
+  await pause(100);
+  assert.equal(b.msgs.filter((m) => m.type === "access").length, 1);
 });
 
 test("R4: a setlist saved by OpenSet 0.6.1 keeps its meaning until it is edited", async (t) => {
@@ -2228,4 +2238,42 @@ test("S1: with 0.6.1 settings, a partial edit keeps the reprise's settings", asy
   await c.cmd({ cmd: "setlist", stopAfter: ["B"] });
   const list = (await c.state()).setlist;
   assert.deepEqual(list.filter((s) => s.name === "A").map((s) => [s.skip, s.notes]), [[true, "capo 2"], [true, "capo 2"]]);
+});
+
+test("S2: an unlocked iPad pastes a setlist even after someone else's wrong passwords", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const a = await lanSocket(t, c);
+  a.send({ type: "auth", proof: proofFor((await a.access(0)).challenge) });
+  const { token } = await a.access(1);
+  const lan = (p, headers) => fetch(`http://${LAN_IP}:${c.srv.httpPort}${p}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({ text: "Finale" }) });
+  for (let i = 0; i < 5; i++) await lan("/api/cmd", { "X-OpenSet-Password": "x" + i });
+  assert.equal((await lan("/api/setlist-text", { Authorization: "Bearer " + token })).status, 200);
+});
+
+test("S2: a password set with a test build of 0.6.2 still protects OpenSet", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+  const salt = crypto.randomBytes(16).toString("hex");
+  const key = crypto.pbkdf2Sync("palco-2026", Buffer.from(salt, "hex"), 25000, 32, "sha256").toString("hex");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: { salt, iter: 25000, key } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  assert.equal((await c.state()).passwordSet, true);
+  const lan = await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"cmd":"stop"}' });
+  assert.equal(lan.status, 401);
+  const a = await lanSocket(t, c);
+  a.send({ type: "auth", proof: proofFor((await a.access(0)).challenge) });
+  assert.equal((await a.access(1)).control, true);
+});
+
+test("S2: a password setting OpenSet cannot read keeps the other devices out", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: { salt: "zz", future: true } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  assert.equal((await c.state()).passwordSet, true);
+  const lan = await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"cmd":"stop"}' });
+  assert.equal(lan.status, 401);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "nuova-2026" })).status, 200); // set again from this computer
 });

@@ -87,7 +87,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Aggiungendo in Live un secondo brano con il nome di uno già presente (prima ce n'era uno solo), quello nuovo si prendeva note e «tolto» del vecchio.
   - Con «Togli i brani suonati» e impostazioni della 0.6.1, l'ordine veniva congelato: un locator aggiunto dopo in Live finiva in fondo alla scaletta invece che al suo posto.
   - La scaletta veniva ricalcolata più volte al secondo con scritture su disco: ora la posizione dei brani si salva solo quando i locator cambiano.
-- [ ] S2 Dalla seconda revisione, accessi
+- [ ] S2 (RED fatto) Dalla seconda revisione, accessi
   - Incollare una scaletta o scaricare il pacchetto log da un iPad sbloccato veniva rifiutato («troppi tentativi») se un altro dispositivo aveva sbagliato la password.
   - I tentativi sbagliati sotto il limite non scadevano mai: in giorni di prove, 30 errori di battitura sparsi della band bloccavano per 30 s gli sblocchi; e la memoria cresceva con ogni indirizzo IPv6 che sbagliava.
   - Con IPv6 l'iPad cambia da solo indirizzo (indirizzi temporanei): dopo un calo del Wi-Fi perdeva lo sblocco a metà concerto. Ora con IPv6 lo sblocco vale in tutta la rete del locale (/64), con IPv4 dall'indirizzo esatto.

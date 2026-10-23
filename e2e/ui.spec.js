@@ -263,3 +263,45 @@ test("R1: two taps on Sblocca unlock; «Controllo la password…» does not stay
   await expect(page.locator("#unlockApp")).toBeHidden();
   await expect(page.locator("#authStatus")).toHaveText("");
 });
+
+test("S2: Enter and a tap on Sblocca together unlock once", async ({ page, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const sent = [];
+  page.on("websocket", (ws) => ws.on("framesent", (f) => sent.push(String(f.payload))));
+  await page.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.press("#authPw", "Enter");
+  await page.press("#authPw", "Enter");
+  await expect(page.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  expect(sent.filter((p) => p.includes('"proof"')).length).toBe(1);
+});
+
+test("S2: after another iPad updates a 0.6 password, this one unlocks without sending it", async ({ page, browser, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.stop();
+  const salt = require("crypto").randomBytes(16).toString("hex");
+  const hash = require("crypto").scryptSync("palco-2026", Buffer.from(salt, "hex"), 32).toString("hex");
+  fs.writeFileSync(path.join(openset.baseDir, "setlist.json"), JSON.stringify({ auth: { salt, hash } }));
+  await openset.restart();
+  const other = await browser.newPage();
+  const sent = [];
+  page.on("websocket", (ws) => ws.on("framesent", (f) => sent.push(String(f.payload))));
+  await page.goto(openset.url("/", LAN_IP));
+  await other.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await connected(other);
+  await other.click("#unlockApp");
+  await other.fill("#authPw", "palco-2026");
+  await other.click("#authGo");
+  await expect(other.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  await expect(page.locator("#authPanel")).toBeHidden(); // nothing pops up on this iPad
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.click("#authGo");
+  await expect(page.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
+  await other.close();
+});

@@ -41,10 +41,10 @@ test("C3: an unlock token expires after 24 hours without use and works only from
   t += 24 * 3600e3 + 1;
   assert.equal(tokens.valid(tok, "192.168.1.20"), false);
   assert.equal(tokens.valid("f".repeat(64), "192.168.1.20"), false);
-  // IPv6: the exact address; another device of the same Wi-Fi has another one in the same /64
+  // IPv6: the network of the venue; an iPad takes new temporary addresses in it by itself
   const v6 = tokens.issue("2001:db8:1:2::5");
-  assert.equal(tokens.valid(v6, "2001:db8:1:2:aaaa::7"), false);
-  assert.equal(tokens.valid(v6, "2001:DB8:1:2:0:0:0:5"), true);
+  assert.equal(tokens.valid(v6, "2001:db8:1:2:aaaa::7"), true);
+  assert.equal(tokens.valid(v6, "2001:db8:1:3::5"), false);
   tokens.clear(); // new password
   assert.equal(tokens.valid(v6, "2001:db8:1:2::5"), false);
 });
@@ -118,4 +118,18 @@ test("R1: connections: per address, per IPv6 network and in all; this computer i
   assert.equal(connectionAllowed(four, "127.0.0.1", true, cfg), true);
   // the computer with OpenSet does not use up the places of the band
   assert.equal(connectionAllowed([...four.slice(0, 3), c("127.0.0.1", true), c("127.0.0.1", true)], "10.0.0.9", false, cfg), true);
+});
+
+test("S2: wrong guesses below the limit are forgotten after a while; old entries do not pile up", () => {
+  let t = 0;
+  const l = createLimiter({ max: 3, netMax: 100, ms: 1000, now: () => t });
+  l.fail("10.0.0.1");
+  l.fail("10.0.0.1");
+  t += 1001;
+  l.fail("10.0.0.1"); // days of rehearsals: the typos of yesterday do not count
+  assert.equal(l.blocked("10.0.0.1"), false);
+  for (let i = 0; i < 1500; i++) l.fail(`2001:db8:${i.toString(16)}::1`); // a device changing address
+  t += 1001;
+  l.fail("10.0.0.9");
+  assert.ok(l.size() <= 2, String(l.size()));
 });
