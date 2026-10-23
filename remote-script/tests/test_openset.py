@@ -271,7 +271,7 @@ class OpenSetTest(unittest.TestCase):
         ]
         self.os._send_mixer()
         mixer = [m for m in self.received() if m.get("type") == "mixer"]
-        self.assertEqual(mixer[0]["tracks"], [
+        self.assertEqual(mixer[-1]["tracks"], [  # the first one went at start, with no tracks yet
             {"i": 0, "name": "Vox +G:VOX", "mute": False, "solo": False, "volume": 0.7, "meter": 0.512},
             {"i": 2, "name": "Click", "mute": False, "solo": False, "volume": 0.85, "meter": 0.0},
             {"i": 3, "name": "Guide +NM", "mute": False, "solo": False, "volume": 0.85, "meter": 0.0},
