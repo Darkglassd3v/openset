@@ -86,3 +86,8 @@ test("F6: OSC «boolean or toggle»", () => {
   for (const v of [undefined, "toggle"]) assert.equal(boolArg(v), "toggle");
   assert.equal(boolArg("maybe"), null);
 });
+
+test("V12: turning off the solo of a group of only +NEVERMUTE tracks keeps them soloed while another group is", () => {
+  const tracks = [T(0, "Drums +G:DRUMS", { solo: true }), T(1, "Click +NM", { solo: true })];
+  assert.deepEqual(mixerCommands(tracks, "CLICK", { solo: false }), []);
+});

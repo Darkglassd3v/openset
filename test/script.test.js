@@ -110,3 +110,29 @@ test("F8: formatDuration and makeAscii like AbleSet's", () => {
   assert.equal(formatDuration(3725), "1:02:05");
   assert.deepEqual(makeAscii("Perché ✓"), [80, 101, 114, 99, 104, 101, 32, 63]);
 });
+
+test("V19: shared() keeps the script's own value until the server answers, and drops a refused one", async (t) => {
+  const answers = [];
+  const h = { logs: [], errors: [], shared: [], sent: [] };
+  h.ps = createProjectScript({
+    onLog: (text) => h.logs.push(text),
+    onError: (text) => h.errors.push(text),
+    onShared: (key, value) => (answers.push(key), key !== "rifiutata"), // the server's check
+    onSendOsc: () => {},
+  });
+  t.after(() => h.ps.stop());
+  h.ps.start(`setShared("n", 5);\nsetShared("rifiutata", "x".repeat(5));\nawait sleep(80);\nlog(shared("n"), shared("rifiutata", "no"));`, { n: 4 }, {});
+  await until(() => answers.length === 2, "both sets reached the server");
+  h.ps.sharedChanged({ n: 4 }); // an older copy, sent before the server applied n = 5
+  await until(() => h.logs.length === 1, "the line");
+  assert.deepEqual(h.logs, ["5 no"]);
+});
+
+test("V17: a value that goes away is gone from osc() in the script too", async (t) => {
+  const h = host(t);
+  h.ps.start(`await waitForOscChange("/shared/x");\nlog(osc("/shared/x"));`, {}, { "/shared/x": [1] });
+  await new Promise((r) => setTimeout(r, 50));
+  h.ps.update({});
+  await until(() => h.logs.length === 1, "the line");
+  assert.deepEqual(h.logs, ["undefined"]);
+});

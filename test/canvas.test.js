@@ -51,3 +51,15 @@ test("F5: OSC command lines like AbleSet's, with //sleep, //awaitJump and //if â
   assert.deepEqual(parseOscLines("luci.local:99999/x"), []); // not a port
   assert.deepEqual(parseOscLines("nonsense\n//sleep forever\n//if raining"), []); // ignored, like AbleSet
 });
+
+test("V16, V17, V23: oscDiff tells what changed and what went away; the new map is kept only once sent", () => {
+  const { oscDiff } = require("../server/canvas");
+  assert.equal(typeof oscDiff, "function");
+  const a = oscDiff({}, { "/x": [1], "/y": ["a"] });
+  assert.deepEqual([a.changes, a.removed], [{ "/x": [1], "/y": ["a"] }, []]);
+  const b = oscDiff(a.next, { "/x": [2] });
+  assert.deepEqual([b.changes, b.removed], [{ "/x": [2] }, ["/y"]]);
+  assert.deepEqual([oscDiff(b.next, { "/x": [2] }).changes, oscDiff(b.next, { "/x": [2] }).removed], [{}, []]);
+  // a tablet that stalled did not get b: the next diff starts again from a
+  assert.deepEqual(oscDiff(a.next, { "/x": [2] }).changes, { "/x": [2] });
+});

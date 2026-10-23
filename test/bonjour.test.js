@@ -37,3 +37,13 @@ test("F11: started, OpenSet announces itself; stopped, it says goodbye (TTL 0) a
   assert.equal(fake.destroyed, true);
   fake.emit("error", new Error("EADDRINUSE")); // a socket error after the end never throws
 });
+
+test("V18: the goodbye goes out before the socket closes", async () => {
+  const fake = new EventEmitter();
+  const order = [];
+  fake.respond = (r, cb) => setTimeout(() => { order.push(r.answers.every((a) => a.ttl === 0) ? "goodbye" : "hello"); if (cb) cb(); }, 20);
+  fake.destroy = () => order.push("closed");
+  const b = startBonjour({ mdns: fake, info: () => info });
+  await b.stop();
+  assert.deepEqual(order.slice(-2), ["goodbye", "closed"]);
+});

@@ -508,3 +508,33 @@ test("V1: what a canvas holds cannot act as this page: templates are not JavaScr
   await expect.poll(async () => (await openset.state()).shared.x).toBe('a;b\nc "d"'); // the text arrives whole (V8)
   expect(await page.title()).toBe(title);
 });
+
+test("V15, V20, V21: a new canvas gets a free name; long lyrics are refused with a message; a cancelled touch still releases", async ({ page, openset }) => {
+  await openset.cmd({ cmd: "saveCanvas", canvas: { name: "Canvas 1", elements: [{ id: "k", type: "label", x: 0, y: 0, w: 4, h: 2, props: { text: "mio" } },
+    { id: "r", type: "button", x: 4, y: 0, w: 4, h: 2, props: { label: "Tieni", onPress: "/shared/premuto 1", onRelease: "/shared/premuto 0" } }] } });
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "settings");
+  await page.click("#cvNew"); // before the Canvas view has read the list
+  await expect(page.locator("#cvName")).toHaveValue("Canvas 2");
+  await page.click("#cvCancel");
+
+  await tab(page, "setlist");
+  await page.click('[data-act="edit"]');
+  await page.click('[data-act="manual"]');
+  await page.fill("#manName", "Lunga");
+  await page.fill("#manTime", "3:00");
+  await page.fill("#manLyrics", "x".repeat(20001));
+  await page.click("#manSave");
+  await expect(page.locator("#manStatus")).toContainText("20000");
+  await expect(page.locator("#manualPanel")).toBeVisible();
+  await page.click("#manCancel");
+
+  await page.click('[data-act="done"]');
+  await tab(page, "canvas");
+  const b = page.locator("#canvas .cv-btn");
+  await b.dispatchEvent("pointerdown");
+  await expect.poll(async () => (await openset.state()).shared.premuto).toBe(1);
+  await b.dispatchEvent("pointercancel");
+  await expect.poll(async () => (await openset.state()).shared.premuto).toBe(0);
+});
