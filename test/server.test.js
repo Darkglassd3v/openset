@@ -2750,3 +2750,26 @@ test("F8: the project script runs at start and when changed, reacts to OpenSet, 
   assert.equal((await d.cmd({ cmd: "stopProjectScript" })).status, 200);
   assert.equal((await (await fetch(d.url("/api/script"))).json()).running, false);
 });
+
+test("F5: recording like AbleSet: start, stop and toggle over OSC, isRecording, isConnected and beatsPosition", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  let sent = c.expectCmd({ cmd: "record", on: true, play: true }); // stopped: recording starts playback too
+  sendOsc(c, osc, "/global/startRecording", []);
+  await sent;
+  await c.at(9.5, { record: true, is_playing: true });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.get("/global/isRecording")?.[0] === 1, "isRecording");
+  assert.deepEqual(got.get("/global/isConnected"), [1]);
+  assert.deepEqual(got.get("/global/beatsPosition"), [9]); // floored while playing
+  sent = c.expectCmd({ cmd: "record", on: false });
+  sendOsc(c, osc, "/global/toggleRecording", []);
+  await sent;
+  sent = c.expectCmd({ cmd: "record", on: false });
+  sendOsc(c, osc, "/global/stopRecording", []);
+  await sent;
+});

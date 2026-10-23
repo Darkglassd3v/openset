@@ -95,6 +95,7 @@ class FakeSong(object):
         self.loop_length = 4.0
         self.clip_trigger_quantization = 4
         self.back_to_arranger = True
+        self.record_mode = False
         self.nudge_up = False
         self.nudge_down = False
         self.cue_points = [FakeCue("Song B", 32.0), FakeCue("Song A", 0.0)]
@@ -286,6 +287,18 @@ class OpenSetTest(unittest.TestCase):
         # the track list changed since OpenSet asked: the name does not match, nothing happens
         self.os._handle({"cmd": "mixer", "track": 1, "name": "Vox +G:VOX", "mute": True})
         self.assertFalse(click.mute)
+
+    def test_recording_is_reported_and_commanded(self):
+        # AbleSet: /global/startRecording also starts playback when Live is stopped
+        self.song.record_mode = True
+        self.os._send_state()
+        state = [m for m in self.received() if m.get("type") == "state"][-1]
+        self.assertTrue(state["record"])
+        self.song.record_mode = False
+        self.os._handle({"cmd": "record", "on": True, "play": True})
+        self.assertEqual((self.song.record_mode, self.song.calls), (True, ["start"]))
+        self.os._handle({"cmd": "record", "on": False})
+        self.assertFalse(self.song.record_mode)
 
     def test_clip_colors_from_names_read_back_as_the_same_color(self):
         # AbleSet's table (CLIP_COLORS in server/setlist.js): column of Live's palette -> color.
