@@ -60,7 +60,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Un dispositivo poteva aprire connessioni senza limite fino a rallentare OpenSet. Ora al massimo 20 per indirizzo e 100 in tutto.
   - Un altro programma sullo stesso computer poteva comandare Live al posto di OpenSet. Ora il Remote Script accetta solo i comandi con la chiave che manda a OpenSet.
 - [x] C4 (RED `f5fc84c`, GREEN) Log: se OpenSet restava acceso per giorni, `openset.log` cresceva senza limite (si accorciava solo all'avvio). Ora oltre 1 MB passa a `openset.old.log` anche mentre è acceso.
-- [ ] C5 (RED fatto) User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
+- [x] C5 (RED `e9102ef`, GREEN) User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
 - [ ] C6 Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
 - [ ] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Trovare la causa e toglierla.
 - [ ] Rilascio 0.6.2: copertura, CHANGELOG, report TDD, versione, `code-review` e correzione di tutto quello che trova, PR, CI, merge, tag
@@ -84,6 +84,9 @@ Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per
 ### v0.8.0 — Node recente dentro i programmi (branch `release/v0.8.0`)
 - [ ] I programmi contengono Node 18, che non riceve più aggiornamenti di sicurezza da aprile 2025 (pkg 5.8.1 non va oltre). Passare a Node SEA con un Node attuale, per Windows, macOS (arm64 e Intel) e Linux, con icona, firma ad hoc e guida dentro gli zip; prova di avvio in CI su ogni sistema
 - [ ] Rilascio 0.8.0
+
+### Da verificare su un computer vero (qui non si può provare)
+- C5: formato di `Library.cfg` (`<UserLibrary><LibraryProject><ProjectPath Value=…/><ProjectName Value=…/>`) su un Mac e un Windows con Live 11/12 e la User Library spostata: se il formato è diverso, OpenSet usa ancora le cartelle standard come prima
 
 ### Non fattibili su questo computer (detto all'utente il 2026-10-23)
 - Pacchetto log del tester (bug della scaletta che sparisce): serve il file che deve mandare lui.
