@@ -16,9 +16,9 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 Richiesta dell'utente (2026-10-23, prima di andare a dormire): «correggi tutte le cose … FAI TUTTO NON LASCIARE NIENTE IN SOSPESO», piano con `ecc:plan` e `ecc:tdd-workflow`, bug descritti in parole semplici; se qualcosa non va si segna qui «da verificare»; **alla fine spegnere il PC (`systemctl poweroff`) comunque**.
 
-- [x] v0.6.2 — correzioni (sezione «v0.6.2» sotto): PR #9 (merge `d22b983`), tag `v0.6.2`
+- [x] v0.6.2 — correzioni (sezione «v0.6.2» sotto): PR #9 (merge `d22b983`), tag `v0.6.2`, release https://github.com/Darkglassd3v/openset/releases/tag/v0.6.2 (run 39939293668): 4 zip con la versione, guida dentro, note brevi, 0 artefatti, «Latest»
 - [ ] 1.0.0 — funzioni di AbleSet che mancavano e Node recente dentro i programmi, in un'unica versione (decisione dell'utente, 2026-10-24: «rilasciarle su una 1.0.0 e taggare tutto»); sezione «v1.0.0» sotto, branch `release/v1.0.0`
-- [ ] fine: `/ecc:ck save`, memoria aggiornata, spegnere il PC
+- [ ] fine: `/ecc:ck save`, memoria aggiornata; spegnere il PC solo quando anche la sessione «sciclub-donbosco» ha finito (richiesta dell'utente, 2026-10-24)
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` pubblicato il 2026-10-24 (la vecchia `release.yml` partita dal tag annullata subito, run 39938930663; l'unico artefatto che aveva caricato, 17,8 MB, cancellato); nessuna release con gli zip (decisione dell'utente: la 0.6.x la sostituisce, e sarebbe apparsa come «ultima»); zip e guida restano in `build/release-0.5.1/`
 - [x] v0.6.0: PR #3 (merge `279f7fa`), 4 zip e guida PDF anche in `build/release-0.6.0/`; release su GitHub dal tag (vedi sotto), CI verde su Windows, macOS e Ubuntu
@@ -62,7 +62,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
 - [x] C5 (RED `e9102ef`, GREEN) User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
 - [x] C6 (RED `4962104`, GREEN) Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
 - [x] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Causa trovata: non era OpenSet ma lo strumento usato per misurare (Chrome comandato da `chrome-devtools`). Misurato in Chrome normale, dal computer e dall'indirizzo di rete, con Live collegato e 300 locator: primo stato in 40-100 ms, «Live connesso» in 100-220 ms; anche la versione di allora (`f883623`) è veloce. Test di guardia in `e2e/ui.spec.js` (primo stato entro 1 s)
-- [ ] Rilascio 0.6.2: copertura (righe 99.34%, rami 93.81%), CHANGELOG, report TDD, versione, guida e README fatti; PR #9 aperta; tre `code-review` corrette (R1-R4, S1-S3, T1-T3); revisione finale corretta (U1-U10); poi CI, merge, tag
+- [x] Rilascio 0.6.2: copertura (righe 99.35%, rami 93.93%), CHANGELOG, report TDD, versione, guida e README; tre `code-review` e la revisione finale corrette (R1-R4, S1-S3, T1-T3, U1-U10); PR #9 con CI verde, merge `d22b983`, tag `v0.6.2`, release controllata
 - [x] R1 (RED `25910f3`, GREEN) Dalla revisione, accessi (rischio: dispositivi bloccati durante il concerto)
   - Con IPv6 tutti i dispositivi di casa o del locale stanno nella stessa rete /64: cinque password sbagliate da un telefono bloccavano per 30 s anche gli iPad della band, e un iPad che si ricollegava con il suo accesso valido lo perdeva. Ora i tentativi si contano per dispositivo, la rete /64 si blocca solo dopo molti tentativi, e un accesso valido non viene mai bloccato.
   - Un iPad acceso e usato per più di 24 ore (prova e poi concerto) veniva bloccato al primo calo del Wi-Fi, perché l'uso contava solo quando si ricollegava. Ora ogni comando e ogni segnale di vita della connessione contano come uso.
