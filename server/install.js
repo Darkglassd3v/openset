@@ -72,16 +72,18 @@ function same(a, b) {
   }
 }
 
-// into every User Library that exists: two Live versions may use two of them
-// -> { status: "installed" | "updated" | "current" | "not-found" | "error", path, paths, error }
+// into every User Library that exists: two Live versions may use two of them. One that
+// cannot be written is listed in `errors`; "error" only when none could be written.
+// -> { status: "installed" | "updated" | "current" | "not-found" | "error", path, paths, errors, error }
 function installRemoteScript(srcDir, libs) {
   const found = [...new Set(libs)].filter((l) => fs.existsSync(l));
   if (!found.length) return { status: "not-found" };
   const results = found.map((lib) => installInto(srcDir, lib));
-  const failed = results.find((r) => r.status === "error");
-  if (failed) return failed;
-  const status = ["installed", "updated"].find((st) => results.some((r) => r.status === st)) || "current";
-  return { status, path: results[0].path, paths: results.map((r) => r.path) };
+  const done = results.filter((r) => r.status !== "error");
+  const errors = results.filter((r) => r.status === "error").map(({ path: p, error }) => ({ path: p, error }));
+  if (!done.length) return results[0];
+  const status = ["installed", "updated"].find((st) => done.some((r) => r.status === st)) || "current";
+  return { status, path: done[0].path, paths: done.map((r) => r.path), ...(errors.length ? { errors } : {}) };
 }
 
 function installInto(srcDir, lib) {

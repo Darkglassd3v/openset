@@ -1675,6 +1675,7 @@ if (require.main === module) {
   else if (install.status === "not-found" && libs.length)
     log.info("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
   else if (install.path) log.info(`[live] Remote Script ${install.status} in ${install.path}`);
+  for (const e of install.errors || []) log.error(`[live] cannot install the Remote Script in ${e.path}: ${e.error}`);
   const openUrl = (url, opts) => openBrowser(url, process.platform, undefined, opts);
   start({
     baseDir: dir,
