@@ -81,7 +81,7 @@ const validName = (n) => typeof n === "string" && n.trim().length > 0 && n.lengt
 const SETTING_VALUES = {
   jumpMode: JUMP_MODES,
   countInBars: [1, 2, 4],
-  defaultView: ["setlist", "stage", "lyrics", "settings"],
+  defaultView: ["setlist", "stage", "lyrics", "mixer", "settings"],
   openBrowser: ["start", "live", "off"], // AbleSet: Open AbleSet on Start (when Live connects)
   scene: ["main", "backup"], // AbleNet: Connected Scene
   network: (v) => typeof v === "string" && v.length <= 64, // Preferred Network: an interface name, "" for all

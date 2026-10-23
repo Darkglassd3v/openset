@@ -82,6 +82,7 @@
     border-bottom: 2px solid transparent; cursor: pointer;
   }
   nav button[aria-selected="true"] { color: var(--amber); border-bottom-color: var(--amber); }
+  @media (max-width: 480px) { nav button { font-size: 11px; letter-spacing: .04em; } } /* five tabs on a phone */
 
   main { flex: 1; overflow-y: auto; overscroll-behavior: contain; }
 
@@ -219,6 +220,14 @@
   .seg { position: relative; }
   .seg .ch { position: absolute; left: 0; top: -1.05em; font-size: .6em; color: var(--amber); font-weight: 700; white-space: nowrap; }
   .lyr-none { color: var(--dim); text-align: center; padding-top: 60px; font-size: 15px; line-height: 1.6; }
+  #mixer { display: flex; flex-wrap: wrap; gap: 12px; padding: 18px; align-content: flex-start; }
+  .mx-strip { width: 150px; border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .mx-name { font-weight: 600; text-align: center; overflow-wrap: anywhere; }
+  .mx-meter { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+  .mx-fill { height: 100%; width: 0; background: var(--green); transition: width .1s linear; }
+  .mx-strip input[type="range"] { width: 100%; accent-color: var(--amber); }
+  .mx-buttons { display: flex; gap: 8px; justify-content: center; }
+  .mx-strip.fading .mx-name::after { content: " ↘"; color: var(--amber); }
   .lyr-track { display: block; text-align: center; margin-bottom: 18px; color: var(--dim); font-size: 14px; }
 
   /* ---- settings ---- */
@@ -325,6 +334,7 @@
   <button role="tab" data-view="setlist">Scaletta</button>
   <button role="tab" data-view="stage">Palco</button>
   <button role="tab" data-view="lyrics">Testi</button>
+  <button role="tab" data-view="mixer">Mixer</button>
   <button role="tab" data-view="settings">Opzioni</button>
 </nav>
 
@@ -353,6 +363,7 @@
     <div class="stage-quick" id="stQuick"></div>
   </div>
   <div id="lyrics" hidden></div>
+  <div id="mixer" hidden></div>
   <div id="settings" class="settings" hidden>
     <h2>Connetti un dispositivo</h2>
     <p>Telefono o tablet sulla stessa rete del computer: inquadra il codice con la fotocamera o apri l'indirizzo nel browser.</p>
@@ -362,7 +373,7 @@
     <h2>Generale</h2>
     <label>Vista all'apertura <select id="defaultView">
       <option value="setlist">Scaletta</option><option value="stage">Palco</option>
-      <option value="lyrics">Testi</option><option value="settings">Opzioni</option></select></label>
+      <option value="lyrics">Testi</option><option value="mixer">Mixer</option><option value="settings">Opzioni</option></select></label>
     <p class="dim">Vale per i dispositivi nuovi: gli altri riaprono l'ultima vista usata, o quella scelta in «Questo dispositivo».</p>
     <label>Apri OpenSet nel browser <select id="openBrowser">
       <option value="start">all'avvio di OpenSet</option><option value="live">quando Live si collega</option>
@@ -423,7 +434,7 @@
     <label>Nome di questo dispositivo <input class="field" id="devName" maxlength="64" placeholder="es. ipad-1, palco" aria-label="Nome di questo dispositivo"></label>
     <label>Vista all'apertura <select id="devView" aria-label="Vista all'apertura">
       <option value="">L'ultima usata</option><option value="setlist">Scaletta</option>
-      <option value="stage">Palco</option><option value="lyrics">Testi</option></select></label>
+      <option value="stage">Palco</option><option value="lyrics">Testi</option><option value="mixer">Mixer</option></select></label>
     <div class="row"><button class="btn" id="lockBtn">Blocca questo dispositivo</button>
       <span class="dim">Bloccato, ignora tocchi e tasti; si sblocca tenendo premuto il lucchetto o con <kbd>⇧</kbd> <kbd>L</kbd>.</span></div>
     <p id="installHint">Su iPad/iPhone: Safari → Condividi → Aggiungi alla schermata Home, per aprire OpenSet a schermo intero come un'app.</p>
@@ -583,7 +594,7 @@ const KEYS = {
   ArrowDown: "nextSection", ArrowUp: "prevSection", l: "loopToggle",
   j: "jumpToQueued", c: "clearQueue",
 };
-const VIEW_NAMES = { setlist: "Scaletta", stage: "Palco", lyrics: "Testi", settings: "Opzioni" };
+const VIEW_NAMES = { setlist: "Scaletta", stage: "Palco", lyrics: "Testi", mixer: "Mixer", settings: "Opzioni" };
 
 let state = null;
 const newDevice = !store.get("openset.view", ""); // AbleSet's Default View applies to new devices only
@@ -937,6 +948,7 @@ function render() {
   renderStrip();
   if (view === "stage") renderStage();
   if (view === "lyrics") renderLyrics();
+  if (view === "mixer") renderMixer();
   if (view === "settings") renderSettings();
 }
 
@@ -1496,6 +1508,48 @@ function renderLyrics() {
   }
 }
 
+// ---------- mixer (AbleSet's track groups) ----------
+// strips rebuilt only when the groups change: a slider being dragged is never replaced
+let mixerKey = "";
+function renderMixer() {
+  const el = $("mixer");
+  const groups = state.mixer || [];
+  const key = groups.map((g) => g.name).join("|") || "-";
+  if (key !== mixerKey) {
+    mixerKey = key;
+    el.innerHTML = groups.length
+      ? groups.map((g) => `<div class="mx-strip" data-group="${esc(g.name)}">
+          <div class="mx-name">${esc(g.label)}</div>
+          <div class="mx-meter" aria-hidden="true"><div class="mx-fill"></div></div>
+          <input type="range" min="0" max="1" step="0.01" aria-label="Volume ${esc(g.label)}">
+          <div class="mx-buttons"><button class="btn" data-act="mute" aria-pressed="false" aria-label="Muto ${esc(g.label)}">M</button>
+            <button class="btn" data-act="solo" aria-pressed="false" aria-label="Solo ${esc(g.label)}">S</button></div>
+        </div>`).join("")
+      : `<div class="lyr-none">Nessun gruppo di tracce in Live.<br>Aggiungi <span class="mono">+G:NOME</span> al nome delle tracce
+          (ad esempio <span class="mono">Cori +G:VOX</span>); le tracce <span class="mono">Click</span> o
+          <span class="mono">+CLICK</span> formano il gruppo Click, quelle <span class="mono">+NEVERMUTE</span> non si silenziano mai.</div>`;
+  }
+  for (const g of groups) {
+    const s = el.querySelector(`[data-group="${CSS.escape(g.name)}"]`);
+    if (!s) continue;
+    s.querySelector('[data-act="mute"]').setAttribute("aria-pressed", String(g.muted));
+    s.querySelector('[data-act="solo"]').setAttribute("aria-pressed", String(g.soloed));
+    const r = s.querySelector('input[type="range"]');
+    if (document.activeElement !== r) r.value = g.volume;
+    s.querySelector(".mx-fill").style.width = g.meter * 100 + "%";
+    s.classList.toggle("fading", g.isFading);
+  }
+}
+$("mixer").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-act]");
+  const g = b && (state.mixer || []).find((x) => x.name === b.closest("[data-group]").dataset.group);
+  if (g) send({ cmd: "mixer", group: g.name, [b.dataset.act]: b.dataset.act === "mute" ? !g.muted : !g.soloed });
+});
+$("mixer").addEventListener("input", (e) => {
+  const s = e.target.closest("[data-group]");
+  if (s && e.target.type === "range") send({ cmd: "mixer", group: s.dataset.group, volume: +e.target.value });
+});
+
 // ---------- spoken cues (Web Speech API, on this device) ----------
 function speak(text, interrupt) {
   if (!("speechSynthesis" in window) || !text) return;
@@ -1748,8 +1802,8 @@ function showView(v) {
   view = v;
   store.set("openset.view", v);
   document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === v)));
-  for (const id of ["setlist", "stage", "lyrics", "settings"]) $(id).hidden = id !== v;
-  stageKey = settingsKey = "";
+  for (const id of ["setlist", "stage", "lyrics", "mixer", "settings"]) $(id).hidden = id !== v;
+  stageKey = settingsKey = mixerKey = "";
   lyr.song = null;
   if (v === "settings") loadConnect();
   sendDevice();
