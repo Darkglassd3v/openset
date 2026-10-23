@@ -107,7 +107,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Con migliaia di tentativi da indirizzi diversi ogni tentativo diventava lento e la memoria cresceva: ora c'è un tetto.
   - Se il calcolo per aggiornare una password della 0.6 falliva, l'iPad restava con «Sblocca» disattivato.
   - Con IPv6 lo sblocco vale in tutta la rete del locale (/64): scelta voluta, perché gli iPad cambiano indirizzo da soli. Su HTTP senza cifratura chi legge il traffico del Wi-Fi può copiare un accesso in ogni caso (anche legandolo all'indirizzo esatto, che sulla stessa rete si può imitare): la guida lo dice e consiglia una rete Wi-Fi propria per la band.
-- [ ] T3 Dalla terza revisione, Remote Script: «Reinstalla il Remote Script» dalla web app e il pacchetto log non mostravano le User Library non scrivibili; se nessuna era scrivibile si vedeva solo il primo errore.
+- [ ] T3 (RED fatto) Dalla terza revisione, Remote Script: «Reinstalla il Remote Script» dalla web app e il pacchetto log non mostravano le User Library non scrivibili; se nessuna era scrivibile si vedeva solo il primo errore.
 
 ### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
 Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.

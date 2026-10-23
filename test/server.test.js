@@ -2402,3 +2402,13 @@ test("T2: a 0.6 password is announced as such: the only case where the page send
   const a = await lanSocket(t, c);
   assert.equal((await a.access(0)).legacy, true);
 });
+
+test("T3: a reinstall from the web app shows in the log and the log package which library could not be written", async (t) => {
+  const result = { status: "updated", path: "/Live 12/Remote Scripts/OpenSet", paths: ["/Live 12/Remote Scripts/OpenSet"], errors: [{ path: "/Live 11/Remote Scripts/OpenSet", error: "EACCES: permission denied" }] };
+  const c = await setup(t, { installScript: () => result });
+  await fetch(c.url("/api/host/installScript"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  const lines = (await (await fetch(c.url("/api/logs"))).json()).lines.join("\n");
+  assert.match(lines, /cannot write \/Live 11\/Remote Scripts\/OpenSet \(EACCES/);
+  const pkg = await (await fetch(c.url("/api/log-package"))).text();
+  assert.match(pkg, /Remote Script install: updated in \/Live 12\/Remote Scripts\/OpenSet; cannot write \/Live 11/);
+});

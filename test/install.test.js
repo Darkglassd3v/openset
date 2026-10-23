@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const { userLibraries, installRemoteScript } = require("../server/install");
+const { userLibraries, installRemoteScript, installSummary } = require("../server/install");
 
 test("userLibraries: Live's default User Library on macOS and Windows", () => {
   assert.deepEqual(userLibraries("darwin", {}, "/Users/ana"), ["/Users/ana/Music/Ableton/User Library"]);
@@ -130,4 +130,21 @@ test("S3: a User Library that cannot be written does not hide that the other one
   assert.equal(r.errors.length, 1);
   assert.equal(r.errors[0].path, path.join(locked, "Remote Scripts", "OpenSet"));
   assert.match(r.errors[0].error, /EACCES/);
+});
+
+test("T3: when no User Library can be written, every failure is listed; one line tells it all", (t) => {
+  if (process.platform === "win32" || (process.getuid && process.getuid() === 0)) return t.skip("chmod");
+  const f = fixture();
+  const locked = path.join(f.root, "Old Library");
+  fs.mkdirSync(locked);
+  fs.chmodSync(locked, 0o555);
+  fs.chmodSync(f.lib, 0o555);
+  t.after(() => [locked, f.lib].forEach((d) => fs.chmodSync(d, 0o755)));
+  const r = installRemoteScript(f.src, [f.lib, locked]);
+  assert.equal(r.status, "error");
+  assert.deepEqual(r.errors.map((e) => e.path), [f.target, path.join(locked, "Remote Scripts", "OpenSet")]);
+  assert.match(installSummary(r), /^error; cannot write .*User Library.* \(EACCES.*Old Library/);
+  assert.equal(installSummary({ status: "updated", paths: ["/a", "/b"], errors: [{ path: "/c", error: "EACCES: denied" }] }), "updated in /a, /b; cannot write /c (EACCES: denied)");
+  assert.equal(installSummary({ status: "not-found" }), "not-found");
+  assert.equal(installSummary(null), "-");
 });
