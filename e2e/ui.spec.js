@@ -321,3 +321,222 @@ test("T2: with a password OpenSet cannot read, the page sends nothing and says t
   await expect(page.locator("#authStatus")).toContainText("computer");
   expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
 });
+
+test("F3: with two singers each device picks its +LYRICS track, and keeps it", async ({ page, openset }) => {
+  await openset.clips([
+    { name: "Leo +LYRICS", clips: [{ name: "Riga di Leo", start: 0, end: 4 }] },
+    { name: "Backing Vox +LYRICS", clips: [{ name: "Riga dei cori", start: 0, end: 4 }] },
+  ]);
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "lyrics");
+  await expect(page.locator("#lyrics")).toContainText("Riga di Leo");
+  await page.selectOption("#lyrTrack", "backing-vox");
+  await expect(page.locator("#lyrics")).toContainText("Riga dei cori");
+  await page.reload();
+  await connected(page);
+  await expect(page.locator("#lyrics")).toContainText("Riga dei cori");
+  await expect(page.locator("#lyrTrack")).toHaveValue("backing-vox");
+});
+
+test("F6: the Mixer view shows the groups; mute, solo and the volume slider command Live", async ({ page, openset }) => {
+  await openset.mixer([
+    { i: 0, name: "Vox +G:VOX", mute: false, solo: false, volume: 0.85, meter: 0.4 },
+    { i: 1, name: "Click", mute: false, solo: false, volume: 0.85, meter: 0 },
+  ]);
+  const sentTo = (want) => openset.cmds.some((c) => c.cmd === "mixer" && Object.keys(want).every((k) => c[k] === want[k]));
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "mixer");
+  await expect(page.locator("#mixer")).toContainText("Vox");
+  await expect(page.locator("#mixer")).toContainText("Click");
+  await page.click('#mixer [data-group="VOX"] [data-act="mute"]');
+  await expect.poll(() => sentTo({ track: 0, mute: true })).toBe(true);
+  await page.click('#mixer [data-group="VOX"] [data-act="solo"]');
+  await expect.poll(() => sentTo({ track: 0, solo: true })).toBe(true);
+  await page.locator('#mixer [data-group="VOX"] input[type="range"]').fill("0.5");
+  await expect.poll(() => sentTo({ track: 0, volume: 0.5 })).toBe(true);
+});
+
+test("F8: the project script is written and run from Opzioni on this computer, with its log", async ({ page, openset }) => {
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "settings");
+  await page.fill("#psCode", 'log("ciao dal palco", osc("/global/tempo"));');
+  await page.click("#psSave");
+  await expect(page.locator("#psLog")).toContainText("ciao dal palco 120", { timeout: 8000 });
+  await page.click("#psStop");
+  await expect(page.locator("#psStatus")).toContainText("fermo");
+});
+
+test("F5: a canvas made in the web app: a Play/Pausa preset and a label with the tempo, saved and used", async ({ page, openset }) => {
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "settings");
+  await page.click("#cvNew"); // Opzioni → Canvas → Nuovo canvas: opens it to edit
+  await expect(page.locator("#canvas")).toBeVisible();
+  await page.fill("#cvName", "Palco");
+  await page.click("#cvAdd");
+  await page.click('[data-add="preset:playPause"]');
+  await page.click("#cvAdd");
+  await page.click('[data-add="label"]');
+  await page.fill('#cvProps [data-prop="text"]', "${osc('/global/tempo')} BPM");
+  await page.fill('#cvProps [data-pos="x"]', "8");
+  await page.click("#cvSave");
+  await expect(page.locator("#canvas")).toContainText("120 BPM");
+  const saved = await (await fetch(openset.url("/api/canvases"))).json();
+  expect(saved.Palco.elements.find((e) => e.type === "label").x).toBe(8); // position saved
+
+  await page.reload();
+  await connected(page);
+  await tab(page, "canvas");
+  await expect(page.locator("#canvas .cv-el")).toHaveCount(2);
+  await expect(page.locator("#canvas")).toContainText("120 BPM");
+  await page.click("#canvas .cv-btn");
+  await expect.poll(() => openset.cmds.some((c) => c.cmd === "play" || c.cmd === "continue")).toBe(true);
+});
+
+test("F5: a canvas slider sets a shared variable that a label shows on every device", async ({ page, browser, openset }) => {
+  await openset.cmd({
+    cmd: "saveCanvas",
+    canvas: {
+      name: "Luci",
+      elements: [
+        { id: "s", type: "slider", x: 0, y: 0, w: 12, h: 2, props: { variable: "luci", min: 0, max: 10, step: 1 } },
+        { id: "l", type: "label", x: 0, y: 2, w: 12, h: 2, props: { text: "Luci: ${shared('luci', 0)}" } },
+      ],
+    },
+  });
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "canvas");
+  const other = await browser.newPage();
+  await other.goto(openset.url());
+  await other.click('nav button[data-view="canvas"]');
+  await page.locator('#canvas input[type="range"]').fill("7");
+  await expect(page.locator("#canvas")).toContainText("Luci: 7");
+  await expect(other.locator("#canvas")).toContainText("Luci: 7");
+  await expect.poll(async () => (await openset.state()).shared.luci).toBe(7);
+  await other.close();
+});
+
+test("F3: «show page lyrics/<slug>» (OSC /devices/showPage) opens that +LYRICS track, like AbleSet", async ({ page, openset }) => {
+  await openset.clips([
+    { name: "Leo +LYRICS", clips: [{ name: "Riga di Leo", start: 0, end: 4 }] },
+    { name: "Backing Vox +LYRICS", clips: [{ name: "Riga dei cori", start: 0, end: 4 }] },
+  ]);
+  await page.goto(openset.url());
+  await connected(page);
+  await openset.cmd({ cmd: "devices", action: "showPage", devices: "all", page: "lyrics/backing-vox" });
+  await expect(page.locator("#lyrics")).toContainText("Riga dei cori");
+});
+
+test("F1: a song added by hand from the editor: in the setlist with its time, chosen, with its lyrics", async ({ page, openset }) => {
+  await page.goto(openset.url());
+  await connected(page);
+  await page.click('[data-act="edit"]');
+  await page.click('[data-act="manual"]');
+  await page.fill("#manName", "Acustica");
+  await page.fill("#manTime", "3:20");
+  await page.fill("#manLyrics", "Prima riga\nSeconda riga");
+  await page.click("#manSave");
+  await expect(page.locator("#setlist")).toContainText("Acustica");
+  await page.click('[data-act="done"]');
+  const row = page.locator("#setlist .song", { hasText: "Acustica" });
+  await expect(row).toContainText("3:20");
+  await expect(row).toContainText("a mano");
+  await row.locator(".song-head").click();
+  await expect(row).toHaveClass(/current/);
+  await tab(page, "lyrics");
+  await expect(page.locator("#lyrics")).toContainText("Seconda riga");
+
+  await tab(page, "setlist");
+  await page.click('[data-act="edit"]');
+  await page.locator("#setlist .song", { hasText: "Acustica" }).locator('[data-act="editManual"]').click();
+  await expect(page.locator("#manName")).toHaveValue("Acustica");
+  await expect(page.locator("#manTime")).toHaveValue("3:20");
+  await page.fill("#manName", "Unplugged");
+  await page.click("#manSave");
+  await expect(page.locator("#setlist")).toContainText("Unplugged");
+  const del = page.locator("#setlist .song", { hasText: "Unplugged" }).locator('[data-act="deleteManual"]');
+  await del.click(); // a second tap confirms
+  await expect(page.locator("#setlist")).toContainText("Unplugged");
+  await page.locator("#setlist .song", { hasText: "Unplugged" }).locator('[data-act="deleteManual"]').click();
+  await expect(page.locator("#setlist")).not.toContainText("Unplugged");
+});
+
+test("F9: a multi-file project is chosen in Opzioni on this computer; the songs come from the files", async ({ page, openset }) => {
+  const dir = path.join(openset.baseDir, "Show");
+  fs.mkdirSync(dir);
+  for (const f of ["01 Intro.als", "02 Roads.als"]) fs.writeFileSync(path.join(dir, f), "als");
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "settings");
+  await page.fill("#mfFolder", dir);
+  await page.click("#mfUse");
+  await expect(page.locator("#mfStatus")).toContainText("2 brani");
+  await page.selectOption("#songFileDelay", "1000");
+  await expect.poll(async () => (await openset.state()).settings.songFileDelay).toBe(1000);
+  await page.check('[data-set="mixerTransferGroupStates"]');
+  await expect.poll(async () => (await openset.state()).settings.mixerTransferGroupStates).toBe(true);
+  await tab(page, "setlist");
+  const roads = page.locator("#setlist .song", { hasText: "02 Roads" });
+  await expect(roads).toContainText("da aprire");
+  await tab(page, "settings");
+  await page.click("#mfOff");
+  await expect(page.locator("#mfStatus")).toContainText("spento");
+});
+
+test("V1: what a canvas holds cannot act as this page: templates are not JavaScript, scripts run in a closed box", async ({ page, openset }) => {
+  await openset.cmd({
+    cmd: "saveCanvas",
+    canvas: {
+      name: "Prova",
+      elements: [
+        { id: "a", type: "label", x: 0, y: 0, w: 12, h: 2, props: { text: '${(function(){document.title="preso"})()}|${osc("/global/tempo") + 1} BPM|${osc("/global/isPlaying") ? "Suona" : "Fermo"}' } },
+        { id: "b", type: "button", x: 0, y: 2, w: 6, h: 3, props: { label: "Prova", script: 'document.title = "preso"; try { parent.document.title = "preso"; } catch (e) {} sendOsc("/global/play"); setShared("x", "a;b\\nc \\"d\\""); setLocal("n", 1);' } },
+      ],
+    },
+  });
+  await page.goto(openset.url());
+  await connected(page);
+  const title = await page.title();
+  await tab(page, "canvas");
+  // the JavaScript stops at its first "}": "⚠" and the rest as plain text, never run
+  await expect(page.locator("#canvas")).toContainText("|121 BPM|Fermo");
+  await expect(page.locator("#canvas")).toContainText("⚠");
+  await page.click("#canvas .cv-btn");
+  await expect.poll(() => openset.cmds.some((c) => c.cmd === "play")).toBe(true); // the script still works
+  await expect.poll(async () => (await openset.state()).shared.x).toBe('a;b\nc "d"'); // the text arrives whole (V8)
+  expect(await page.title()).toBe(title);
+});
+
+test("V15, V20, V21: a new canvas gets a free name; long lyrics are refused with a message; a cancelled touch still releases", async ({ page, openset }) => {
+  await openset.cmd({ cmd: "saveCanvas", canvas: { name: "Canvas 1", elements: [{ id: "k", type: "label", x: 0, y: 0, w: 4, h: 2, props: { text: "mio" } },
+    { id: "r", type: "button", x: 4, y: 0, w: 4, h: 2, props: { label: "Tieni", onPress: "/shared/premuto 1", onRelease: "/shared/premuto 0" } }] } });
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "settings");
+  await page.click("#cvNew"); // before the Canvas view has read the list
+  await expect(page.locator("#cvName")).toHaveValue("Canvas 2");
+  await page.click("#cvCancel");
+
+  await tab(page, "setlist");
+  await page.click('[data-act="edit"]');
+  await page.click('[data-act="manual"]');
+  await page.fill("#manName", "Lunga");
+  await page.fill("#manTime", "3:00");
+  await page.fill("#manLyrics", "x".repeat(20001));
+  await page.click("#manSave");
+  await expect(page.locator("#manStatus")).toContainText("20000");
+  await expect(page.locator("#manualPanel")).toBeVisible();
+  await page.click("#manCancel");
+
+  await page.click('[data-act="done"]');
+  await tab(page, "canvas");
+  const b = page.locator("#canvas .cv-btn");
+  await b.dispatchEvent("pointerdown");
+  await expect.poll(async () => (await openset.state()).shared.premuto).toBe(1);
+  await b.dispatchEvent("pointercancel");
+  await expect.poll(async () => (await openset.state()).shared.premuto).toBe(0);
+});

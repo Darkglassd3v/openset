@@ -59,14 +59,45 @@ test("release: one zip per platform with the versioned program, guide PDF and IN
   }
 });
 
-test("local release build: a second run starts from pkg's original Windows binary", () => {
-  // win-icon.mjs turns fetched-* into a patched built-*: left in the cache, pkg-fetch would skip
-  // the download and the next build would fail (or ship the old version's icon and version)
-  const script = fs.readFileSync(path.join(__dirname, "..", "scripts", "build-release-local.sh"), "utf-8");
-  const rm = script.indexOf("rm -f");
-  const fetch = script.indexOf("npx -y pkg-fetch");
-  assert.match(script.slice(rm, fetch), /built-v18\*-win-x64/);
-  assert.ok(rm >= 0 && rm < fetch, "removes the patched built-v18*-win-x64 before pkg-fetch");
+const read = (f) => fs.readFileSync(path.join(__dirname, "..", f), "utf-8");
+
+test("N1: the programs are built with Node SEA and a current Node 24, no more pkg and Node 18", () => {
+  // Node 18 has had no security fixes since April 2025, and pkg 5.8.1 cannot go past it
+  for (const f of [".github/workflows/release.yml", ".github/workflows/ci.yml", "scripts/build-release-local.sh"]) {
+    const s = read(f);
+    assert.match(s, /scripts\/build-sea\.mjs/, f);
+    assert.doesNotMatch(s, /pkg@|pkg-fetch|node18/, f);
+  }
+  for (const f of [".github/workflows/release.yml", ".github/workflows/ci.yml"]) assert.match(read(f), /node-version: 24/, f);
+  assert.match(read(".github/workflows/release.yml"), /paths:[\s\S]*scripts\/build-sea\.mjs/);
+});
+
+test("N1: build-sea: official Node archives checked against their SHA-256, every platform, signed on a Mac", async () => {
+  const src = path.join(__dirname, "..", "scripts", "build-sea.mjs");
+  assert.ok(fs.existsSync(src), "scripts/build-sea.mjs");
+  const sea = await import(require("url").pathToFileURL(src).href);
+  assert.deepEqual(Object.keys(sea.TARGETS), ["linux-x64", "win-x64", "macos-x64", "macos-arm64"]);
+  assert.deepEqual(sea.nodeArchive("v24.22.1", "win-x64"), {
+    url: "https://nodejs.org/dist/v24.22.1/node-v24.22.1-win-x64.zip",
+    file: "node-v24.22.1-win-x64.zip",
+    inner: "node-v24.22.1-win-x64/node.exe",
+  });
+  assert.deepEqual(sea.nodeArchive("v24.22.1", "macos-arm64"), {
+    url: "https://nodejs.org/dist/v24.22.1/node-v24.22.1-darwin-arm64.tar.gz",
+    file: "node-v24.22.1-darwin-arm64.tar.gz",
+    inner: "node-v24.22.1-darwin-arm64/bin/node",
+  });
+  // the names assemble-release.sh expects
+  assert.deepEqual(Object.keys(sea.TARGETS).map(sea.outName), ["openset-linux", "openset-win.exe", "openset-macos", "openset-macos-arm64"]);
+  const code = fs.readFileSync(src, "utf-8");
+  assert.match(code, /SHASUMS256\.txt/);
+  assert.match(code, /--remove-signature/);
+  assert.match(code, /"--sign", "-"/);
+  assert.match(code, /NODE_SEA_FUSE_fce680ab2cc467b6e072b8b5df1996b2/);
+});
+
+test("N1: as a single executable, OpenSet finds public/ and remote-script/ next to the program", () => {
+  assert.match(read("server/index.js"), /require\("node:sea"\)/);
 });
 
 test("release workflow: one macOS job, no Actions artifacts (only release assets)", () => {
@@ -75,8 +106,7 @@ test("release workflow: one macOS job, no Actions artifacts (only release assets
   assert.doesNotMatch(wf, /actions\/(upload|download)-artifact/);
   const jobs = wf.slice(wf.indexOf("\njobs:"));
   assert.equal((jobs.match(/^ {2}[\w-]+:\s*$/gm) || []).length, 1, "a single job");
-  assert.match(wf, /runs-on: macos-latest/);
-  assert.match(wf, /codesign --force --sign - build\/openset-macos-arm64/); // signed on a real Mac
+  assert.match(wf, /runs-on: macos-latest/); // the Apple Silicon program is signed on a real Mac (build-sea.mjs)
   // checked on pull requests that touch the release; the shared action publishes only from a tag
   assert.match(wf, /pull_request:[\s\S]*paths:/);
 });

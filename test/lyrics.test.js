@@ -6,6 +6,8 @@ const {
   parseChordPro,
   normalizeLyrics,
   lyricsFromClips,
+  lyricsTracks,
+  lineText,
 } = require("../server/lyrics");
 
 test("lyricsFileName: keeps accented letters, strips path characters", () => {
@@ -95,6 +97,7 @@ test("lyricsFromClips: lines come from the +LYRICS track inside the song", () =>
   assert.deepEqual(lyricsFromClips(song, tracks), {
     lines: [{ beat: 0, text: "[Am]Hello" }, { beat: 8, text: "World" }],
     transpose: { semitones: 2, flats: false },
+    track: "vocals",
   });
 });
 
@@ -112,4 +115,40 @@ test("lyricsFromClips: nothing to show", () => {
     lyricsFromClips(last, [{ name: "Vox +LYRICS", clips: [{ name: "x", start: 99, end: 100 }] }]).lines.length,
     1
   );
+});
+
+// two singers, each with a +LYRICS track: AbleSet names them by slug
+const singers = [
+  { name: "Sections", clips: [] },
+  { name: "Leo +LYRICS", clips: [{ name: "[G]Ciao a tutti", start: 0, end: 4 }, { name: "Seconda", start: 8, end: 12 }] },
+  { name: "Backing Vox +LYRICS [-1]", clips: [{ name: "Uh uh", start: 4, end: 8 }] },
+  { name: "Già Detto +LYRICS", clips: [] },
+  { name: "Leo +LYRICS", clips: [] },
+];
+
+test("F3: every +LYRICS track gets a slug like AbleSet's (\"Backing Vox +LYRICS\" -> backing-vox)", () => {
+  assert.deepEqual(lyricsTracks(singers), [
+    { slug: "leo", name: "Leo" },
+    { slug: "backing-vox", name: "Backing Vox" },
+    { slug: "gia-detto", name: "Già Detto" },
+    { slug: "leo-2", name: "Leo" }, // two tracks with the same name stay apart
+  ]);
+  assert.deepEqual(lyricsTracks(undefined), []);
+});
+
+test("F3: lyricsFromClips picks the track asked for; otherwise the first one with lines", () => {
+  const song = { time: 0, end: 16 };
+  assert.deepEqual(lyricsFromClips(song, singers, "backing-vox"), {
+    lines: [{ beat: 4, text: "Uh uh" }],
+    transpose: { semitones: -1, flats: false },
+    track: "backing-vox",
+  });
+  assert.equal(lyricsFromClips(song, singers).track, "leo");
+  assert.equal(lyricsFromClips(song, singers, "gia-detto").track, "leo"); // no lines in this song
+  assert.equal(lyricsFromClips(song, singers, "nobody").track, "leo");
+});
+
+test("F3: lineText is the line without its chords, for OSC", () => {
+  assert.equal(lineText("[G]Ciao a [D]tutti"), "Ciao a tutti");
+  assert.equal(lineText(""), "");
 });

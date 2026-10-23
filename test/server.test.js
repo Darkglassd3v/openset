@@ -537,7 +537,7 @@ test("devices: OSC and HTTP commands reach the matching browsers only", async (t
   await phone.got({ action: "reload" });
   assert.ok(!phone.msgs.some((m) => m.action === "showPage"), "phone kept its page");
   assert.equal((await c.cmd({ cmd: "devices", action: "lock", devices: "phone" })).status, 200);
-  assert.equal((await c.cmd({ cmd: "devices", action: "showPage", devices: "all", page: "canvas" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "devices", action: "showPage", devices: "all", page: "audio-interfaces" })).status, 400); // not in OpenSet
   assert.equal((await c.cmd({ cmd: "devices", action: "explode", devices: "all" })).status, 400);
 });
 
@@ -2513,4 +2513,687 @@ test("U7: a password already saved is reported as set, even if updating the page
   const lines = (await (await fetch(c.url("/api/logs"))).json()).lines.join("\n");
   assert.match(lines, /password set, but the pages were not updated: state failed/);
   assert.doesNotMatch(lines, /cannot set the password/);
+});
+
+test("F2: in a +LOOPFULL section a jump waits for the loop to finish; +LOOP jumps right away", async (t) => {
+  const looped = (flag) => [{ name: "A", time: 0 }, { name: ">Verse", time: 0 }, { name: `>Chorus ${flag}`, time: 8 }, { name: ">Out", time: 16 }, { name: "B", time: 24 }];
+  const inLoop = { is_playing: true, loop: true, loop_start: 8, loop_length: 8 };
+
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: looped("+LOOPFULL") });
+  await c.at(10, inLoop);
+  const before = c.cmds.length;
+  const off = c.expectCmd({ cmd: "loop", on: false }); // the loop bracket goes: this pass is the last
+  await c.cmd({ cmd: "song", name: "B" });
+  await off;
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "no jump in the middle of the loop");
+  assert.equal((await c.state()).queued.time, 24);
+  const sent = c.expectCmd({ cmd: "jump", time: 24 }); // at the end of the section
+  await c.at(12.5, { ...inLoop, loop: false });
+  await c.at(15.9, { ...inLoop, loop: false });
+  await sent;
+
+  // +LOOP: the jump goes to Live at once (Live quantizes it)
+  const d = await setup(t);
+  await d.connect({ ...LIVE, cues: looped("+LOOP") });
+  await d.at(10, inLoop);
+  const now = d.expectCmd({ cmd: "jump", time: 24 });
+  await d.cmd({ cmd: "song", name: "B" });
+  await now;
+  assert.equal((await d.state()).queued, null);
+});
+
+test("F2: a +LOOP section from a clip, with no locator at its end, also waits for the section to end", async (t) => {
+  const c = await setup(t);
+  const clips = [{ name: "Verse", start: 0, end: 8 }, { name: "Chorus +LOOP", start: 8, end: 16 }, { name: "Out", start: 16, end: 24 }];
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 24 }] });
+  c.sendLive({ type: "clips", tracks: [{ name: "Sections", clips }] });
+  await waitFor(async () => (await c.state()).setlist[0].sections.length === 3, "sections from the clips");
+  await c.at(10, { is_playing: true, loop: true, loop_start: 8, loop_length: 8 });
+  const before = c.cmds.length;
+  await c.cmd({ cmd: "song", name: "B" });
+  await pause(100);
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "Live could not quantize it to the section end");
+  assert.equal((await c.state()).queued.time, 24);
+});
+
+test("F3: several +LYRICS tracks: listed in the state, chosen per request, sent over OSC, and jumped by lines", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 16 }, { name: "A", time: 32 }, { name: "SONG END", time: 48 }] });
+  c.sendLive({
+    type: "clips",
+    tracks: [
+      { name: "Leo +LYRICS", clips: [{ name: "[G]Uno", start: 0, end: 4 }, { name: "Due", start: 4, end: 8 }, { name: "Tre", start: 8, end: 12 }, { name: "Ripresa", start: 32, end: 36 }] },
+      { name: "Backing Vox +LYRICS", clips: [{ name: "Uh", start: 2, end: 6 }] },
+    ],
+  });
+  await waitFor(async () => (await c.state()).lyricsTracks?.length === 2, "lyrics tracks in the state");
+  assert.deepEqual((await c.state()).lyricsTracks, [{ slug: "leo", name: "Leo" }, { slug: "backing-vox", name: "Backing Vox" }]);
+
+  const get = async (p) => (await fetch(c.url(p))).json();
+  const backing = await get("/api/lyrics/A?track=backing-vox");
+  assert.equal(backing.track, "backing-vox");
+  assert.deepEqual(backing.lines.map((l) => l.segments[0].text), ["Uh"]);
+  assert.equal((await get("/api/lyrics/A")).track, "leo");
+  // the reprise (same name) shows its own lines: songs are asked for by key
+  assert.deepEqual((await get("/api/lyrics/A%232")).lines.map((l) => l.segments[0].text), ["Ripresa"]);
+
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  await c.at(5);
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.get("/lyrics/leo/current")?.[0] === "Due", "current line of leo");
+  assert.deepEqual(got.get("/lyrics/leo/previous"), ["Uno"]); // without the chord
+  assert.deepEqual(got.get("/lyrics/leo/next"), ["Tre"]);
+  assert.deepEqual(got.get("/lyrics/backing-vox/current"), ["Uh"]);
+
+  const jumped = c.expectCmd({ cmd: "jump", time: 8 });
+  sendOsc(c, osc, "/lyrics/jumpByLines", ["leo", 1]);
+  await jumped;
+});
+
+test("F7: shared variables from OSC, HTTP and the web app reach every device and OSC client", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  sendOsc(c, osc, "/shared/canvas/color", ["blue"]); // names can contain slashes
+  sendOsc(c, osc, "/shared/items", [1, 2]); // several values: a list
+  await waitFor(async () => (await c.state()).shared?.items, "shared variables in the state");
+  assert.deepEqual((await c.state()).shared, { "canvas/color": "blue", items: [1, 2] });
+  await waitFor(() => got.get("/shared/items")?.length === 2, "forwarded to OSC clients");
+  assert.deepEqual(got.get("/shared/canvas/color"), ["blue"]);
+
+  assert.equal((await c.cmd({ cmd: "setShared", key: "controlsEnabled", value: true })).status, 200);
+  assert.equal((await c.state()).shared.controlsEnabled, true);
+  assert.equal((await c.cmd({ cmd: "resetShared", key: "items" })).status, 200);
+  assert.equal("items" in (await c.state()).shared, false);
+  for (const bad of [
+    { cmd: "setShared", key: "", value: 1 },
+    { cmd: "setShared", key: "a b", value: 1 },
+    { cmd: "setShared", key: "x".repeat(129), value: 1 },
+    { cmd: "setShared", key: "obj", value: { a: 1 } },
+    { cmd: "setShared", key: "long", value: "x".repeat(1001) },
+    { cmd: "setShared", key: "many", value: Array(65).fill(1) },
+  ])
+    assert.equal((await c.cmd(bad)).status, 400, JSON.stringify(bad).slice(0, 60));
+});
+
+test("F7: Persist Shared Variables keeps them after a restart; off, they start empty", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-shared-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const first = await setup(t, { baseDir });
+  await first.cmd({ cmd: "setShared", key: "scene", value: "verse" });
+  await first.srv.close();
+  assert.deepEqual((await (await setup(t, { baseDir })).state()).shared, {});
+
+  const second = await setup(t, { baseDir });
+  assert.equal((await second.cmd({ cmd: "settings", persistSharedVariables: true })).status, 200);
+  await second.cmd({ cmd: "setShared", key: "scene", value: "chorus" });
+  await second.srv.close();
+  assert.deepEqual((await (await setup(t, { baseDir })).state()).shared, { scene: "chorus" });
+});
+
+// the mixer as the Remote Script reports it (F6): index, name, mute, solo, volume, meter
+const MIXER = [
+  { i: 0, name: "Click", mute: false, solo: false, volume: 0.85, meter: 0 },
+  { i: 1, name: "Vox +G:VOX", mute: false, solo: false, volume: 0.85, meter: 0.6 },
+  { i: 2, name: "Cori +G:VOX", mute: false, solo: false, volume: 0.85, meter: 0.2 },
+  { i: 3, name: "Guide +NM", mute: false, solo: false, volume: 0.85, meter: 0 },
+];
+
+test("F6: mixer groups in the state and over OSC; mute, solo and volume from the web app and OSC", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  c.sendLive({ type: "mixer", tracks: MIXER });
+  await c.at(9);
+  await waitFor(async () => (await c.state()).mixer?.length === 2, "mixer groups in the state");
+  assert.deepEqual((await c.state()).mixer, [
+    { name: "CLICK", label: "Click", muted: false, soloed: false, volume: 0.85, meter: 0, isFading: false },
+    { name: "VOX", label: "Vox", muted: false, soloed: false, volume: 0.85, meter: 0.5, isFading: false },
+  ]);
+
+  let sent = c.expectCmd({ cmd: "mixer", track: 2, name: "Cori +G:VOX", mute: true });
+  assert.equal((await c.cmd({ cmd: "mixer", group: "VOX", mute: true })).status, 200);
+  await sent;
+  assert.equal((await c.cmd({ cmd: "mixer", group: "NOPE", mute: true })).status, 400);
+
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.has("/mixer/VOX/volume"), "mixer values over OSC");
+  assert.deepEqual(got.get("/mixer/names"), ["CLICK", "VOX"]);
+  assert.deepEqual(got.get("/mixer/VOX/muted"), [0]);
+  assert.deepEqual(got.get("/mixer/VOX/meter"), [0.5]);
+
+  sent = c.expectCmd({ cmd: "mixer", track: 3, name: "Guide +NM", solo: true }); // +NM soloed with the group
+  sendOsc(c, osc, "/mixer/VOX/solo", [1]);
+  await sent;
+  sent = c.expectCmd({ cmd: "mixer", track: 0, name: "Click", mute: true });
+  sendOsc(c, osc, "/click/mute", ["toggle"]);
+  await sent;
+  sent = c.expectCmd({ cmd: "mixer", track: 1, name: "Vox +G:VOX", volume: 0.5 });
+  sendOsc(c, osc, "/mixer/VOX/volume", [0.5]);
+  await sent;
+});
+
+test("F6: fadeTo moves the group volume step by step to the target, and «previous» goes back", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  c.sendLive({ type: "mixer", tracks: MIXER });
+  await c.at(9);
+  await waitFor(async () => (await c.state()).mixer?.length === 2, "mixer groups");
+  const from = c.cmds.length;
+  const volumes = () => c.cmds.slice(from).filter((m) => m.cmd === "mixer" && m.track === 1).map((m) => m.volume);
+  // speed 10: 0.85 -> 0 in about 0.4 s
+  assert.equal((await c.cmd({ cmd: "mixerFade", group: "VOX", to: 0, speed: 10 })).status, 200);
+  assert.equal((await c.state()).mixer[1].isFading, true);
+  await waitFor(() => volumes().at(-1) === 0, "faded out");
+  assert.ok(volumes().length >= 3, "several steps: " + volumes().join(", "));
+  assert.ok(volumes().every((v, i, a) => i === 0 || v < a[i - 1]), "always down");
+  await waitFor(async () => (await c.state()).mixer[1].isFading === false, "fade over");
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  sendOsc(c, osc, "/mixer/VOX/fadeTo", ["previous", 10]);
+  await waitFor(() => volumes().at(-1) === 0.85, "back to the volume before the fade");
+});
+
+test("F10: mixer commands and fades reach the backup computer's Live too", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  for (const c of [main, backup]) {
+    await c.connect();
+    c.sendLive({ type: "mixer", tracks: MIXER });
+    await c.at(9);
+    await waitFor(async () => (await c.state()).mixer?.length === 2, "mixer groups");
+  }
+  await main.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${backup.srv.httpPort}`] });
+  const muted = backup.expectCmd({ cmd: "mixer", track: 1, name: "Vox +G:VOX", mute: true });
+  await main.cmd({ cmd: "mixer", group: "VOX", mute: true });
+  await muted;
+  const faded = backup.expectCmd({ cmd: "mixer", track: 1, name: "Vox +G:VOX", volume: 0 });
+  await main.cmd({ cmd: "mixerFade", group: "VOX", to: 0, speed: 20 });
+  await faded;
+});
+
+test("F8: the project script runs at start and when changed, reacts to OpenSet, and only this computer edits it", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-script-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const c = await setup(t, { baseDir });
+  await c.connect();
+  const code = `log("avviato");\nonOscChange("/global/isPlaying", (v) => setShared("suona", v === 1));\nonOscChange("/setlist/activeSongName", (n) => sendOsc("/shared/brano", n), true);`;
+  assert.equal((await c.cmd({ cmd: "setProjectScript", code })).status, 200);
+  await waitFor(async () => (await c.state()).shared.brano === "Intro Song", "sendOsc from the script");
+  await c.at(10, { is_playing: true });
+  await waitFor(async () => (await c.state()).shared.suona === true, "setShared from the script");
+  const info = await (await fetch(c.url("/api/script"))).json();
+  assert.equal(info.code, code);
+  assert.equal(info.running, true);
+  assert.match(info.log.map((l) => l.text).join("\n"), /avviato/);
+
+  // from another device of the network: not allowed (it runs on this computer)
+  const lan = (body) => fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  assert.equal((await lan({ cmd: "setProjectScript", code: "log(1)" })).status, 400);
+  assert.equal((await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/script`)).status, 403);
+
+  // saved: it runs again after a restart
+  await c.srv.close();
+  const d = await setup(t, { baseDir });
+  await waitFor(async () => (await (await fetch(d.url("/api/script"))).json()).log.some((l) => l.text === "avviato"), "run at start");
+  assert.equal((await d.cmd({ cmd: "stopProjectScript" })).status, 200);
+  assert.equal((await (await fetch(d.url("/api/script"))).json()).running, false);
+});
+
+test("F5: recording like AbleSet: start, stop and toggle over OSC, isRecording, isConnected and beatsPosition", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  let sent = c.expectCmd({ cmd: "record", on: true, play: true }); // stopped: recording starts playback too
+  sendOsc(c, osc, "/global/startRecording", []);
+  await sent;
+  await c.at(9.5, { record: true, is_playing: true });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.get("/global/isRecording")?.[0] === 1, "isRecording");
+  assert.deepEqual(got.get("/global/isConnected"), [1]);
+  assert.deepEqual(got.get("/global/beatsPosition"), [9]); // floored while playing
+  sent = c.expectCmd({ cmd: "record", on: false });
+  sendOsc(c, osc, "/global/toggleRecording", []);
+  await sent;
+  sent = c.expectCmd({ cmd: "record", on: false });
+  sendOsc(c, osc, "/global/stopRecording", []);
+  await sent;
+});
+
+const CANVAS = {
+  name: "Palco",
+  elements: [
+    { id: "play", type: "button", x: 0, y: 0, w: 6, h: 3, props: { label: "Play", onPress: "/global/play" } },
+    { id: "bpm", type: "label", x: 6, y: 0, w: 6, h: 3, props: { text: "${osc('/global/tempo')} BPM" } },
+  ],
+};
+
+test("F5: canvases are saved, listed, sent to every page and deleted; they survive a restart", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-canvas-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const c = await setup(t, { baseDir });
+  const rev = (await c.state()).canvasRev;
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: CANVAS })).status, 200);
+  const st = await c.state();
+  assert.deepEqual(st.canvases, ["Palco"]);
+  assert.ok(st.canvasRev > rev);
+  assert.deepEqual(await (await fetch(c.url("/api/canvases"))).json(), { Palco: CANVAS });
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: { name: "", elements: [] } })).status, 400);
+  // renamed: saved under the new name, the old one goes
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: { ...CANVAS, name: "Batteria" }, oldName: "Palco" })).status, 200);
+  assert.deepEqual((await c.state()).canvases, ["Batteria"]);
+  await c.srv.close();
+  const d = await setup(t, { baseDir });
+  assert.deepEqual((await d.state()).canvases, ["Batteria"]);
+  assert.equal((await d.cmd({ cmd: "deleteCanvas", name: "Batteria" })).status, 200);
+  assert.deepEqual((await d.state()).canvases, []);
+  assert.equal((await d.cmd({ cmd: "deleteCanvas", name: "Batteria" })).status, 400);
+});
+
+test("F5: a button's OSC lines run in order, with //sleep and //if", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const play = c.expectCmd({ cmd: "play" });
+  const t0 = Date.now();
+  assert.equal((await c.cmd({ cmd: "oscRun", lines: "//if !playing: /global/play\n//endif\n//sleep 150\n/global/tempo 100" })).status, 200);
+  await play;
+  await c.expectCmd({ cmd: "tempo", bpm: 100 });
+  assert.ok(Date.now() - t0 >= 140, "after the sleep");
+  await c.at(10, { is_playing: true });
+  const before = c.cmds.length;
+  await c.cmd({ cmd: "oscRun", lines: "//if !playing\n/global/play\n//endif\n/global/tempo 90" });
+  await c.expectCmd({ cmd: "tempo", bpm: 90 });
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "play"), "skipped: Live is playing");
+  assert.equal((await c.cmd({ cmd: "oscRun", lines: 42 })).status, 400);
+});
+
+test("F5: a page with a canvas gets OpenSet's OSC values, then only what changes", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  const osc = [];
+  ws.on("message", (b) => { const m = JSON.parse(b); if (m.type === "osc") osc.push(m.values); });
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  ws.send(JSON.stringify({ type: "osc", on: true }));
+  await waitFor(() => osc.length, "all the values");
+  assert.deepEqual(osc[0]["/global/tempo"], [120]);
+  assert.deepEqual(osc[0]["/setlist/activeSongName"], ["Intro Song"]);
+  await c.at(20);
+  await waitFor(() => osc.some((v, i) => i > 0 && v["/setlist/activeSectionName"]), "a change");
+  const change = osc.find((v, i) => i > 0 && v["/setlist/activeSectionName"]);
+  assert.deepEqual(change["/setlist/activeSectionName"], ["Chorus"]);
+  assert.equal(change["/global/tempo"], undefined, "only what changed");
+});
+
+test("F5: canvas images: uploaded to Canvas/Resources, listed and served; nothing outside it", async (t) => {
+  const c = await setup(t);
+  const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  const up = (name, body = png, type = "image/png") =>
+    fetch(c.url("/api/canvas-resources?name=" + encodeURIComponent(name)), { method: "POST", headers: { "Content-Type": type }, body });
+  assert.equal((await up("logo.png")).status, 200);
+  assert.deepEqual(fs.readFileSync(path.join(c.baseDir, "Canvas", "Resources", "logo.png")), png);
+  fs.mkdirSync(path.join(c.baseDir, "Canvas", "Resources", "band"));
+  fs.writeFileSync(path.join(c.baseDir, "Canvas", "Resources", "band", "foto.jpg"), "jpg");
+  assert.deepEqual(await (await fetch(c.url("/api/canvas-resources"))).json(), ["band/foto.jpg", "logo.png"]);
+  const got = await fetch(c.url("/canvas-resources/logo.png"));
+  assert.equal(got.status, 200);
+  assert.deepEqual(Buffer.from(await got.arrayBuffer()), png);
+  assert.match(got.headers.get("content-security-policy"), /sandbox/); // an SVG put there by hand cannot run scripts
+  assert.equal((await fetch(c.url("/canvas-resources/band/foto.jpg"))).status, 200);
+  for (const name of ["../setlist.png", "a/b.png", "x.svg", "notes.txt", ""]) assert.equal((await up(name)).status, 400, name);
+  assert.equal((await fetch(c.url("/canvas-resources/..%2Fsetlist.json"))).status, 404);
+  assert.equal((await up("big.png", Buffer.alloc(11 * 1024 * 1024))).status, 413);
+});
+
+test("F5: loop values like AbleSet's, and OSC lines that go out to another program", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: ">Verse", time: 0 }, { name: ">Chorus +LOOPFULL:3", time: 8 }, { name: ">Out", time: 16 }, { name: "B", time: 24 }] });
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  await c.at(10, { loop: true, loop_start: 8, loop_length: 8 });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.has("/setlist/loopEnabled"), "loop values");
+  assert.deepEqual(got.get("/setlist/loopEnabled"), [1]);
+  assert.deepEqual(got.get("/setlist/loopStart"), [8]);
+  assert.deepEqual(got.get("/setlist/loopEnd"), [16]);
+  assert.deepEqual(got.get("/setlist/activeSectionLoopMode"), ["loopfull"]);
+  assert.deepEqual(got.get("/setlist/activeSectionLoopCount"), [3]);
+
+  // a canvas button for the lights: "host:port/address" goes out over UDP
+  const lights = await udpSocket();
+  t.after(() => lights.close());
+  const seen = [];
+  lights.on("message", (b) => seen.push(...decode(b)));
+  await c.cmd({ cmd: "oscRun", lines: `127.0.0.1:${lights.address().port}/luci/scena 2 "blu"` });
+  await waitFor(() => seen.length, "the OSC message");
+  assert.deepEqual(seen[0], { address: "/luci/scena", args: [2, "blu"] });
+});
+
+test("F1: a song added by hand: in the setlist, chosen without Live playing it, with its lyrics; Live stops before it", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  assert.equal((await c.cmd({ cmd: "addManualSong", name: "Acustica", seconds: 200, lyrics: "Prima riga\nSeconda riga" })).status, 200);
+  const m = (await c.state()).setlist.find((s) => s.manual);
+  assert.equal(m.name, "Acustica");
+  assert.equal(m.seconds, 200);
+  assert.match(m.key, /^manual:/);
+  await c.cmd({ cmd: "setlist", order: ["Perché", m.key, "Finale", "Intro Song"], skip: [], stopAfter: [], notes: {} });
+  const idx = (await c.state()).setlist.findIndex((s) => s.manual);
+  assert.equal(idx, 1);
+  const lyr = await (await fetch(c.url("/api/lyrics/" + encodeURIComponent(m.key)))).json();
+  assert.deepEqual([lyr.static, lyr.lines.map((l) => l.segments[0].text)], [true, ["Prima riga", "Seconda riga"]]);
+
+  // Perché ends and the next song is played by hand: Live stops instead of jumping
+  const playing = { is_playing: true };
+  await c.at(60, playing);
+  const stopped = c.expectCmd({ cmd: "stop" });
+  for (const beat of [63, 66, 69, 71.9, 72.1]) await c.at(beat, playing);
+  await stopped;
+  await c.at(72.1, { is_playing: false });
+  // chosen: it becomes the current song; Live is not asked to play
+  const before = c.cmds.length;
+  assert.equal((await c.cmd({ cmd: "song", index: idx })).status, 200);
+  assert.equal((await c.state()).current, idx);
+  assert.ok(!c.cmds.slice(before).some((x) => x.cmd === "jump" || x.cmd === "play"));
+  // Next: back to Live, at Finale
+  const jumped = c.expectCmd({ cmd: "jump", time: 72 });
+  await c.cmd({ cmd: "next" });
+  await jumped;
+  await c.at(72.5, { is_playing: true });
+  assert.equal((await c.state()).setlist[(await c.state()).current].name, "Finale");
+
+  const id = m.key.slice(7);
+  assert.equal((await c.cmd({ cmd: "updateManualSong", id, name: "Unplugged", seconds: 180 })).status, 200);
+  assert.equal((await c.state()).setlist[idx].name, "Unplugged");
+  for (const bad of [{ cmd: "addManualSong", name: "", seconds: 10 }, { cmd: "addManualSong", name: "X", seconds: -1 },
+    { cmd: "addManualSong", name: "X", seconds: 10, lyrics: "x".repeat(20001) }, { cmd: "updateManualSong", id: "nope", name: "Y" }])
+    assert.equal((await c.cmd(bad)).status, 400, JSON.stringify(bad).slice(0, 60));
+  assert.equal((await c.cmd({ cmd: "deleteManualSong", id })).status, 200);
+  assert.equal((await c.state()).setlist.some((s) => s.manual), false);
+});
+
+test("F1: a song added by hand gets the same key on the backup computer", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  await main.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${backup.srv.httpPort}`] });
+  await main.cmd({ cmd: "addManualSong", name: "Acustica", seconds: 200 });
+  const key = (await main.state()).setlist.find((s) => s.manual).key;
+  await waitFor(async () => (await backup.state()).setlist.some((s) => s.manual), "copied to the backup");
+  assert.equal((await backup.state()).setlist.find((s) => s.manual).key, key);
+});
+
+// a multi-file project with three songs, and OpenSet's hands on Live faked: what it opens and saves
+async function multiSetup(t, extra = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-multi-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const f of ["01 Intro.als", "02 Roads [3.00].als", "03 Finale.als"]) fs.writeFileSync(path.join(dir, f), "als");
+  const opened = [];
+  const saved = [];
+  const c = await setup(t, { openFile: (f) => opened.push(f), saveLiveSet: () => saved.push(Date.now()), saveWaitMs: 50, ...extra });
+  await c.connect({ ...LIVE, key: "a".repeat(32), cues: [{ name: "Intro", time: 0 }, { name: "SONG END", time: 16 }] });
+  return { c, dir, opened, saved };
+}
+// Live has loaded a file: the Remote Script starts again (a new key) with that file's locators
+const loadedInLive = (c, n, cues) => c.sendLive({ ...LIVE, key: String(n).repeat(32), cues });
+
+test("F9: a multi-file project: the files are the setlist; choosing one saves the open set and opens the file in Live", async (t) => {
+  const { c, dir, opened, saved } = await multiSetup(t);
+  assert.equal((await c.cmd({ cmd: "multiFile", folder: path.join(dir, "nope") })).status, 400);
+  assert.equal((await c.cmd({ cmd: "multiFile", folder: dir })).status, 200);
+  let st = await c.state();
+  assert.deepEqual(st.setlist.map((s) => s.name), ["01 Intro", "02 Roads", "03 Finale"]);
+  assert.equal(st.setlist[1].seconds, 180); // [3.00] in the file name
+  assert.equal(st.multiFile.folder, dir);
+
+  await c.cmd({ cmd: "song", index: 1 });
+  await waitFor(() => opened.length, "the file opened in Live");
+  assert.equal(opened[0], path.join(dir, "02 Roads [3.00].als"));
+  assert.equal(saved.length, 1); // Save Changes Before Loading Project is on by default
+  assert.equal((await c.state()).multiFile.loading, "02 Roads [3.00]");
+
+  loadedInLive(c, "b", [{ name: "Roads", time: 0 }, { name: ">Verse", time: 4 }, { name: "SONG END", time: 32 }]);
+  await waitFor(async () => (await c.state()).multiFile.loaded === "02 Roads [3.00]", "the file loaded");
+  st = await c.state();
+  assert.equal(st.multiFile.loading, null);
+  assert.deepEqual(st.setlist[1].sections.map((x) => x.name), ["Verse"]);
+  assert.equal(st.current, 1);
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.has("/global/projectName"), "file values over OSC");
+  assert.deepEqual([got.get("/global/projectName"), got.get("/global/isLoadingFile")], [["02 Roads [3.00]"], [0]]);
+
+  // the loaded song ends: Live stops and the next file is loaded (Jump to the next song after a stop)
+  await c.at(28, { is_playing: true });
+  for (const beat of [30, 31.9, 32.1]) await c.at(beat, { is_playing: true });
+  await waitFor(() => opened.length === 2, "the next file");
+  assert.equal(opened[1], path.join(dir, "03 Finale.als"));
+  assert.equal((await c.cmd({ cmd: "multiFile", folder: "" })).status, 200); // off: back to the locators
+  assert.equal((await c.state()).multiFile.folder, "");
+});
+
+test("F9: Delay Before Jumping to Song File: Next pressed twice opens only the second song", async (t) => {
+  const { c, dir, opened } = await multiSetup(t);
+  await c.cmd({ cmd: "multiFile", folder: dir });
+  await c.cmd({ cmd: "settings", songFileDelay: 500, saveBeforeLoading: false });
+  await c.cmd({ cmd: "next" });
+  await c.cmd({ cmd: "next" });
+  await pause(200);
+  assert.equal(opened.length, 0, "still waiting");
+  await waitFor(() => opened.length, "opened after the delay");
+  await pause(300);
+  assert.deepEqual(opened, [path.join(dir, "02 Roads [3.00].als")]); // nothing loaded yet: 01, then 02
+  assert.equal((await c.cmd({ cmd: "settings", songFileDelay: 700 })).status, 400); // None, 500 ms, 1, 2 or 3 s
+});
+
+test("F9: Sync Group Solos & Mutes (and Volumes) Between Songs carries the mixer into the next file", async (t) => {
+  const { c, dir } = await multiSetup(t);
+  await c.cmd({ cmd: "multiFile", folder: dir });
+  await c.cmd({ cmd: "settings", mixerTransferGroupStates: true, mixerTransferGroupVolumes: true, saveBeforeLoading: false });
+  c.sendLive({ type: "mixer", tracks: [{ i: 0, name: "Vox +G:VOX", mute: true, solo: false, volume: 0.5, meter: 0 }] });
+  await c.at(9);
+  await waitFor(async () => (await c.state()).mixer.length === 1, "mixer of the first file");
+  await c.cmd({ cmd: "song", index: 2 });
+  loadedInLive(c, "c", [{ name: "Finale", time: 0 }, { name: "SONG END", time: 16 }]);
+  await waitFor(async () => (await c.state()).multiFile.loaded === "03 Finale", "loaded");
+  const muted = c.expectCmd({ cmd: "mixer", track: 3, name: "Cori +G:VOX", mute: true });
+  const volume = c.expectCmd({ cmd: "mixer", track: 3, name: "Cori +G:VOX", volume: 0.5 });
+  c.sendLive({ type: "mixer", tracks: [{ i: 3, name: "Cori +G:VOX", mute: false, solo: false, volume: 0.85, meter: 0 }] });
+  await c.at(1);
+  await muted;
+  await volume;
+});
+
+test("F11: OpenSet announces its OSC port with Bonjour while it runs, and says goodbye when it closes", async (t) => {
+  const { EventEmitter } = require("events");
+  const sent = [];
+  const fake = new EventEmitter();
+  fake.respond = (r) => sent.push(r);
+  fake.destroy = () => {};
+  const c = await setup(t, { mdns: () => fake });
+  // the announcement carries every record in its answers
+  const srv = sent[0].answers.find((a) => a.type === "SRV");
+  assert.equal(srv.data.port, c.srv.udpPort);
+  assert.ok(sent[0].answers.some((a) => a.type === "TXT" && a.data.includes("server=ableset")));
+  await c.srv.close();
+  assert.ok(sent.at(-1).answers.every((a) => a.ttl === 0));
+});
+
+// ---------------- review of 1.0.0 (V) ----------------
+
+test("V2: OSC lines from a device cannot subscribe another computer, nor send outside the local network", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const other = await udpSocket();
+  t.after(() => other.close());
+  let got = 0;
+  other.on("message", () => got++);
+  const lan = (body) => fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  await lan({ cmd: "oscRun", lines: `/subscribe 127.0.0.1 ${other.address().port}` });
+  await c.at(9);
+  await c.at(10);
+  await pause(200);
+  assert.equal(got, 0, "no state stream to a third address");
+  // lights on the local network: yes; an address on the internet: no
+  await lan({ cmd: "oscRun", lines: `127.0.0.1:${other.address().port}/luci 1` });
+  await waitFor(() => got === 1, "the local datagram");
+  const logged = [];
+  const real = require("dgram").Socket.prototype.send;
+  require("dgram").Socket.prototype.send = function (...a) { if (a.includes("8.8.8.8") || a.includes("example.com")) logged.push(a); return real.apply(this, a); };
+  t.after(() => (require("dgram").Socket.prototype.send = real));
+  await lan({ cmd: "oscRun", lines: "8.8.8.8:9000/x 1\nexample.com:9000/x 1" });
+  await pause(200);
+  assert.deepEqual(logged, []);
+});
+
+test("V3: Safe Mode limits canvas buttons too: an OSC line cannot change song while Live plays", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "settings", safeMode: true });
+  await c.at(10, { is_playing: true });
+  const before = c.cmds.length;
+  assert.equal((await c.cmd({ cmd: "oscRun", lines: "/setlist/jumpToSong 3" })).status, 200);
+  await pause(200);
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "no song change");
+});
+
+test("V4: shared variables have a total size limit", async (t) => {
+  const c = await setup(t);
+  const big = Array(64).fill("x".repeat(1000));
+  let refused = 0;
+  for (let i = 0; i < 60; i++) if ((await c.cmd({ cmd: "setShared", key: "k" + i, value: big })).status === 400) refused++;
+  assert.ok(refused > 0, "refused past the limit");
+  assert.ok(JSON.stringify((await c.state()).shared).length <= 64 * 1024);
+});
+
+test("V8: one OSC command with its arguments as data: text with ';', new lines and quotes arrives whole", async (t) => {
+  const c = await setup(t);
+  assert.equal((await c.cmd({ cmd: "oscRun", address: "/shared/nota", args: ['a;b\nc "d"'] })).status, 200);
+  await waitFor(async () => (await c.state()).shared.nota !== undefined, "set");
+  assert.equal((await c.state()).shared.nota, 'a;b\nc "d"');
+  assert.equal((await c.cmd({ cmd: "oscRun", address: "global/play" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "oscRun", address: "/x", args: [{ a: 1 }] })).status, 400);
+});
+
+test("V9: commands from the project script stay on this computer (each backup runs its own script)", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  await main.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${backup.srv.httpPort}`] });
+  await main.cmd({ cmd: "setShared", key: "copiata", value: 1 }); // a user command: copied
+  await waitFor(async () => (await backup.state()).shared.copiata === 1, "user command copied");
+  await main.cmd({ cmd: "setProjectScript", code: 'sendOsc("/shared/script", 1);' });
+  await waitFor(async () => (await main.state()).shared.script === 1, "script ran");
+  await pause(300);
+  assert.equal((await backup.state()).shared.script, undefined);
+});
+
+test("V10: canvas images: Windows device names are refused, and the folder has a size limit", async (t) => {
+  const c = await setup(t, { resourcesMaxBytes: 1024 });
+  const up = (name, n) => fetch(c.url("/api/canvas-resources?name=" + encodeURIComponent(name)), { method: "POST", headers: { "Content-Type": "image/png" }, body: Buffer.alloc(n, 1) });
+  for (const name of ["CON.png", "nul.jpg", "COM1.png", "lpt9.gif", "AUX.webp", "prn.png"]) assert.equal((await up(name, 10)).status, 400, name);
+  assert.equal((await up("a.png", 600)).status, 200);
+  assert.equal((await up("b.png", 600)).status, 413); // the folder would pass 1 KB
+  assert.equal((await up("a.png", 700)).status, 200); // replacing a file counts its new size only
+});
+
+test("V11: //sleep 0 does not stop the rest of the lines", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const play = c.expectCmd({ cmd: "play" });
+  await c.cmd({ cmd: "oscRun", lines: "//sleep 0\n/global/play" });
+  await play;
+});
+
+test("V13: Delay Before Jumping to Song File: Next then Previous cancels the waiting Next", async (t) => {
+  const { c, dir, opened } = await multiSetup(t);
+  await c.cmd({ cmd: "multiFile", folder: dir });
+  await c.cmd({ cmd: "song", index: 0 });
+  loadedInLive(c, "b", [{ name: "Intro", time: 0 }, { name: "SONG END", time: 16 }]);
+  await waitFor(async () => (await c.state()).multiFile.loaded === "01 Intro", "first file loaded");
+  await c.cmd({ cmd: "settings", songFileDelay: 500, saveBeforeLoading: false });
+  const n = opened.length;
+  await c.at(5);
+  await c.cmd({ cmd: "next" });
+  await c.cmd({ cmd: "prev" });
+  await pause(800);
+  assert.equal(opened.length, n, "no file opened");
+});
+
+test("V14: OSC counts from a song added by hand while it is the current one", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "addManualSong", name: "Acustica", seconds: 120 });
+  const key = (await c.state()).setlist.find((s) => s.manual).key;
+  await c.cmd({ cmd: "setlist", order: ["Intro Song", key, "Perché", "Finale"], skip: [], stopAfter: [], notes: {} });
+  await c.cmd({ cmd: "song", index: 1 });
+  assert.equal((await c.state()).current, 1);
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const jumped = c.expectCmd({ cmd: "jump", time: 40 }); // Perché, the song after the one by hand
+  sendOsc(c, osc, "/setlist/jumpBySongs", [1]);
+  await jumped;
+});
+
+test("V7: a multi-file project knows the song file already open in Live, also after OpenSet restarts", async (t) => {
+  const { c, dir, opened } = await multiSetup(t);
+  await c.cmd({ cmd: "multiFile", folder: dir });
+  // Live already has "02 Roads" open: its first song has the file's name
+  loadedInLive(c, "d", [{ name: "02 Roads", time: 0 }, { name: ">Verse", time: 4 }, { name: "SONG END", time: 32 }]);
+  await waitFor(async () => (await c.state()).multiFile.loaded === "02 Roads [3.00]", "recognised by name");
+  assert.equal((await c.state()).current, 1);
+  assert.equal(opened.length, 0);
+  // a file whose locator has another name, opened by OpenSet, is remembered with its locators
+  await c.cmd({ cmd: "settings", saveBeforeLoading: false });
+  await c.cmd({ cmd: "song", index: 2 });
+  const finale = [{ name: "Gran Finale", time: 0 }, { name: "SONG END", time: 16 }];
+  loadedInLive(c, "e", finale);
+  await waitFor(async () => (await c.state()).multiFile.loaded === "03 Finale", "loaded");
+  await c.srv.close();
+  const d = await setup(t, { baseDir: c.baseDir, openFile: () => {}, saveLiveSet: () => {} });
+  await d.connect({ ...LIVE, key: "f".repeat(32), cues: finale });
+  await waitFor(async () => (await d.state()).multiFile.loaded === "03 Finale", "remembered after a restart");
+});
+
+test("V17: a page with a canvas is told when a value goes away", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "setShared", key: "scena", value: "verse" });
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  const msgs = [];
+  ws.on("message", (b) => { const m = JSON.parse(b); if (m.type === "osc") msgs.push(m); });
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  ws.send(JSON.stringify({ type: "osc", on: true }));
+  await waitFor(() => msgs.length, "values");
+  await c.cmd({ cmd: "resetShared", key: "scena" });
+  await waitFor(() => msgs.some((m) => (m.removed || []).includes("/shared/scena")), "removed");
+});
+
+test("V15: saving a new canvas never replaces a saved one with the same name; a rename onto it is refused", async (t) => {
+  const c = await setup(t);
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: CANVAS })).status, 200);
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: { name: "Palco", elements: [] } })).status, 400); // new, same name
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: { name: "Palco", elements: [] }, oldName: "Palco" })).status, 200); // its own edit
+  await c.cmd({ cmd: "saveCanvas", canvas: { name: "Batteria", elements: [] } });
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: { name: "Batteria", elements: [] }, oldName: "Palco" })).status, 400);
+  assert.deepEqual((await c.state()).canvases.sort(), ["Batteria", "Palco"]);
 });

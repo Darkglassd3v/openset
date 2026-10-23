@@ -16,10 +16,9 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 Richiesta dell'utente (2026-10-23, prima di andare a dormire): «correggi tutte le cose … FAI TUTTO NON LASCIARE NIENTE IN SOSPESO», piano con `ecc:plan` e `ecc:tdd-workflow`, bug descritti in parole semplici; se qualcosa non va si segna qui «da verificare»; **alla fine spegnere il PC (`systemctl poweroff`) comunque**.
 
-- [ ] v0.6.2 — correzioni (sezione «v0.6.2» sotto), release
-- [ ] v0.7.0 — funzioni di AbleSet che mancavano (sezione «v0.7.0» sotto), release
-- [ ] v0.8.0 — Node recente dentro i programmi (sezione «v0.8.0» sotto), release
-- [ ] fine: `/ecc:ck save`, memoria aggiornata, spegnere il PC
+- [x] v0.6.2 — correzioni (sezione «v0.6.2» sotto): PR #9 (merge `d22b983`), tag `v0.6.2`, release https://github.com/Darkglassd3v/openset/releases/tag/v0.6.2 (run 39939293668): 4 zip con la versione, guida dentro, note brevi, 0 artefatti, «Latest»
+- [ ] 1.0.0 — funzioni di AbleSet che mancavano e Node recente dentro i programmi, in un'unica versione (decisione dell'utente, 2026-10-24: «rilasciarle su una 1.0.0 e taggare tutto»); sezione «v1.0.0» sotto, branch `release/v1.0.0`
+- [ ] fine: `/ecc:ck save`, memoria aggiornata; spegnere il PC solo quando anche la sessione «sciclub-donbosco» ha finito (richiesta dell'utente, 2026-10-24)
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` pubblicato il 2026-10-24 (la vecchia `release.yml` partita dal tag annullata subito, run 39938930663; l'unico artefatto che aveva caricato, 17,8 MB, cancellato); nessuna release con gli zip (decisione dell'utente: la 0.6.x la sostituisce, e sarebbe apparsa come «ultima»); zip e guida restano in `build/release-0.5.1/`
 - [x] v0.6.0: PR #3 (merge `279f7fa`), 4 zip e guida PDF anche in `build/release-0.6.0/`; release su GitHub dal tag (vedi sotto), CI verde su Windows, macOS e Ubuntu
@@ -63,7 +62,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
 - [x] C5 (RED `e9102ef`, GREEN) User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
 - [x] C6 (RED `4962104`, GREEN) Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
 - [x] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Causa trovata: non era OpenSet ma lo strumento usato per misurare (Chrome comandato da `chrome-devtools`). Misurato in Chrome normale, dal computer e dall'indirizzo di rete, con Live collegato e 300 locator: primo stato in 40-100 ms, «Live connesso» in 100-220 ms; anche la versione di allora (`f883623`) è veloce. Test di guardia in `e2e/ui.spec.js` (primo stato entro 1 s)
-- [ ] Rilascio 0.6.2: copertura (righe 99.34%, rami 93.81%), CHANGELOG, report TDD, versione, guida e README fatti; PR #9 aperta; tre `code-review` corrette (R1-R4, S1-S3, T1-T3); revisione finale corretta (U1-U10); poi CI, merge, tag
+- [x] Rilascio 0.6.2: copertura (righe 99.35%, rami 93.93%), CHANGELOG, report TDD, versione, guida e README; tre `code-review` e la revisione finale corrette (R1-R4, S1-S3, T1-T3, U1-U10); PR #9 con CI verde, merge `d22b983`, tag `v0.6.2`, release controllata
 - [x] R1 (RED `25910f3`, GREEN) Dalla revisione, accessi (rischio: dispositivi bloccati durante il concerto)
   - Con IPv6 tutti i dispositivi di casa o del locale stanno nella stessa rete /64: cinque password sbagliate da un telefono bloccavano per 30 s anche gli iPad della band, e un iPad che si ricollegava con il suo accesso valido lo perdeva. Ora i tentativi si contano per dispositivo, la rete /64 si blocca solo dopo molti tentativi, e un accesso valido non viene mai bloccato.
   - Un iPad acceso e usato per più di 24 ore (prova e poi concerto) veniva bloccato al primo calo del Wi-Fi, perché l'uso contava solo quando si ricollegava. Ora ogni comando e ogni segnale di vita della connessione contano come uso.
@@ -120,27 +119,54 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - [x] U9 Semplificazione: la scelta «per chiave o per nome» stava in due punti (`migrate` e `setlistByKey`); ora in uno.
   - [x] U10 Commit `caa0365`: mette insieme più correzioni (tetto della memoria del limitatore, avviso HTTP nella guida, CHANGELOG, password non bloccante, password illeggibile, corse). Già pubblicato sul branch della PR: non riscritto (servirebbe un force push); da qui in avanti un commit per modulo.
 
-### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
-Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.
+### v1.0.0 — funzioni di AbleSet e Node recente (branch `release/v1.0.0`)
+Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce. Ogni
+funzione: RED, GREEN, TODO aggiornato in ogni commit; quello che riguarda Live si prova con il
+Live finto dei test e va nella lista «Da verificare su un computer vero».
 
-- [ ] F1 Brani aggiunti a mano dalla UI, senza progetto Live (scaletta, note e testi)
-- [ ] F2 `+LOOPFULL` come in AbleSet (oggi si comporta come `+LOOP`)
-- [ ] F3 Testi da più tracce `+LYRICS` (oggi solo la prima)
-- [ ] F4 Colori delle clip con la tabella di AbleSet (oggi per tonalità)
-- [ ] F5 Canvas: viste personalizzate fatte di riquadri
-- [ ] F6 Mixer: volumi, mute e solo delle tracce dalla UI
-- [ ] F7 Variabili condivise (e Persist Shared Variables)
-- [ ] F8 Script di progetto
-- [ ] F9 Progetti su più file `.als` (e Delay Before Jumping to Song File)
-- [ ] F10 Due computer: solo e volumi dei gruppi sincronizzati
-- [ ] F11 OSC visibile in rete (Bonjour)
-- [ ] Rilascio 0.7.0 (guida con tutte le novità)
-
-### v0.8.0 — Node recente dentro i programmi (branch `release/v0.8.0`)
-- [ ] I programmi contengono Node 18, che non riceve più aggiornamenti di sicurezza da aprile 2025 (pkg 5.8.1 non va oltre). Passare a Node SEA con un Node attuale, per Windows, macOS (arm64 e Intel) e Linux, con icona, firma ad hoc e guida dentro gli zip; prova di avvio in CI su ogni sistema
-- [ ] Rilascio 0.8.0
+- [x] F4 (RED `a5bfb0a`, GREEN; seguito sul Remote Script: RED `1802d32`, GREEN) Colori delle clip (`+CC`/`+CLIPCOLORS` sulla traccia Sections): le colonne 7, 8 e 11 della tavolozza di Live davano teal, cyan e indigo; AbleSet dà Emerald, Teal e Violet (tabella della sua pagina «Sections Track»: Red, Orange, Amber, Yellow, Lime, Green, Emerald, Teal, Sky, Blue, Violet, Purple, Pink, Gray)
+- [x] F2 (RED `c066942`, GREEN) `+LOOPFULL`: oggi è uguale a `+LOOP`. In AbleSet un salto chiesto mentre suona un `+LOOPFULL` aspetta la fine del giro (il loop si spegne e il salto parte alla fine della sezione); con `+LOOP` si salta come sempre
+- [x] F3 (RED `fbea995`, GREEN) Testi da più tracce `+LYRICS`: oggi si vede solo la prima. Ogni traccia ha un nome breve (slug: «Backing Vox +LYRICS» → `backing-vox`); ogni dispositivo sceglie quale vedere; OSC `/lyrics/<slug>/previous|current|next` in uscita e `/lyrics/jumpByLines <slug> <n>` in entrata
+- [x] F7 (RED `6bbceb6`, GREEN) Variabili condivise: `/shared/<nome> valore…` via OSC, HTTP e WebSocket, viste da tutti i dispositivi e mandate ai client OSC; impostazione «Persist Shared Variables» (salvate tra un riavvio e l'altro)
+- [x] F6 (RED `ba12211`, GREEN per modulo: `server/mixer.js`, Remote Script, server, pagina) Mixer: gruppi di tracce da `+G:NOME`/`+GROUP:NOME`, `Click`/`+CLICK` nel gruppo «Click», `+NEVERMUTE`/`+NM` mai muti (e in solo con ogni gruppo); mute, solo, volume e dissolvenza (`fadeTo`, 5 s da -inf a +6 dB) dalla web app e via OSC (`/mixer/<gruppo>/…`, `/click/mute|solo`); valori in uscita (`/mixer/names`, `muted`, `soloed`, `volume`, `isFading`, `meter`). Il Remote Script legge e comanda mute, solo, volume e livello delle tracce
+- [x] F10 Mixer su due computer: i comandi del mixer si copiano sulle riserve come gli altri (test `F10:`, verde da subito: mixer e dissolvenze sono comandi dell'utente, copiati come gli altri; ogni riserva fa la sua dissolvenza sul suo Live)
+- [x] F8 (RED `eff4aef`, GREEN per modulo: `server/script.js`, server, pagina) Script di progetto: JavaScript che OpenSet esegue all'avvio e quando lo si cambia (solo dal computer con OpenSet), con le funzioni di AbleSet: `log`, `sleep`, `now`, variabili locali e condivise, `osc`, `sendOsc`, `int`, `waitForOscChange`, `waitForOscValue`, `onOscChange`, `formatDuration`, `makeAscii`, `debounce`, `setTimeout`/`setInterval` e la loro cancellazione; registro dello script nella web app. Le funzioni MIDI di AbleSet mandano a un'uscita MIDI del computer: OpenSet non ne ha (il MIDI passa dal browser), quindi lo dicono nel registro
+- [x] F5 (registrazione come AbleSet: RED `3ea868d`, GREEN; Canvas: RED `a595789`, `595b5b1`, GREEN per modulo: `server/canvas.js`, server, pagina) Canvas: viste fatte di elementi messi a piacere, salvate nel progetto (cartella dei dati) e modificabili dalla web app. Elementi: pulsante (comandi OSC o script, link), etichetta con modelli (`${osc("/global/tempo")}`), orologio, misura corrente, divisore, embed, immagine (caricata nella cartella `Canvas/Resources`), campo di testo e cursore legati a una variabile, testi, pannello, scaletta, avanzamento del brano e della sezione, metronomo visivo; preset Play/Pausa, Play/Stop, Play, Pausa, Stop, Loop. Esclusi (hardware assente, già in «Non fattibili»): Audio Interfaces, Timecode LTC
+- [x] F1 (RED `a7b6777`, `31d511a`, GREEN per modulo: `setlist.js`, server, pagina) Brani aggiunti a mano dalla web app, senza progetto Live: nome, durata, note e testo; stanno in scaletta, contano nei tempi, mostrano il testo; Live non li suona
+- [x] F9 (RED `9e6edc0`, `ede0d38`, GREEN per modulo: `multifile.js`, `launch.js`, server, pagina) Progetti su più file `.als`: una cartella con un file per brano (nome con note, colori e durata come in AbleSet), la scaletta resta in `setlist.json` di OpenSet e non in `ableset.json` della cartella (il formato di AbleSet non è documentato: scriverlo potrebbe rovinare il file di AbleSet), il salto a un brano apre il suo file in Live; «Delay Before Jumping to Song File»; «Save Changes Before Loading Project»; mixer: «Sync Group Solos & Mutes Between Songs» e «Sync Group Volumes Between Songs»
+- [x] F11 (RED `35155b5`, GREEN; provato su questa rete Linux con una seconda istanza mDNS: trovato «OpenSet (prova)», porta 39051) OSC visibile in rete (Bonjour/mDNS): servizio `_osc._udp` sulla porta OSC, come AbleSet
+- [x] N1 (RED `368a010`, GREEN `8dbeabb`; CI della PR #10 verde: prova d'avvio su Linux, Windows e Mac Apple Silicon, build dei 4 programmi su macOS; controlli obbligatori del ruleset di `main` rinominati) Node recente dentro i programmi: Node 18 non riceve più aggiornamenti di sicurezza da aprile 2025 (pkg 5.8.1 non va oltre). Programmi fatti con Node SEA e un Node attuale per Windows, macOS (arm64 e Intel) e Linux, con versione nel nome, icona, firma ad hoc su macOS e guida dentro gli zip; prova di avvio in CI su ogni sistema
+- [x] V Revisione della 1.0.0 (agente + skill code-review, 2026-10-27): 24 punti, tutti corretti con TDD; CI della PR #10 di nuovo verde (era fallita per i test RED pubblicati prima dei GREEN). RED scritti (`0b35db7`, `6935489`). GREEN fatti: V6, V12, V18, V19, oscDiff (V16/V17/V23 lato modulo), V17 nello script. **Riprendere da qui (interrotto per limite d'uso, 2026-10-27):** GREEN nel server `server/index.js` per V2 (righe OSC: niente /subscribe, solo indirizzi locali), V3 (Safe Mode: handleOsc con source "web" per oscRun), V4 (tetto totale 32 KB variabili), V7 (riconoscere il file aperto: nome del primo brano, `prefs.multiFileLoaded` con i locator), V8 (oscRun con {address, args}), V9 (comandi dello script: source "script", non copiati), V10 (nomi riservati Windows, `cfg.resourcesMaxBytes` 200 MB), V11 (`st.sleep !== undefined`), V13 (Indietro con un Avanti in attesa), V14 (handleOsc usa currentIndex), V15 (saveCanvas rifiuta un nome esistente), V16/V17 pagine (sendOscValues con oscDiff, `removed`), V22 (oscValues una volta); poi pagina `public/index.html`: V1 (`cvExpr` tra `// canvas-expr: begin/end` + script del canvas in iframe sandbox con postMessage), V5 (`Object.prototype.hasOwnProperty.call`), V8 (sendOsc strutturato), V15 (nome libero da `state.canvases`, messaggio se il server rifiuta), V17 (`removed` cancella da CV.osc), V20 (testo > 20000: messaggio, pannello aperto), V21 (pointercancel manda il rilascio). Poi `npm test`, `npm run e2e`, Python, copertura, report TDD (sezione revisione), CI della PR #10, merge, tag `v1.0.0`, controllo release, controllo sessione «sciclub-donbosco», spegnimento
+  - [x] V1 Sicurezza: un tablet che può comandare salvava un canvas con JavaScript; aperto nel browser del computer con OpenSet, quel codice aveva i diritti del computer (cambiava lo script di progetto e quindi lanciava programmi). Correzione: i testi `${…}` usano un piccolo linguaggio sicuro (`cvExpr`, niente JavaScript), gli script dei pulsanti girano in un riquadro isolato (iframe sandbox) che può solo mandare comandi permessi
+  - [x] V2 Sicurezza: le righe OSC dei pulsanti contavano come «da questo computer»: `/subscribe` di un altro computer allo stato e OSC verso qualunque indirizzo. Correzione: niente `/subscribe`/`/unsubscribe`/`/getValues` dalle righe; verso altri programmi solo indirizzi della rete locale
+  - [x] V3 Safe Mode: un pulsante del canvas (oscRun) cambiava brano anche con il Safe Mode attivo
+  - [x] V4 Variabili condivise: si arrivava a 32 MB di valori, mandati a ogni pagina 10 volte al secondo: tetto sul totale
+  - [x] V5 iPad vecchi: la pagina usava `Object.hasOwn` (Safari 15.4): canvas fermo e valori «⚠»
+  - [x] V6 Windows: «Salva il set aperto» non trovava mai la finestra di Live (AppActivate per titolo): attivare Live per processo
+  - [x] V7 Più file: se il file era già aperto in Live o OpenSet ripartiva, nessun brano era corrente: riconoscere il file (nome del primo brano, file ricordato con i suoi locator)
+  - [x] V8 (server: oscRun con {address, args}; pagina: lo script del canvas lo usa) Script del canvas: un testo con «;» o a capo arrivava tagliato (o diventava un secondo comando): comando OSC strutturato `{address, args}`
+  - [x] V9 Riserva: i comandi dello script di progetto venivano copiati sulla riserva, che ha il suo script: eseguiti due volte
+  - [x] V10 Immagini del canvas: nomi riservati di Windows (`CON.png`) accettati e nessun tetto allo spazio usato
+  - [x] V11 Un pulsante con `//sleep 0` si fermava lì (il resto non partiva, errore nel log)
+  - [x] V12 Mixer: togliendo il solo al gruppo Click (con «Click +NM») mentre un altro gruppo è in solo, il click non era più in solo
+  - [x] V13 Più file con attesa: Avanti e poi Indietro non annullava l'Avanti, il file si apriva lo stesso
+  - [x] V14 Brani a mano: via OSC (`jumpBySongs`, `jumpBySections`, `jumpByLines`) si contava dalla posizione di Live, non dal brano a mano corrente
+  - [x] V15 (server: rifiuta un nome esistente; pagina: nome libero anche prima di leggere l'elenco, messaggio se il server rifiuta) Canvas: «Nuovo canvas» prima che l'elenco fosse caricato, o un cambio di nome, poteva sovrascrivere un canvas salvato senza chiedere
+  - [x] V16 (oscDiff in `canvas.js`; server da collegare) Canvas su Wi-Fi lento: un valore saltato restava sbagliato (segnato come mandato anche quando non partiva)
+  - [x] V17 (server, script e pagina) Canvas e script: un valore tolto (variabile azzerata, gruppo tolto) restava in `osc()`
+  - [x] V18 Bonjour: l'arrivederci alla chiusura probabilmente non partiva (socket chiuso subito dopo)
+  - [x] V19 Script di progetto: `shared()` poteva restituire un valore vecchio o uno rifiutato dal server
+  - [x] V20 Brani a mano: un testo oltre 20000 caratteri veniva rifiutato senza dirlo, a pannello già chiuso
+  - [x] V21 Canvas: il comando «al rilascio» non partiva se il tocco veniva interrotto (pointercancel)
+  - [x] V22-V23 (oscDiff unico in `canvas.js`, usato da pagine e script; valori OSC una volta per aggiornamento) Efficienza: valori OSC calcolati due volte per aggiornamento; lo stesso calcolo «cosa è cambiato» in tre punti
+  - [x] V24 (registrato nel report: non riscritti perché già pubblicati) Commit `5ba5088`, `88de48a`, `b5d16e9` senza aggiornamento di `TODO.md` (già pubblicati: non riscritti)
+- [ ] Rilascio 1.0.0: versione, CHANGELOG, guida, README, report TDD (copertura righe 97.25%, rami 93.16%) fatti; revisione corretta; PR #10 con CI verde; merge, tag `v1.0.0` e controllo della release in corso
 
 ### Da verificare su un computer vero (qui non si può provare)
+- 1.0.0, con Live 11/12 veri (qui il Live è finto): mixer (mute, solo, volume, livelli), registrazione, Remote Script nuovo
+- 1.0.0, progetti su più file su Mac e Windows: apertura del file in Live, Cmd+S / Ctrl+S per salvare (permesso Accessibilità sul Mac), riconoscimento del file caricato
+- 1.0.0, Bonjour su Mac (accanto a mDNSResponder) e Windows; TouchOSC che trova «OpenSet (computer)»
+- 1.0.0, programma per Mac Intel (la CI prova solo il Mac Apple Silicon)
 - C5: formato di `Library.cfg` (`<UserLibrary><LibraryProject><ProjectPath Value=…/><ProjectName Value=…/>`) su un Mac e un Windows con Live 11/12 e la User Library spostata: se il formato è diverso, OpenSet usa ancora le cartelle standard come prima
 
 - C7: tempo della prima connessione su Safari di un iPad vero (in Chrome 40-100 ms)

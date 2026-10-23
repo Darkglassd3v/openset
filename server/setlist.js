@@ -14,10 +14,9 @@
 const EPS = 0.001;
 // AbleSet's colors, for [color] in names
 const COLORS = ["gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose"];
-// one per column of Live's clip color palette (color index = row * 14 + column), like AbleSet
-// shortcut: matched by hue (column 0 holds Live's red, 6 its teal); AbleSet's own table is an
-// image in its docs, adjust if a user reports a mismatch
-const CLIP_COLORS = ["red", "orange", "amber", "yellow", "lime", "green", "teal", "cyan", "sky", "blue", "indigo", "purple", "pink", "gray"];
+// one per column of Live's clip color palette (color index = row * 14 + column): AbleSet's table
+// (its «Sections Track» page, columns 1-14)
+const CLIP_COLORS = ["red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "sky", "blue", "violet", "purple", "pink", "gray"];
 const END_NAMES = { "SONG END": "END", STOP: "STOP", AUTOSTOP: "STOP" };
 
 function parseName(raw) {
@@ -178,7 +177,35 @@ function assignKeys(songs, keyTimes) {
 // where each song is, for the next buildSetlist: a song added later with the same name
 // as one already there gets a new key instead of taking the old one's settings
 function keyTimesOf(songs) {
-  return Object.fromEntries(songs.map((s) => [s.key, [s.name, s.time]]));
+  // only songs on Live's timeline: not those added by hand, nor song files not loaded
+  return Object.fromEntries(songs.filter((s) => !s.manual && Number.isFinite(s.time)).map((s) => [s.key, [s.name, s.time]]));
+}
+
+// Songs added by hand in the web app ({ id, name, seconds, lyrics }), without a Live project:
+// in the setlist and its times, never under Live's playhead (time Infinity), and Live stops
+// before them (no play start)
+function manualSongs(list) {
+  return (list || []).map((m) => ({
+    key: "manual:" + m.id,
+    name: m.name,
+    manual: true,
+    lyrics: m.lyrics || "",
+    time: Infinity,
+    end: null,
+    endMarker: null,
+    jumpAfterStop: null,
+    stopDescription: null,
+    description: null,
+    tags: [],
+    duration: m.seconds,
+    nosong: false,
+    transpose: null,
+    classes: [],
+    color: null,
+    sections: [],
+    endAt: null,
+    playStart: null,
+  }));
 }
 
 // settings saved by OpenSet 0.6.1 and older use song names: one entry per song with that
@@ -358,7 +385,8 @@ function timing(songs, cur, beat, tempo, map) {
   const s = songs[cur];
   if (s) {
     const d = secs(s);
-    const played = map ? beatsToSeconds(map, s.playStart, beat) : (beat - s.playStart) * spb;
+    // a song played by hand: Live's position says nothing about it
+    const played = s.manual ? 0 : map ? beatsToSeconds(map, s.playStart, beat) : (beat - s.playStart) * spb;
     songElapsed = Math.min(d, Math.max(0, played));
     songLeft = d - songElapsed;
     if (!s.skip) setElapsed += songElapsed;
@@ -383,6 +411,7 @@ module.exports = {
   CLIP_COLORS,
   applyOrder,
   keyTimesOf,
+  manualSongs,
   migrateNames,
   setlistByKey,
   songAt,

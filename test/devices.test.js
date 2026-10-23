@@ -26,6 +26,7 @@ test("devices: AbleSet page names map to OpenSet views", () => {
   assert.equal(pageView("stage"), "stage");
   assert.equal(pageView("lyrics/leo"), "lyrics");
   assert.equal(pageView("settings"), "settings");
-  assert.equal(pageView("canvas/main"), null);
+  assert.equal(pageView("canvas/main"), "canvas"); // F5: the canvas name travels with the page
+  assert.equal(pageView("audio-interfaces"), null);
   assert.equal(pageView(undefined), null);
 });

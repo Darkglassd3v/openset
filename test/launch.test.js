@@ -66,3 +66,24 @@ test("liveRunning: asks the system whether Ableton Live is open", () => {
   assert.equal(liveRunning("win32", () => '"explorer.exe","1","Console","1","1 K"'), false);
   assert.equal(liveRunning("linux", () => "anything"), false); // no Live on Linux
 });
+
+test("F9: the command that saves Live's set before another file opens: Cmd+S on macOS, Ctrl+S on Windows", () => {
+  const { saveCommand } = require("../server/launch");
+  assert.equal(typeof saveCommand, "function", "saveCommand in server/launch.js");
+  const [mac, macArgs] = saveCommand("darwin");
+  assert.equal(mac, "osascript");
+  assert.match(macArgs.join(" "), /process "Live"/);
+  assert.match(macArgs.join(" "), /keystroke "s" using command down/);
+  const [win, winArgs] = saveCommand("win32");
+  assert.equal(win, "powershell");
+  assert.match(winArgs.join(" "), /AppActivate\(\$p\.Id\)/); // V6: by process, not by title
+  assert.match(winArgs.join(" "), /SendKeys\('\^s'\)/);
+  assert.equal(saveCommand("linux"), null); // no Live on Linux
+});
+
+test("V6: on Windows Live is found by its process, not by a window title it never has exactly", () => {
+  const { saveCommand } = require("../server/launch");
+  const [, args] = saveCommand("win32");
+  assert.match(args.join(" "), /Get-Process -Name 'Ableton Live\*'/);
+  assert.match(args.join(" "), /AppActivate\(\$p\.Id\)/);
+});

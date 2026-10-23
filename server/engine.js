@@ -29,7 +29,8 @@ function events(songs, idx, opts) {
   const goto = (at, target) =>
     near(target, at) ? null : { at, cmds: [{ cmd: "jump", time: target }], preroll: located(target) };
   const q = opts.queued;
-  const wait = !q ? null : opts.jumpMode === "dynamic" ? (q.type === "section" ? "section" : "song") : opts.jumpMode;
+  // q.wait: a jump the server holds for the end of a loop, whatever the jump mode
+  const wait = !q ? null : q.wait || (opts.jumpMode === "dynamic" ? (q.type === "section" ? "section" : "song") : opts.jumpMode);
   const endOfSong = (at) => {
     const n = nextSong(songs, idx);
     const queuedHere = wait === "song" || wait === "section";
@@ -59,7 +60,7 @@ function events(songs, idx, opts) {
   song.sections.forEach((sec, i) => {
     const f = sec.flags;
     if (f.PAUSE) add({ at: sec.time, cmds: [{ cmd: "stop" }, { cmd: "jump", time: sec.time }] });
-    // shortcut: +LOOPFULL behaves like +LOOP; manual jumps do not wait for the loop to finish
+    // +LOOPFULL loops like +LOOP; the server queues a jump made meanwhile for the loop's end
     const times = f.LOOP ?? f.LOOPFULL;
     if (times && times !== 1 && sec.end != null) {
       add({

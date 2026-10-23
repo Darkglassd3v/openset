@@ -44,3 +44,9 @@ test("decode: rejects garbage and unknown type tags", () => {
   assert.throws(() => decode(Buffer.from("hello")), /OSC/);
   assert.throws(() => decode(Buffer.concat([str("/x"), str(",q")])), /OSC/);
 });
+
+test("F8: encode sends {int: n} (int() in scripts) as an OSC integer", () => {
+  const buf = encode("/lights", [{ int: 3 }, 0.5]);
+  assert.equal(buf.toString("latin1").includes(",if"), true);
+  assert.deepEqual(decode(buf), [{ address: "/lights", args: [3, 0.5] }]);
+});

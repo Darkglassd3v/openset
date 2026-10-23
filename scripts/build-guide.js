@@ -226,6 +226,8 @@ ${table(["Vista", "A cosa serve"], [
   ["<b>Scaletta</b>", "Brani e sezioni: tocca per saltare. In fondo la durata totale e <i>Modifica scaletta</i>."],
   ["<b>Palco</b>", "Per il leggio o il monitor: brano, sezione, tempi rimanenti, prossimo brano, note."],
   ["<b>Testi</b>", "Testo e accordi del brano, con la riga corrente evidenziata."],
+  ["<b>Mixer</b>", "Volume, livello, muto e solo dei gruppi di tracce di Live."],
+  ["<b>Canvas</b>", "Le tue schermate (appare quando ne esiste almeno una)."],
   ["<b>Opzioni</b>", "Impostazioni di OpenSet e di questo dispositivo."],
 ])}
 <p>In alto la spia e lo stato di Live; un riquadro spiega il motivo se Live non è collegato. In basso:
@@ -321,6 +323,72 @@ ${h3("menu", "Menu OpenSet e controllo esterno")}
 <p><b>OSC</b> sulla porta UDP <code>39051</code> con gli indirizzi di AbleSet (<code>/global/play</code>, <code>/setlist/jumpToSong</code>,
 <code>/subscribe</code>…); <b>HTTP</b>: <code>POST /api/cmd</code> con JSON, es. <code>{"cmd":"next"}</code>. Un file <code>custom.css</code>
 nella cartella dei dati cambia lo stile.</p>`,
+    },
+    {
+      id: "ableset",
+      title: "Funzioni di AbleSet",
+      desc: "Mixer, Canvas, testi su più tracce, brani a mano, progetti su più file, script, variabili",
+      body: `
+${h3("mixer", "Mixer")}
+<p>Nel nome delle tracce di Live scrivi il gruppo, in maiuscolo: <code>Cori 1 +G:VOX</code>, anche più gruppi
+(<code>Synth +G:KEYS +G:BACKINGS</code>). Le tracce chiamate <code>Click</code> o con <code>+CLICK</code> formano il gruppo Click,
+quelle con <code>+NEVERMUTE</code> (o <code>+NM</code>) non si silenziano mai e vanno in solo con qualunque gruppo.
+La vista <b>Mixer</b> ha per ogni gruppo il livello, il volume e i tasti <b>M</b> (muto) e <b>S</b> (solo).
+Le tracce dentro un gruppo di Live chiuso non mandano il livello: aprilo.</p>
+<p>Via OSC: <code>/mixer/VOX/mute</code>, <code>/mixer/VOX/solo</code> (con <code>1</code>, <code>0</code> o <code>toggle</code>),
+<code>/mixer/VOX/volume 0.7</code>, <code>/mixer/VOX/fadeTo 0 2</code> (dissolvenza; 5 secondi per tutta la corsa a velocità 1,
+<code>previous</code> torna al volume di prima), <code>/click/mute</code>. Con due computer, il mixer della riserva segue quello del principale.</p>
+${h3("canvas", "Canvas")}
+${steps(
+  `Opzioni → <b>Canvas</b> → <b>Nuovo canvas</b>: si apre la schermata vuota da modificare. Dagli un nome.`,
+  `<b>+ Elemento</b> aggiunge un pulsante, un'etichetta, l'orologio, la misura, un divisore, una pagina web, un'immagine,
+   un campo di testo, un cursore, i testi, un pannello, la scaletta, l'avanzamento del brano o della sezione, il metronomo,
+   oppure un pulsante già pronto (Play/Pausa, Play/Stop, Play, Pausa, Stop, Loop, Registra).`,
+  `Trascina un elemento per spostarlo, l'angolo arancione per ingrandirlo, oppure scrivi colonna, riga, larghezza e altezza.
+   Sotto ci sono tutte le sue proprietà.`,
+  `<b>Salva</b>. La scheda <b>Canvas</b> mostra la schermata; con più canvas si sceglie dal menu.`
+)}
+<p>Un pulsante esegue comandi OSC, uno per riga, come in AbleSet: <code>/global/play</code>, <code>//sleep 500</code>,
+<code>//if !playing: /global/play</code> … <code>//endif</code>, anche verso altri programmi (<code>192.168.1.30:8000/luci 1</code>).
+I testi possono contenere valori dal vivo: <code>\${osc("/global/tempo")} BPM</code>, <code>\${shared("scena")}</code>.
+Un campo di testo o un cursore collegato a una variabile condivisa la cambia per tutti. Le immagini caricate finiscono nella
+cartella <code>Canvas/Resources</code> dei dati.</p>
+<p class="note">Per sicurezza, dato che un canvas può arrivare da qualunque dispositivo che comanda OpenSet: nei testi <code>\${…}</code>
+si usano solo <code>osc()</code>, <code>shared()</code>, <code>local()</code>, <code>formatDuration()</code>, <code>now()</code>,
+<code>Math.round()</code>, i calcoli e le condizioni (<code>? :</code>), non JavaScript libero; gli script dei pulsanti girano isolati
+dalla pagina; i comandi OSC verso altri programmi vanno solo a indirizzi della rete locale.</p>
+${h3("testi-tracce", "Testi su più tracce")}
+<p>Con più tracce <code>+LYRICS</code> (per esempio <code>Leo +LYRICS</code> e <code>Cori +LYRICS</code>) la vista Testi mostra
+<b>Traccia dei testi</b>: ogni dispositivo sceglie la sua. Via OSC arrivano <code>/lyrics/leo/current</code>, <code>previous</code> e
+<code>next</code>; <code>/lyrics/jumpByLines leo 1</code> salta di una riga.</p>
+${h3("brani-mano", "Brani aggiunti a mano")}
+<p>In <i>Modifica scaletta</i>, <b>+ Brano a mano</b>: titolo, durata (<code>3:20</code>) e testo. Il brano sta in scaletta con l'etichetta
+<i>a mano</i> e conta nei tempi; quando ci arrivi Live si ferma, e il testo appare nella vista Testi.</p>
+${h3("multi-file", "Progetti su più file")}
+${steps(
+  `Metti in una cartella un file <code>.als</code> per brano (anche in sottocartelle). Ogni file ha almeno un locator all'inizio e
+   uno <code>SONG END</code> o <code>STOP</code> alla fine. Nel nome del file puoi scrivere note, colore e durata, con il punto al posto
+   dei due punti: <code>Roads {capo 2} [blue] [3.42].als</code>.`,
+  `Opzioni → <b>Progetto su più file</b>, dal computer con OpenSet: scrivi il percorso della cartella e tocca <b>Usa questa cartella</b>.`,
+  `Scegliendo un brano, OpenSet salva il set aperto e apre il suo file in Live; alla fine del brano apre il successivo.
+   Sul Mac la prima volta il sistema chiede di permettere a OpenSet di controllare il computer (Privacy → Accessibilità).`
+)}
+<p>Opzioni utili: l'attesa prima di aprire il brano con Avanti e Indietro (premendo più volte si salta più avanti), e il mixer che
+porta mute, solo e volumi dei gruppi da un brano all'altro. Senza il salvataggio, Live chiede sul computer se salvare.</p>
+${h3("script", "Script di progetto")}
+<p>Opzioni → <b>Script di progetto</b>, dal computer con OpenSet: JavaScript che parte all'avvio e a ogni salvataggio, con le funzioni
+di AbleSet (<code>osc</code>, <code>sendOsc</code>, <code>onOscChange</code>, <code>waitForOscValue</code>, <code>setShared</code>,
+<code>log</code>, <code>setTimeout</code>…). Esempio: <code>onOscChange("/global/isPlaying", (v) =&gt; sendOsc("127.0.0.1:8000/luci", v));</code>
+Il registro sotto mostra i messaggi e gli errori con la riga. Le funzioni MIDI dicono che OpenSet non ha uscite MIDI sul computer.</p>
+${h3("variabili", "Variabili condivise, loop e registrazione")}
+<ul>
+  <li><code>/shared/scena verse</code> imposta una variabile vista da tutti i dispositivi e dagli script; Opzioni le elenca e può
+    conservarle dopo un riavvio.</li>
+  <li><code>+LOOPFULL</code> sul locator di una sezione: come <code>+LOOP</code>, ma un salto chiesto durante il loop aspetta la fine del giro.</li>
+  <li>Registrazione via OSC: <code>/global/startRecording</code> (parte anche la riproduzione), <code>/global/stopRecording</code>,
+    <code>/global/toggleRecording</code>.</li>
+  <li>L'OSC si annuncia in rete con Bonjour come «OpenSet (nome del computer)»: in TouchOSC basta <i>Browse</i>.</li>
+</ul>`,
     },
     {
       id: "log",

@@ -56,6 +56,12 @@ function encode(address, args = []) {
     if (typeof a === "string") {
       tags += "s";
       parts.push(str(a));
+    } else if (a && typeof a === "object" && Number.isInteger(a.int)) {
+      // int() in a project script: an OSC integer, not a float
+      const b = Buffer.alloc(4);
+      b.writeInt32BE(a.int);
+      tags += "i";
+      parts.push(b);
     } else {
       const b = Buffer.alloc(4);
       b.writeFloatBE(Number(a) || 0);

@@ -13,7 +13,7 @@ function matchDevices(devices, spec) {
 }
 
 // AbleSet page paths ("performance", "lyrics/leo", ...) to OpenSet's views
-const VIEWS = { setlist: "setlist", performance: "stage", stage: "stage", lyrics: "lyrics", settings: "settings" };
+const VIEWS = { setlist: "setlist", performance: "stage", stage: "stage", lyrics: "lyrics", mixer: "mixer", canvas: "canvas", settings: "settings" };
 function pageView(page) {
   return (typeof page === "string" && VIEWS[page.split("/")[0]]) || null;
 }

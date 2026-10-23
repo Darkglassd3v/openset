@@ -101,7 +101,7 @@ test("guide: base features first, news and fixes last; every chapter repeats its
   const html = guideHtml({ version: "2.0.0", changelog: CHANGELOG, logoSvg: "<svg></svg>" });
   const chapters = [...html.matchAll(/<section class="chapter" id="([\w-]+)">([\s\S]*?)<\/section>/g)];
   const ids = chapters.map((m) => m[1]);
-  assert.deepEqual(ids, ["benvenuto", "installazione", "live", "dispositivi", "uso", "opzioni", "log", "problemi", "novita"]);
+  assert.deepEqual(ids, ["benvenuto", "installazione", "live", "dispositivi", "uso", "opzioni", "ableset", "log", "problemi", "novita"]);
   // the section header sits in a <thead>: Chrome repeats it on every page of the chapter
   for (const [, id, body] of chapters) assert.match(body, /<thead>[\s\S]*class="band"[\s\S]*<\/thead>/, id);
   assert.match(chapters.at(-1)[2], /Novità e correzioni della versione 2\.0\.0/);

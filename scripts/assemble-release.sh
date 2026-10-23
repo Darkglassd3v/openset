@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds one zip per platform from the pkg programs: the program named with the
+# Builds one zip per platform from the programs of build-sea.mjs: the program named with the
 # version (inside "OpenSet <version>.app" on macOS), the app assets, the
 # Remote Script without its tests, VERSION.txt, INSTALL.txt and the PDF guide.
 # Used by the release workflow and by scripts/build-release-local.sh.

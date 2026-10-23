@@ -67,20 +67,38 @@ function normalizeLyrics(lyr, transpose) {
   return { lines, hasChords };
 }
 
-// shortcut: only the first +LYRICS track with lines in the song is shown; merge tracks if bands ask
-function lyricsFromClips(song, tracks) {
-  const end = song.end ?? Infinity;
+// The +LYRICS tracks, each with AbleSet's slug: the name without flags, lowercase, dashes
+// ("Backing Vox +LYRICS" -> backing-vox); a second track with the same slug gets "-2"
+function lyricsTracks(tracks) {
+  const out = [];
   for (const t of tracks || []) {
     const p = parseName(t.name);
     if (!p.flags.LYRICS) continue;
-    const lines = (t.clips || [])
+    const base =
+      p.name.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "lyrics";
+    let slug = base;
+    for (let n = 2; out.some((x) => x.slug === slug); n++) slug = `${base}-${n}`;
+    out.push({ slug, name: p.name });
+  }
+  return out;
+}
+
+// lines of the song from the +LYRICS track asked for (slug), or from the first one with lines
+function lyricsFromClips(song, tracks, slug) {
+  const end = song.end ?? Infinity;
+  const lyrical = (tracks || []).filter((t) => parseName(t.name).flags.LYRICS);
+  const all = lyricsTracks(tracks).map((x, i) => {
+    const lines = (lyrical[i].clips || [])
       .filter((c) => c.start >= song.time - EPS && c.start < end - EPS)
       .sort((a, b) => a.start - b.start)
       .map((c) => ({ beat: c.start - song.time, text: String(c.name || "") }));
-    if (lines.length) return { lines, transpose: p.transpose };
-  }
-  return null;
+    return { lines, transpose: parseName(lyrical[i].name).transpose, track: x.slug };
+  }).filter((x) => x.lines.length);
+  return all.find((x) => x.track === slug) || all[0] || null;
 }
+
+// a line as plain text (OSC, scripts): the chords taken out
+const lineText = (text) => parseChordPro(String(text ?? "")).map((s) => s.text).join("");
 
 module.exports = {
   lyricsFileName,
@@ -89,4 +107,6 @@ module.exports = {
   addTranspose,
   normalizeLyrics,
   lyricsFromClips,
+  lyricsTracks,
+  lineText,
 };

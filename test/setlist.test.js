@@ -269,9 +269,12 @@ test("cuesFromLive: a '>' locator on a section clip takes the clip's name and co
   assert.deepEqual(s.sections.map((x) => [x.name, x.color, x.time]), [["Verse", "red", 0], ["Chorus", "blue", 8]]);
 });
 
-test("CLIP_COLORS: one AbleSet color per column of Live's palette, by hue", () => {
-  // column 0 holds Live's pure red (second row), column 6 its teal
-  assert.deepEqual(CLIP_COLORS, ["red", "orange", "amber", "yellow", "lime", "green", "teal", "cyan", "sky", "blue", "indigo", "purple", "pink", "gray"]);
+test("F4: CLIP_COLORS is AbleSet's table, one color per column of Live's palette", () => {
+  // AbleSet's «Sections Track» page: Red (column 1) … Emerald (7), Teal (8), Violet (11) … Gray (14)
+  assert.deepEqual(CLIP_COLORS, ["red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "sky", "blue", "violet", "purple", "pink", "gray"]);
+  const clips = [6, 7, 10, 14 + 6].map((color, i) => ({ name: `S${i}`, start: i * 8, end: i * 8 + 8, color }));
+  const [s] = buildSetlist(cuesFromLive([{ name: "A", time: 0 }], [{ name: "Sections +CC", clips }]));
+  assert.deepEqual(s.sections.map((x) => x.color), ["emerald", "teal", "violet", "emerald"]);
 });
 
 test("cuesFromLive: no tracks returns the cues unchanged", () => {
@@ -526,4 +529,22 @@ test("T1: keys for a long set are found by name, not by comparing every song wit
   );
   buildSetlist(cues, times);
   assert.ok(reads <= 2 * cues.length, `${reads} reads for ${cues.length} songs`);
+});
+
+test("F1: songs added by hand: never under the playhead, counted in the times, placed by the order", () => {
+  const S = require("../server/setlist");
+  assert.equal(typeof S.manualSongs, "function", "manualSongs in server/setlist.js");
+  const live = S.buildSetlist([{ name: "A", time: 0 }, { name: "B", time: 16 }]);
+  const songs = [...live, ...S.manualSongs([{ id: "x1", name: "Acustica", seconds: 200, lyrics: "Prima\nSeconda" }])];
+  const list = S.applyOrder(songs, { order: ["A", "manual:x1", "B"] });
+  assert.deepEqual(list.map((s) => s.key), ["A", "manual:x1", "B"]);
+  assert.equal(list[1].manual, true);
+  assert.equal(list[1].name, "Acustica");
+  assert.equal(S.songAt(list, 1000), 2); // B: Live's playhead is never in a song played by hand
+  assert.equal(S.songSeconds(list[1], 120), 200);
+  assert.equal(S.nextSong(list, 0), 1);
+  assert.deepEqual(Object.keys(S.keyTimesOf(list)), ["A", "B"]);
+  const t = S.timing(list, 1, 0, 120); // the song by hand is the current one
+  assert.deepEqual([t.songLeft, t.songElapsed], [200, 0]);
+  assert.equal(t.setTotal, S.songSeconds(list[0], 120) + S.songSeconds(list[2], 120) + 200);
 });

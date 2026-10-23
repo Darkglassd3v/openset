@@ -17,7 +17,7 @@ except ImportError:
     # Legacy fallback
     from _Framework.ControlSurface import ControlSurface
 
-VERSION = "0.6.2"                    # OpenSet version, same as package.json (checked by the tests)
+VERSION = "1.0.0"                    # OpenSet version, same as package.json (checked by the tests)
 SERVER_ADDR = ("127.0.0.1", 39061)   # where the Node server listens; 39051 is AbleSet's OSC port
 LISTEN_PORT = 39050                  # where this script listens for commands
 TICK_MS = 100                        # state broadcast interval
@@ -30,13 +30,16 @@ MAX_COMMANDS = 64                    # commands read per tick: a flooding sender
 LOG_EVERY = 60                       # seconds before the same message is logged again
 
 
-# AbleSet color -> column of Live's palette (first row), for "Set Clip Colors from Names"
+# AbleSet color -> column of Live's palette (first row), for "Set Clip Colors from Names":
+# AbleSet's table (CLIP_COLORS in server/setlist.js); its other colors go to the closest column
 COLOR_COLUMNS = {
     "red": 0, "rose": 0, "orange": 1, "amber": 2, "yellow": 3, "lime": 4, "green": 5, "emerald": 6,
-    "teal": 6, "cyan": 7, "sky": 8, "blue": 9, "indigo": 10, "violet": 10, "purple": 11,
+    "teal": 7, "cyan": 7, "sky": 8, "blue": 9, "indigo": 10, "violet": 10, "purple": 11,
     "fuchsia": 12, "pink": 12, "gray": 13,
 }
 COLOR_TAG = re.compile(r"\[\s*([A-Za-z]+)\s*\]")
+# tracks AbleSet's mixer controls: in a group, Click/+CLICK, +NEVERMUTE/+NM (the server makes the groups)
+MIXER_TRACK = re.compile(r"\+(G|GROUP):|\+CLICK\b|\+NEVERMUTE\b|\+NM\b|^\s*click\s*($|\+)", re.I)
 
 
 def _is_sections(name):
@@ -80,6 +83,7 @@ class OpenSet(ControlSurface):
         self._chunk_id = int(time.time() * 1000) % 1000000000
         self._cues_sent = None    # last cues sent, resent only when they change
         self._clips_sent = None
+        self._mixer_sent = None   # last mixer report, sent again only when something moves
         self._soloed = []         # tracks soloed for a count-in, unsoloed after it
         self._nudge_ticks = 0     # ticks left with a phase nudge button held
         # sent only to OpenSet with the state: commands without it (another program) are ignored
@@ -123,8 +127,9 @@ class OpenSet(ControlSurface):
                 self._click_solo(False)  # a count-in solo never outlives playback, even without the server
             self._was_playing = playing
             if self._ticks % RESEND_EVERY == 0:
-                self._cues_sent = self._clips_sent = None
+                self._cues_sent = self._clips_sent = self._mixer_sent = None
             self._send_state(self._ticks % CUES_EVERY == 0 or self._cues_sent is None)
+            self._send_mixer()
             if self._ticks % CLIPS_EVERY == 0:
                 self._send_clips()
         except Exception as e:
@@ -183,6 +188,7 @@ class OpenSet(ControlSurface):
                 "loop": s.loop,
                 "loop_start": s.loop_start,
                 "loop_length": s.loop_length,
+                "record": bool(getattr(s, "record_mode", False)),
                 "quant": int(s.clip_trigger_quantization),
                 "script_version": VERSION,
                 "live_version": self._live_version,
@@ -227,6 +233,25 @@ class OpenSet(ControlSurface):
         key = json.dumps(tracks)
         if key != self._clips_sent and self._send({"type": "clips", "tracks": tracks}):
             self._clips_sent = key
+
+    def _send_mixer(self):
+        # AbleSet's mixer: mute, solo, volume and level of the tracks it controls
+        tracks = []
+        try:
+            for i, t in enumerate(self._song.tracks):
+                if not MIXER_TRACK.search(t.name):
+                    continue
+                tracks.append({
+                    "i": i, "name": t.name, "mute": bool(t.mute), "solo": bool(t.solo),
+                    "volume": round(t.mixer_device.volume.value, 3),
+                    "meter": round(getattr(t, "output_meter_level", 0.0), 3),
+                })
+        except Exception as e:
+            self._log("OpenSet mixer error: %s" % e)
+            return
+        key = json.dumps(tracks)
+        if key != self._mixer_sent and self._send({"type": "mixer", "tracks": tracks}):
+            self._mixer_sent = key
 
     @staticmethod
     def _clip(c):
@@ -280,6 +305,11 @@ class OpenSet(ControlSurface):
                 s.loop_start = float(msg["start"])
                 s.loop_length = float(msg["length"])
             s.loop = on
+        elif cmd == "record":
+            # AbleSet: starting to record also starts playback when Live is stopped
+            s.record_mode = bool(msg.get("on"))
+            if msg.get("play") and not s.is_playing:
+                s.start_playing()
         elif cmd == "tempo":
             s.tempo = float(msg.get("bpm", s.tempo))
         elif cmd == "quant":
@@ -296,6 +326,20 @@ class OpenSet(ControlSurface):
             s.nudge_up = up
             s.nudge_down = not up
             self._nudge_ticks = max(1, min(int(msg.get("ms", 200)), 1000) // TICK_MS)
+        elif cmd == "mixer":
+            # one track of AbleSet's mixer; the name guards against a track list changed meanwhile
+            tracks = list(s.tracks)
+            i = int(msg["track"])
+            if not 0 <= i < len(tracks) or tracks[i].name != msg.get("name"):
+                return
+            t = tracks[i]
+            if "mute" in msg:
+                t.mute = bool(msg["mute"])
+            if "solo" in msg:
+                t.solo = bool(msg["solo"])
+            if "volume" in msg:
+                p = t.mixer_device.volume
+                p.value = max(p.min, min(p.max, float(msg["volume"])))
         elif cmd == "clickSolo":
             self._click_solo(bool(msg.get("on")))
         elif cmd == "reEnableAutomation":
