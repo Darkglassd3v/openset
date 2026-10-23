@@ -2704,3 +2704,21 @@ test("F6: fadeTo moves the group volume step by step to the target, and «previo
   sendOsc(c, osc, "/mixer/VOX/fadeTo", ["previous", 10]);
   await waitFor(() => volumes().at(-1) === 0.85, "back to the volume before the fade");
 });
+
+test("F10: mixer commands and fades reach the backup computer's Live too", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  for (const c of [main, backup]) {
+    await c.connect();
+    c.sendLive({ type: "mixer", tracks: MIXER });
+    await c.at(9);
+    await waitFor(async () => (await c.state()).mixer?.length === 2, "mixer groups");
+  }
+  await main.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${backup.srv.httpPort}`] });
+  const muted = backup.expectCmd({ cmd: "mixer", track: 1, name: "Vox +G:VOX", mute: true });
+  await main.cmd({ cmd: "mixer", group: "VOX", mute: true });
+  await muted;
+  const faded = backup.expectCmd({ cmd: "mixer", track: 1, name: "Vox +G:VOX", volume: 0 });
+  await main.cmd({ cmd: "mixerFade", group: "VOX", to: 0, speed: 20 });
+  await faded;
+});
