@@ -464,3 +464,25 @@ test("F1: a song added by hand from the editor: in the setlist with its time, ch
   await page.locator("#setlist .song", { hasText: "Unplugged" }).locator('[data-act="deleteManual"]').click();
   await expect(page.locator("#setlist")).not.toContainText("Unplugged");
 });
+
+test("F9: a multi-file project is chosen in Opzioni on this computer; the songs come from the files", async ({ page, openset }) => {
+  const dir = path.join(openset.baseDir, "Show");
+  fs.mkdirSync(dir);
+  for (const f of ["01 Intro.als", "02 Roads.als"]) fs.writeFileSync(path.join(dir, f), "als");
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "settings");
+  await page.fill("#mfFolder", dir);
+  await page.click("#mfUse");
+  await expect(page.locator("#mfStatus")).toContainText("2 brani");
+  await page.selectOption("#songFileDelay", "1000");
+  await expect.poll(async () => (await openset.state()).settings.songFileDelay).toBe(1000);
+  await page.check('[data-set="mixerTransferGroupStates"]');
+  await expect.poll(async () => (await openset.state()).settings.mixerTransferGroupStates).toBe(true);
+  await tab(page, "setlist");
+  const roads = page.locator("#setlist .song", { hasText: "02 Roads" });
+  await expect(roads).toContainText("da aprire");
+  await tab(page, "settings");
+  await page.click("#mfOff");
+  await expect(page.locator("#mfStatus")).toContainText("spento");
+});
