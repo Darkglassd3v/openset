@@ -20,6 +20,7 @@ const S = require("./setlist");
 const L = require("./lyrics");
 const M = require("./mixer");
 const { createProjectScript } = require("./script");
+const C = require("./canvas");
 const osc = require("./osc");
 const { createEngine } = require("./engine");
 const { createMeter } = require("./meter");
@@ -94,6 +95,20 @@ const validSharedKey = (k) => typeof k === "string" && /^\S{1,128}$/.test(k);
 const validSharedValue = (v) => sharedScalar(v) || (Array.isArray(v) && v.length <= 64 && v.every(sharedScalar));
 const SHARED_MAX = 500;
 const SCRIPT_MAX = 200000; // characters of the project script
+const CANVAS_MAX = 50; // canvases per project
+// AbleSet's Canvas: saved canvases, each checked again by C.cleanCanvas
+function cleanCanvases(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
+  const out = {};
+  for (const [name, c] of Object.entries(obj).slice(0, CANVAS_MAX)) {
+    const clean = C.cleanCanvas(c);
+    if (clean && clean.name === name) out[name] = clean;
+  }
+  return out;
+}
+// images a canvas can show: uploaded ones are never SVG (it may carry scripts)
+const UPLOAD_IMAGE = /^[\p{L}\p{N} ._()-]{1,100}\.(png|jpe?g|gif|webp)$/iu;
+const SERVED_IMAGE = /\.(png|jpe?g|gif|webp|svg)$/i;
 function cleanShared(obj) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
   return Object.fromEntries(Object.entries(obj).filter(([k, v]) => validSharedKey(k) && validSharedValue(v)).slice(0, SHARED_MAX));
@@ -172,6 +187,7 @@ function defaultPrefs() {
     peers: [],
     auth: null, // web app password: { salt, iter, storedKey } (SCRAM), or { salt, hash } from OpenSet 0.6
     projectScript: "", // AbleSet's Project Script (JavaScript), run by server/script.js
+    canvases: {}, // AbleSet's Canvas: name -> { name, elements } (server/canvas.js)
   };
 }
 
@@ -269,6 +285,8 @@ function start(opts = {}) {
   const fadeFrom = new Map(); // group -> its volume before the last fade ("previous")
   let fadeTimer = null;
   let lyricsRev = 0;
+  let canvasRev = 0; // pages fetch /api/canvases again when it changes
+  const RES_DIR = path.join(cfg.baseDir, "Canvas", "Resources"); // canvas images, like AbleSet's folder
   let lastLiveMsg = 0;
   let lastStateAt = 0; // when the last state arrived: tells a seek from a late report
   let offlineProject = null; // from .als parsing
@@ -305,6 +323,7 @@ function start(opts = {}) {
       settings,
       shared: settings.persistSharedVariables ? cleanShared(saved.shared) : {},
       projectScript: typeof saved.projectScript === "string" && saved.projectScript.length <= SCRIPT_MAX ? saved.projectScript : "",
+      canvases: cleanCanvases(saved.canvases),
       keys: Object.keys(saved).length ? saved.keys === true : true, // no file yet: nothing from 0.6.1
       measuredKeys: Object.keys(saved).length ? (saved.measuredKeys ?? saved.keys) === true : true,
       keyTimes:
@@ -501,6 +520,8 @@ function start(opts = {}) {
       lyricsRev,
       lyricsTracks: L.lyricsTracks(currentTracks()), // each device picks one (AbleSet: by slug)
       shared: prefs.shared,
+      canvases: Object.keys(prefs.canvases),
+      canvasRev,
       mixer: M.mixerState(mixerTracks).map((g) => ({ ...g, isFading: fades.has(g.name) })),
       scriptInstall: cfg.scriptInstall,
       devices: [...devices.values()],
@@ -520,7 +541,44 @@ function start(opts = {}) {
     const st = publicState(list);
     broadcast({ type: "state", state: st });
     pushOsc(st);
-    if (projectScript.running()) projectScript.update(oscValues(st));
+    // pages showing a canvas (templates use osc()) and the project script get the OSC values
+    const pages = [...wss.clients].filter((c) => c.osc && c.readyState === 1);
+    if (!pages.length && !projectScript.running()) return;
+    const values = oscValues(st);
+    for (const ws of pages) sendOscValues(ws, values);
+    if (projectScript.running()) projectScript.update(values);
+  }
+
+  // only the values that changed since this page's last message
+  function sendOscValues(ws, values) {
+    const changes = {};
+    for (const [k, v] of Object.entries(values)) {
+      const json = JSON.stringify(v);
+      if (ws.oscSent[k] === json) continue;
+      ws.oscSent[k] = json;
+      changes[k] = v;
+    }
+    if (Object.keys(changes).length && ws.bufferedAmount < 1 << 20) ws.send(JSON.stringify({ type: "osc", values: changes }));
+  }
+
+  // AbleSet's OSC lines (canvas buttons): one command after the other, with //sleep, //if…
+  async function runOscLines(text) {
+    let skip = false;
+    const until = async (done) => {
+      for (let i = 0; i < 1200 && !done() && !closed; i++) await new Promise((r) => setTimeout(r, 50)); // 60 s at most
+    };
+    for (const st of C.parseOscLines(text)) {
+      if (closed) return;
+      if (st.endif) skip = false;
+      else if (st.if) {
+        const on = st.if === "playing" ? liveState.is_playing : st.if === "looping" ? liveState.loop : liveState.record;
+        skip = st.not ? !!on : !on;
+      } else if (skip) continue;
+      else if (st.sleep) await new Promise((r) => setTimeout(r, Math.min(st.sleep, 60000)));
+      else if (st.awaitJump) await until(() => !queued);
+      else if (st.awaitFileLoad) continue; // shortcut: no file loads until multi-file projects (F9)
+      else handleOsc({ address: st.address, args: st.args }, { address: "127.0.0.1", port: 0 });
+    }
   }
 
   // ---------------- project script (AbleSet) ----------------
@@ -773,7 +831,7 @@ function start(opts = {}) {
   // its own engine on the same set, and Ableton Link keeps the clocks together.
 
   // each backup runs its own project script: not copied
-  const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword", "setProjectScript", "stopProjectScript"]);
+  const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword", "setProjectScript", "stopProjectScript", "oscRun"]);
   const HOST_ONLY = new Set(["peers", "setPassword", "setProjectScript", "stopProjectScript"]); // the computer running OpenSet decides these
   // settings of this computer only: a backup keeps its own scene, network, windows…
   const LOCAL_SETTINGS = ["scene", "driftCorrection", "network", "openBrowser", "floatingWindow", "autoLaunchLive", "defaultView"];
@@ -1180,6 +1238,28 @@ function start(opts = {}) {
         sendToLive({ cmd: "record", on, ...(on && !liveState.is_playing ? { play: true } : {}) });
         return true;
       }
+      case "saveCanvas": {
+        // oldName: the canvas was renamed
+        const canvas = C.cleanCanvas(msg.canvas);
+        if (!canvas || JSON.stringify(canvas).length > 1e6) return false;
+        const canvases = { ...prefs.canvases };
+        if (typeof msg.oldName === "string" && msg.oldName !== canvas.name) delete canvases[msg.oldName];
+        if (!canvases[canvas.name] && Object.keys(canvases).length >= CANVAS_MAX) return false;
+        canvases[canvas.name] = canvas;
+        canvasRev++;
+        return setPrefs({ canvases });
+      }
+      case "deleteCanvas": {
+        if (typeof msg.name !== "string" || !Object.hasOwn(prefs.canvases, msg.name)) return false;
+        const { [msg.name]: _gone, ...canvases } = prefs.canvases;
+        canvasRev++;
+        return setPrefs({ canvases });
+      }
+      case "oscRun":
+        // not copied to the backups as such: each command inside is, when it runs
+        if (typeof msg.lines !== "string" || msg.lines.length > 20000) return false;
+        runOscLines(msg.lines).catch((e) => log.error(`[osc] ${e.message}`));
+        return true;
       case "setProjectScript":
         // this computer only (HOST_ONLY): the script runs here, with OpenSet's rights
         if (typeof msg.code !== "string" || msg.code.length > SCRIPT_MAX) return false;
@@ -1716,6 +1796,42 @@ function start(opts = {}) {
     return false;
   }
 
+  // canvases: read by every page; saved with the saveCanvas command
+  app.get("/api/canvases", (_req, res) => res.json(prefs.canvases));
+
+  // canvas images in Canvas/Resources (also put there by hand, in subfolders)
+  app.post("/api/canvas-resources", express.raw({ type: () => true, limit: "10mb" }), route(async (req, res) => {
+    if (!(await httpAllowed(req, res))) return;
+    const name = String(req.query.name || "");
+    if (!UPLOAD_IMAGE.test(name) || name.includes("..") || !Buffer.isBuffer(req.body)) return res.status(400).json({ error: "An image: .png, .jpg, .gif or .webp" });
+    fs.mkdirSync(RES_DIR, { recursive: true });
+    fs.writeFileSync(path.join(RES_DIR, name), req.body);
+    res.json({ path: name });
+  }));
+  app.get("/api/canvas-resources", (_req, res) => {
+    const found = [];
+    const walk = (dir, rel) => {
+      let entries = [];
+      try {
+        entries = fs.readdirSync(dir, { withFileTypes: true });
+      } catch {}
+      for (const e of entries) {
+        if (found.length >= 1000 || e.name.startsWith(".")) continue;
+        if (e.isDirectory()) walk(path.join(dir, e.name), rel + e.name + "/");
+        else if (SERVED_IMAGE.test(e.name)) found.push(rel + e.name);
+      }
+    };
+    walk(RES_DIR, "");
+    res.json(found.sort());
+  });
+  app.get(/^\/canvas-resources\/(.+)$/, (req, res) => {
+    const file = path.resolve(RES_DIR, req.params[0]);
+    if (!file.startsWith(RES_DIR + path.sep) || !SERVED_IMAGE.test(file) || !fs.existsSync(file)) return res.status(404).end();
+    // an SVG placed by hand and opened on its own cannot run scripts
+    res.set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox");
+    res.sendFile(file);
+  });
+
   // the project script, its log and whether it runs: on this computer only, like its editing
   app.get("/api/script", (req, res) => {
     if (!localReq(req)) return res.status(403).json({ error: "Only allowed from this computer" });
@@ -1793,6 +1909,12 @@ function start(opts = {}) {
       try { msg = JSON.parse(buf.toString()); } catch { return; }
       try {
         if (msg && msg.type === "device") deviceInfo(devices.get(ws), msg);
+        else if (msg && msg.type === "osc") {
+          // a page showing a canvas: all OpenSet's OSC values now, then what changes
+          ws.osc = !!msg.on;
+          ws.oscSent = {};
+          if (ws.osc) sendOscValues(ws, oscValues(publicState()));
+        }
         else if (msg && msg.type === "auth") wsAuth(ws, msg).catch((e) => log.error(`[auth] ${e.message}`));
         else if (!canControl(ws)) sendAccess(ws); // read-only: tell the browser to ask for the password
         else Promise.resolve(runCommand(msg, "web", ws.local)).catch((e) => log.error(`[ws] ${e.message}`));
