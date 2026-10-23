@@ -47,8 +47,10 @@ test("F8: osc() reads OpenSet's values; onOscChange, waitForOscChange and waitFo
     log("tempo 90");
   `, {}, { "/global/tempo": [120], "/global/timeSignature": [6, 8], "/global/isPlaying": [0] });
   await until(() => h.logs.length === 2, "first lines");
-  h.ps.update({ "/global/isPlaying": [1], "/setlist/activeSongName": ["Perché"] });
-  h.ps.update({ "/global/tempo": [90] });
+  // the server always passes every value; what is missing has gone away
+  const now = { "/global/tempo": [120], "/global/timeSignature": [6, 8], "/global/isPlaying": [1], "/setlist/activeSongName": ["Perché"] };
+  h.ps.update(now);
+  h.ps.update({ ...now, "/global/tempo": [90] });
   await until(() => h.logs.length === 5, "all lines");
   assert.deepEqual(h.logs, ["tempo 120 8 [6,8]", "playing 0", "playing 1", "song Perché", "tempo 90"]);
 });
@@ -117,13 +119,16 @@ test("V19: shared() keeps the script's own value until the server answers, and d
   h.ps = createProjectScript({
     onLog: (text) => h.logs.push(text),
     onError: (text) => h.errors.push(text),
-    onShared: (key, value) => (answers.push(key), key !== "rifiutata"), // the server's check
+    onShared: (key) => {
+      answers.push(key);
+      if (key === "n") h.ps.sharedChanged({ n: 4 }); // a copy sent before the server applied n = 5
+      return key !== "rifiutata"; // the server's check
+    },
     onSendOsc: () => {},
   });
   t.after(() => h.ps.stop());
   h.ps.start(`setShared("n", 5);\nsetShared("rifiutata", "x".repeat(5));\nawait sleep(80);\nlog(shared("n"), shared("rifiutata", "no"));`, { n: 4 }, {});
   await until(() => answers.length === 2, "both sets reached the server");
-  h.ps.sharedChanged({ n: 4 }); // an older copy, sent before the server applied n = 5
   await until(() => h.logs.length === 1, "the line");
   assert.deepEqual(h.logs, ["5 no"]);
 });

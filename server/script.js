@@ -7,6 +7,7 @@
 // the shared variables; what the script does comes back as messages.
 
 const { Worker } = require("worker_threads");
+const { oscDiff } = require("./canvas");
 
 // AbleSet: formatDuration(135) is "02:15"
 function formatDuration(seconds) {
@@ -26,7 +27,15 @@ function workerMain(formatDuration, makeAscii) {
   const { parentPort, workerData } = require("worker_threads");
   const vm = require("vm");
   const values = workerData.values; // OSC address -> args
-  let shared = workerData.shared;
+  // shared variables: the server's copy, and the script's own changes it has not answered yet
+  let server = workerData.shared;
+  const pending = new Map(); // key -> value (undefined: reset)
+  let shared = server;
+  const mine = () => {
+    shared = { ...server };
+    for (const [k, v] of pending) if (v === undefined) delete shared[k];
+    else shared[k] = v;
+  };
   const locals = new Map();
   const watchers = new Map(); // OSC address -> Set of functions called with the new args
   const send = (m) => parentPort.postMessage(m);
@@ -60,13 +69,31 @@ function workerMain(formatDuration, makeAscii) {
     return () => watchers.get(key).delete(fn);
   };
   parentPort.on("message", (m) => {
-    if (m.type === "shared") shared = m.shared;
+    if (m.type === "shared") {
+      server = m.shared;
+      mine();
+    }
+    if (m.type === "sharedAck") {
+      // accepted: the server has it now; refused: back to the server's value
+      if (m.ok) server = pending.get(m.key) === undefined ? omit(server, m.key) : { ...server, [m.key]: pending.get(m.key) };
+      pending.delete(m.key);
+      mine();
+    }
     if (m.type !== "values") return;
     for (const [k, v] of Object.entries(m.changes)) {
       values[k] = v;
       for (const fn of [...(watchers.get(k) || [])]) fn(v);
     }
+    // a value that went away: osc() gives undefined, watchers get an empty list
+    for (const k of m.removed || []) {
+      delete values[k];
+      for (const fn of [...(watchers.get(k) || [])]) fn([]);
+    }
   });
+  const omit = (o, k) => {
+    const { [k]: _gone, ...rest } = o;
+    return rest;
+  };
   let midiSaid = false;
   const noMidi = () => {
     if (!midiSaid) log("MIDI non disponibile: OpenSet non ha uscite MIDI sul computer (il MIDI passa dal browser)");
@@ -84,13 +111,14 @@ function workerMain(formatDuration, makeAscii) {
     local: (k, fallback) => (locals.has(k) ? locals.get(k) : fallback),
     resetLocal: (k) => void (k === undefined ? locals.clear() : locals.delete(k)),
     setShared: (key, value) => {
-      shared = { ...shared, [key]: value };
+      pending.set(key, value);
+      mine();
       send({ type: "setShared", key, value });
     },
     shared: (k, fallback) => (Object.hasOwn(shared, k) ? shared[k] : fallback),
     resetShared: (key) => {
-      const { [key]: _gone, ...rest } = shared;
-      shared = rest;
+      pending.set(key, undefined);
+      mine();
       send({ type: "resetShared", key });
     },
     osc,
@@ -165,8 +193,11 @@ function createProjectScript({ onLog, onError, onShared, onSendOsc }) {
       if (worker !== w) return; // a message from a script already replaced
       if (m.type === "log") onLog(m.text);
       else if (m.type === "error") onError(m.text);
-      else if (m.type === "setShared") onShared(m.key, m.value);
-      else if (m.type === "resetShared") onShared(m.key, undefined);
+      else if (m.type === "setShared" || m.type === "resetShared") {
+        // the server's answer: the script keeps its own value until then
+        const ok = onShared(m.key, m.type === "setShared" ? m.value : undefined) !== false;
+        if (worker === w) w.postMessage({ type: "sharedAck", key: m.key, ok });
+      }
       else if (m.type === "sendOsc") onSendOsc(m.command, m.args);
     });
     w.on("error", (e) => worker === w && onError("Errore: " + e.message));
@@ -174,17 +205,12 @@ function createProjectScript({ onLog, onError, onShared, onSendOsc }) {
       if (worker === w) worker = null;
     });
   }
-  // OpenSet's OSC values now: only the changed ones go to the script
+  // OpenSet's OSC values now: only what changed, and what went away, goes to the script
   function update(values) {
     if (!worker) return;
-    const changes = {};
-    for (const [k, v] of Object.entries(values)) {
-      const json = JSON.stringify(v);
-      if (sent[k] === json) continue;
-      changes[k] = v;
-      sent[k] = json;
-    }
-    if (Object.keys(changes).length) worker.postMessage({ type: "values", changes });
+    const { changes, removed, next } = oscDiff(sent, values);
+    sent = next;
+    if (Object.keys(changes).length || removed.length) worker.postMessage({ type: "values", changes, removed });
   }
   const sharedChanged = (shared) => worker && worker.postMessage({ type: "shared", shared });
   return { start, stop, update, sharedChanged, running: () => !!worker };
