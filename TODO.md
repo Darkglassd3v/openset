@@ -16,9 +16,8 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 Richiesta dell'utente (2026-10-23, prima di andare a dormire): «correggi tutte le cose … FAI TUTTO NON LASCIARE NIENTE IN SOSPESO», piano con `ecc:plan` e `ecc:tdd-workflow`, bug descritti in parole semplici; se qualcosa non va si segna qui «da verificare»; **alla fine spegnere il PC (`systemctl poweroff`) comunque**.
 
-- [ ] v0.6.2 — correzioni (sezione «v0.6.2» sotto), release
-- [ ] v0.7.0 — funzioni di AbleSet che mancavano (sezione «v0.7.0» sotto), release
-- [ ] v0.8.0 — Node recente dentro i programmi (sezione «v0.8.0» sotto), release
+- [x] v0.6.2 — correzioni (sezione «v0.6.2» sotto): PR #9 (merge `d22b983`), tag `v0.6.2`
+- [ ] 1.0.0 — funzioni di AbleSet che mancavano e Node recente dentro i programmi, in un'unica versione (decisione dell'utente, 2026-10-24: «rilasciarle su una 1.0.0 e taggare tutto»); sezione «v1.0.0» sotto, branch `release/v1.0.0`
 - [ ] fine: `/ecc:ck save`, memoria aggiornata, spegnere il PC
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` pubblicato il 2026-10-24 (la vecchia `release.yml` partita dal tag annullata subito, run 39938930663; l'unico artefatto che aveva caricato, 17,8 MB, cancellato); nessuna release con gli zip (decisione dell'utente: la 0.6.x la sostituisce, e sarebbe apparsa come «ultima»); zip e guida restano in `build/release-0.5.1/`
@@ -120,25 +119,24 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - [x] U9 Semplificazione: la scelta «per chiave o per nome» stava in due punti (`migrate` e `setlistByKey`); ora in uno.
   - [x] U10 Commit `caa0365`: mette insieme più correzioni (tetto della memoria del limitatore, avviso HTTP nella guida, CHANGELOG, password non bloccante, password illeggibile, corse). Già pubblicato sul branch della PR: non riscritto (servirebbe un force push); da qui in avanti un commit per modulo.
 
-### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
-Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.
+### v1.0.0 — funzioni di AbleSet e Node recente (branch `release/v1.0.0`)
+Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce. Ogni
+funzione: RED, GREEN, TODO aggiornato in ogni commit; quello che riguarda Live si prova con il
+Live finto dei test e va nella lista «Da verificare su un computer vero».
 
-- [ ] F1 Brani aggiunti a mano dalla UI, senza progetto Live (scaletta, note e testi)
-- [ ] F2 `+LOOPFULL` come in AbleSet (oggi si comporta come `+LOOP`)
-- [ ] F3 Testi da più tracce `+LYRICS` (oggi solo la prima)
-- [ ] F4 Colori delle clip con la tabella di AbleSet (oggi per tonalità)
-- [ ] F5 Canvas: viste personalizzate fatte di riquadri
-- [ ] F6 Mixer: volumi, mute e solo delle tracce dalla UI
-- [ ] F7 Variabili condivise (e Persist Shared Variables)
-- [ ] F8 Script di progetto
-- [ ] F9 Progetti su più file `.als` (e Delay Before Jumping to Song File)
-- [ ] F10 Due computer: solo e volumi dei gruppi sincronizzati
-- [ ] F11 OSC visibile in rete (Bonjour)
-- [ ] Rilascio 0.7.0 (guida con tutte le novità)
-
-### v0.8.0 — Node recente dentro i programmi (branch `release/v0.8.0`)
-- [ ] I programmi contengono Node 18, che non riceve più aggiornamenti di sicurezza da aprile 2025 (pkg 5.8.1 non va oltre). Passare a Node SEA con un Node attuale, per Windows, macOS (arm64 e Intel) e Linux, con icona, firma ad hoc e guida dentro gli zip; prova di avvio in CI su ogni sistema
-- [ ] Rilascio 0.8.0
+- [ ] F4 Colori delle clip (`+CC`/`+CLIPCOLORS` sulla traccia Sections): le colonne 7, 8 e 11 della tavolozza di Live davano teal, cyan e indigo; AbleSet dà Emerald, Teal e Violet (tabella della sua pagina «Sections Track»: Red, Orange, Amber, Yellow, Lime, Green, Emerald, Teal, Sky, Blue, Violet, Purple, Pink, Gray)
+- [ ] F2 `+LOOPFULL`: oggi è uguale a `+LOOP`. In AbleSet un salto chiesto mentre suona un `+LOOPFULL` aspetta la fine del giro (il loop si spegne e il salto parte alla fine della sezione); con `+LOOP` si salta come sempre
+- [ ] F3 Testi da più tracce `+LYRICS`: oggi si vede solo la prima. Ogni traccia ha un nome breve (slug: «Backing Vox +LYRICS» → `backing-vox`); ogni dispositivo sceglie quale vedere; OSC `/lyrics/<slug>/previous|current|next` in uscita e `/lyrics/jumpByLines <slug> <n>` in entrata
+- [ ] F7 Variabili condivise: `/shared/<nome> valore…` via OSC, HTTP e WebSocket, viste da tutti i dispositivi e mandate ai client OSC; impostazione «Persist Shared Variables» (salvate tra un riavvio e l'altro)
+- [ ] F6 Mixer: gruppi di tracce da `+G:NOME`/`+GROUP:NOME`, `Click`/`+CLICK` nel gruppo «Click», `+NEVERMUTE`/`+NM` mai muti (e in solo con ogni gruppo); mute, solo, volume e dissolvenza (`fadeTo`, 5 s da -inf a +6 dB) dalla web app e via OSC (`/mixer/<gruppo>/…`, `/click/mute|solo`); valori in uscita (`/mixer/names`, `muted`, `soloed`, `volume`, `isFading`, `meter`). Il Remote Script legge e comanda mute, solo, volume e livello delle tracce
+- [ ] F10 Mixer su due computer: i comandi del mixer si copiano sulle riserve come gli altri
+- [ ] F8 Script di progetto: JavaScript che OpenSet esegue all'avvio e quando lo si cambia (solo dal computer con OpenSet), con le funzioni di AbleSet: `log`, `sleep`, `now`, variabili locali e condivise, `osc`, `sendOsc`, `int`, `waitForOscChange`, `waitForOscValue`, `onOscChange`, `formatDuration`, `makeAscii`, `debounce`, `setTimeout`/`setInterval` e la loro cancellazione; registro dello script nella web app. Le funzioni MIDI di AbleSet mandano a un'uscita MIDI del computer: OpenSet non ne ha (il MIDI passa dal browser), quindi lo dicono nel registro
+- [ ] F5 Canvas: viste fatte di elementi messi a piacere, salvate nel progetto (cartella dei dati) e modificabili dalla web app. Elementi: pulsante (comandi OSC o script, link), etichetta con modelli (`${osc("/global/tempo")}`), orologio, misura corrente, divisore, embed, immagine (caricata nella cartella `Canvas/Resources`), campo di testo e cursore legati a una variabile, testi, pannello, scaletta, avanzamento del brano e della sezione, metronomo visivo; preset Play/Pausa, Play/Stop, Play, Pausa, Stop, Loop. Esclusi (hardware assente, già in «Non fattibili»): Audio Interfaces, Timecode LTC
+- [ ] F1 Brani aggiunti a mano dalla web app, senza progetto Live: nome, durata, note e testo; stanno in scaletta, contano nei tempi, mostrano il testo; Live non li suona
+- [ ] F9 Progetti su più file `.als`: una cartella con un file per brano (nome con note, colori e durata come in AbleSet), scaletta salvata in `ableset.json` nella cartella, il salto a un brano apre il suo file in Live; «Delay Before Jumping to Song File»; «Save Changes Before Loading Project»; mixer: «Sync Group Solos & Mutes Between Songs» e «Sync Group Volumes Between Songs»
+- [ ] F11 OSC visibile in rete (Bonjour/mDNS): servizio `_osc._udp` sulla porta OSC, come AbleSet
+- [ ] N1 Node recente dentro i programmi: Node 18 non riceve più aggiornamenti di sicurezza da aprile 2025 (pkg 5.8.1 non va oltre). Programmi fatti con Node SEA e un Node attuale per Windows, macOS (arm64 e Intel) e Linux, con versione nel nome, icona, firma ad hoc su macOS e guida dentro gli zip; prova di avvio in CI su ogni sistema
+- [ ] Rilascio 1.0.0: CHANGELOG (Novità e Correzioni), guida con tutte le novità, README, report TDD, revisioni corrette, PR, tag `v1.0.0`
 
 ### Da verificare su un computer vero (qui non si può provare)
 - C5: formato di `Library.cfg` (`<UserLibrary><LibraryProject><ProjectPath Value=…/><ProjectName Value=…/>`) su un Mac e un Windows con Live 11/12 e la User Library spostata: se il formato è diverso, OpenSet usa ancora le cartelle standard come prima
