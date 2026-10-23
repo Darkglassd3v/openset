@@ -353,6 +353,10 @@ ${steps(
 I testi possono contenere valori dal vivo: <code>\${osc("/global/tempo")} BPM</code>, <code>\${shared("scena")}</code>.
 Un campo di testo o un cursore collegato a una variabile condivisa la cambia per tutti. Le immagini caricate finiscono nella
 cartella <code>Canvas/Resources</code> dei dati.</p>
+<p class="note">Per sicurezza, dato che un canvas può arrivare da qualunque dispositivo che comanda OpenSet: nei testi <code>\${…}</code>
+si usano solo <code>osc()</code>, <code>shared()</code>, <code>local()</code>, <code>formatDuration()</code>, <code>now()</code>,
+<code>Math.round()</code>, i calcoli e le condizioni (<code>? :</code>), non JavaScript libero; gli script dei pulsanti girano isolati
+dalla pagina; i comandi OSC verso altri programmi vanno solo a indirizzi della rete locale.</p>
 ${h3("testi-tracce", "Testi su più tracce")}
 <p>Con più tracce <code>+LYRICS</code> (per esempio <code>Leo +LYRICS</code> e <code>Cori +LYRICS</code>) la vista Testi mostra
 <b>Traccia dei testi</b>: ogni dispositivo sceglie la sua. Via OSC arrivano <code>/lyrics/leo/current</code>, <code>previous</code> e
