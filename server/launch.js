@@ -54,4 +54,15 @@ function openBrowser(url, platform = process.platform, spawn = childProcess.spaw
   }
 }
 
-module.exports = { openCommand, parseArgs, openBrowser, appCommand, liveRunning };
+// AbleSet: Save Changes Before Loading Project. Live has no "save" in its API: Live is brought
+// to the front and gets Cmd+S / Ctrl+S (macOS asks once to allow OpenSet to control the computer)
+function saveCommand(platform) {
+  if (platform === "darwin")
+    return ["osascript", ["-e", 'tell application "System Events" to tell process "Live" to set frontmost to true', "-e", "delay 0.3",
+      "-e", 'tell application "System Events" to keystroke "s" using command down']];
+  if (platform === "win32")
+    return ["powershell", ["-NoProfile", "-Command", "$w = New-Object -ComObject WScript.Shell; if ($w.AppActivate('Ableton Live')) { Start-Sleep -Milliseconds 300; $w.SendKeys('^s') }"]];
+  return null;
+}
+
+module.exports = { openCommand, parseArgs, openBrowser, appCommand, liveRunning, saveCommand };
