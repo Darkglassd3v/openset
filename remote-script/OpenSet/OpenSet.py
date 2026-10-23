@@ -30,10 +30,11 @@ MAX_COMMANDS = 64                    # commands read per tick: a flooding sender
 LOG_EVERY = 60                       # seconds before the same message is logged again
 
 
-# AbleSet color -> column of Live's palette (first row), for "Set Clip Colors from Names"
+# AbleSet color -> column of Live's palette (first row), for "Set Clip Colors from Names":
+# AbleSet's table (CLIP_COLORS in server/setlist.js); its other colors go to the closest column
 COLOR_COLUMNS = {
     "red": 0, "rose": 0, "orange": 1, "amber": 2, "yellow": 3, "lime": 4, "green": 5, "emerald": 6,
-    "teal": 6, "cyan": 7, "sky": 8, "blue": 9, "indigo": 10, "violet": 10, "purple": 11,
+    "teal": 7, "cyan": 7, "sky": 8, "blue": 9, "indigo": 10, "violet": 10, "purple": 11,
     "fuchsia": 12, "pink": 12, "gray": 13,
 }
 COLOR_TAG = re.compile(r"\[\s*([A-Za-z]+)\s*\]")
