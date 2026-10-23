@@ -3,6 +3,25 @@
 Tutte le novità di OpenSet, dalla versione più recente. La guida PDF di ogni
 rilascio riporta la sezione della sua versione.
 
+## 1.0.0 — 2026-10-27
+
+### Novità
+
+- **Mixer**: una nuova vista con un cursore, il livello e i tasti M e S per ogni gruppo di tracce, come in AbleSet. I gruppi nascono dal nome delle tracce in Live (`+G:VOX`), le tracce `Click` formano il gruppo Click e quelle `+NEVERMUTE` non si silenziano mai. Si comandano anche via OSC (`/mixer/VOX/mute`, `fadeTo` per le dissolvenze) e il computer di riserva li segue.
+- **Canvas**: schermate fatte a piacere con pulsanti, testi con valori dal vivo, cursori, orologio, misura, metronomo, avanzamento, testi delle canzoni, immagini e pagine web. Si creano e si modificano dalla web app, con i pulsanti già pronti di AbleSet (Play/Pausa, Stop, Loop, Registra).
+- **Più tracce di testi**: con due cantanti ogni iPad sceglie la sua traccia `+LYRICS`. I testi di una ripresa con lo stesso nome sono finalmente i suoi.
+- **Brani a mano**: dall'editor si aggiunge un brano senza progetto Live (per esempio acustico), con titolo, durata e testo. Conta nei tempi della scaletta e Live si ferma prima di lui.
+- **Progetti su più file**: un file `.als` per brano in una cartella, come in AbleSet. Scegliendo un brano OpenSet salva il set aperto e apre il suo file in Live; il mixer può passare da un brano all'altro.
+- **Script di progetto**: JavaScript che reagisce a quello che succede (`onOscChange`) e manda comandi, anche ad altri programmi via OSC, con le funzioni di AbleSet.
+- **Variabili condivise**: `/shared/nome valore` via OSC, viste da tutti i dispositivi e, se vuoi, conservate dopo un riavvio.
+- **`+LOOPFULL`**: un salto chiesto durante il loop aspetta che il giro finisca.
+- **Registrazione e Bonjour**: `/global/startRecording`, `stopRecording`, `toggleRecording` via OSC. L'OSC si annuncia in rete, così TouchOSC trova OpenSet da solo.
+- **Node 24 nei programmi**: i programmi ora contengono il Node attuale, che riceve gli aggiornamenti di sicurezza (prima c'era Node 18, senza più aggiornamenti).
+
+### Correzioni
+
+- **Colori delle clip**: con `+CC` le colonne 7, 8 e 11 della tavolozza di Live ora danno Emerald, Teal e Violet come in AbleSet. Anche «Colori delle clip dai nomi» mette `[teal]` nella colonna giusta.
+
 ## 0.6.2 — 2026-10-24
 
 ### Correzioni
