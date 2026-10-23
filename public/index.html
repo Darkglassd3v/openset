@@ -473,6 +473,23 @@
     </div>
     <p id="alsStatus" role="status"></p>
 
+    <h2>Progetto su più file</h2>
+    <p>Come in AbleSet: una cartella con un file .als per brano (anche in sottocartelle). Nel nome del file si
+      scrivono note, colore e durata, con il punto al posto dei due punti: <span class="mono">Roads {capo 2} [blue] [3.42].als</span>.
+      Scegliendo un brano, OpenSet salva il set aperto e apre il suo file in Live. Solo dal computer su cui gira OpenSet.</p>
+    <div class="row">
+      <input class="field" id="mfFolder" placeholder="/percorso/della/cartella" aria-label="Cartella del progetto su più file">
+      <button class="btn" id="mfUse">Usa questa cartella</button>
+      <button class="btn" id="mfOff">Disattiva</button>
+    </div>
+    <p id="mfStatus" role="status"></p>
+    <label>Attesa prima di aprire il brano con «Avanti» e «Indietro» <select id="songFileDelay">
+      <option value="0">Nessuna</option><option value="500">0,5 s</option><option value="1000">1 s</option>
+      <option value="2000">2 s</option><option value="3000">3 s</option></select></label>
+    <label><input type="checkbox" data-set="saveBeforeLoading"> Salva il set aperto prima di aprire un altro brano (sul Mac la prima volta va permesso in Privacy → Accessibilità)</label>
+    <label><input type="checkbox" data-set="mixerTransferGroupStates"> Mixer: porta mute e solo dei gruppi da un brano all'altro</label>
+    <label><input type="checkbox" data-set="mixerTransferGroupVolumes"> Mixer: porta anche i volumi dei gruppi</label>
+
     <h2>Questo dispositivo</h2>
     <label><input type="checkbox" data-dev="speakSongs"> Annuncia a voce il brano corrente</label>
     <label><input type="checkbox" data-dev="speakSections"> Annuncia la sezione successiva (due battute prima)</label>
@@ -1157,7 +1174,7 @@ function buildSetlist() {
         <button class="song-head" data-act="song" data-i="${i}">
           <span class="num">${s.number != null ? s.number : "·"}</span>
           <span class="song-main">
-            <span class="song-name">${esc(s.name)}${s.stopAfter || s.endMarker === "STOP" ? '<span class="stop-tag">stop</span>' : ""}${s.manual ? '<span class="stop-tag">a mano</span>' : ""}</span>
+            <span class="song-name">${esc(s.name)}${s.stopAfter || s.endMarker === "STOP" ? '<span class="stop-tag">stop</span>' : ""}${s.manual ? '<span class="stop-tag">a mano</span>' : ""}${s.file && s.time == null ? `<span class="stop-tag">${state.multiFile.loading === s.key ? "apertura…" : "da aprire"}</span>` : ""}</span>
             ${s.description || s.tags.length || s.notes ? `<span class="song-desc">${esc([s.description, s.tags.map((x) => "#" + x).join(" "), s.notes].filter(Boolean).join(" · "))}</span>` : ""}
           </span>
           <span class="song-time mono" data-i="${i}">${s.seconds ? fmt(s.seconds) : "—"}</span>
@@ -2192,6 +2209,8 @@ $("canvas").addEventListener("change", async (ev) => {
 const cvMessage = (text) => { const m = $("cvMsg"); if (m) m.textContent = text; };
 
 $("cvNew").onclick = newCanvas;
+$("mfUse").onclick = () => send({ cmd: "multiFile", folder: $("mfFolder").value.trim() });
+$("mfOff").onclick = () => send({ cmd: "multiFile", folder: "" });
 $("cvList").addEventListener("click", (e) => { const b = e.target.closest("[data-canvas]"); if (b) openCanvas(b.dataset.canvas); });
 
 // ---------- spoken cues (Web Speech API, on this device) ----------
@@ -2226,6 +2245,11 @@ function renderSettings() {
     const p = state.peers[+el.dataset.i];
     if (p) el.textContent = p.drift;
   });
+  const mf = state.multiFile;
+  $("mfStatus").textContent = mf.folder
+    ? `Cartella ${mf.folder} · ${songCount(state.setlist.filter((s) => s.file).length)}` +
+      (mf.loading ? ` · apertura in Live: ${mf.loading}` : mf.loaded ? ` · aperto in Live: ${mf.loaded}` : " · nessun file aperto da OpenSet")
+    : "Progetto su più file spento: la scaletta viene dai locator del set aperto in Live.";
   $("sharedList").textContent = Object.entries(state.shared || {}).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(" · ") || "nessuna";
   const cvNames = JSON.stringify(state.canvases);
   if ($("cvList").dataset.k !== cvNames) {
@@ -2245,6 +2269,8 @@ function buildSettings() {
   if (!("speechSynthesis" in window)) $("speechStatus").textContent = "Sintesi vocale non disponibile in questo browser.";
   $("quant").value = String(state.quant);
   $("jumpMode").value = state.settings.jumpMode;
+  $("songFileDelay").value = String(state.settings.songFileDelay);
+  if (document.activeElement !== $("mfFolder")) $("mfFolder").value = state.multiFile.folder;
   $("countInBars").value = String(state.settings.countInBars);
   $("defaultView").value = state.settings.defaultView;
   $("scene").value = state.settings.scene;
@@ -2325,6 +2351,7 @@ $("settings").addEventListener("change", (e) => {
   if (e.target.id === "quant") send({ cmd: "quant", value: +e.target.value });
   if (e.target.id === "jumpMode") send({ cmd: "settings", jumpMode: e.target.value });
   if (e.target.id === "countInBars") send({ cmd: "settings", countInBars: Number(e.target.value) });
+  if (e.target.id === "songFileDelay") send({ cmd: "settings", songFileDelay: Number(e.target.value) });
   if (["defaultView", "openBrowser", "scene"].includes(e.target.id)) send({ cmd: "settings", [e.target.id]: e.target.value });
   if (e.target.id === "network") { send({ cmd: "settings", network: e.target.value }); setTimeout(loadConnect, 300); }
   if (e.target.id === "devName") { device.name = e.target.value.trim(); saveDevice(); sendDevice(); }
