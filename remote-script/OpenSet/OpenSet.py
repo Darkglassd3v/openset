@@ -24,6 +24,7 @@ TICK_MS = 100                        # state broadcast interval
 MAX_DATAGRAM = 8000                  # macOS caps loopback UDP datagrams at 9216 bytes
 CHUNK_CHARS = 1000                   # bigger messages go in chunks; room for JSON escaping
 CLIPS_EVERY = 20                     # ticks between scans of Sections/+LYRICS clips (~2 s)
+CUES_EVERY = 10                      # ticks between reads of the locators (~1 s): hundreds of them weigh on Live
 RESEND_EVERY = 100                   # ticks between full resends of cues and clips (~10 s): a lost chunk is not forever
 MAX_COMMANDS = 64                    # commands read per tick: a flooding sender cannot freeze Live
 LOG_EVERY = 60                       # seconds before the same message is logged again
@@ -123,7 +124,7 @@ class OpenSet(ControlSurface):
             self._was_playing = playing
             if self._ticks % RESEND_EVERY == 0:
                 self._cues_sent = self._clips_sent = None
-            self._send_state()
+            self._send_state(self._ticks % CUES_EVERY == 0 or self._cues_sent is None)
             if self._ticks % CLIPS_EVERY == 0:
                 self._send_clips()
         except Exception as e:
@@ -169,11 +170,9 @@ class OpenSet(ControlSurface):
         except Exception:
             return False  # inside Live a send error must never raise
 
-    def _send_state(self):
+    def _send_state(self, read_cues=True):
         s = self._song
         try:
-            cues = [{"name": c.name, "time": c.time} for c in s.cue_points]
-            cues.sort(key=lambda c: c["time"])
             state = {
                 "type": "state",
                 "is_playing": s.is_playing,
@@ -190,9 +189,13 @@ class OpenSet(ControlSurface):
                 "cmd_port": self._cmd_port,
                 "key": self._key,
             }
-            key = json.dumps(cues)
-            if key != self._cues_sent:
-                state["cues"] = cues
+            key = self._cues_sent
+            if read_cues:
+                cues = [{"name": c.name, "time": c.time} for c in s.cue_points]
+                cues.sort(key=lambda c: c["time"])
+                key = json.dumps(cues)
+                if key != self._cues_sent:
+                    state["cues"] = cues
             if self._send(state):
                 self._cues_sent = key  # only once delivered to the socket
         except Exception as e:
@@ -341,6 +344,7 @@ class OpenSet(ControlSurface):
                     s.set_or_delete_cue()
         finally:
             s.current_song_time = back  # the next Play starts where the user left it
+            self._cues_sent = None  # the new locators go out at the next tick, not within a second
 
     def _click_solo(self, on):
         # AbleSet: the first track or group with "click", +CLICK tracks and Lifesine

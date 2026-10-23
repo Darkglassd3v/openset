@@ -540,7 +540,7 @@ class OpenSetTest(unittest.TestCase):
         self.assertEqual(len([m for m in msgs if m.get("type") == "clips"]), 1)
 
     def test_tick_reschedules_even_after_an_error(self):
-        def boom():
+        def boom(*_args):
             raise RuntimeError("boom")
 
         self.os._send_state = boom

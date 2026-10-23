@@ -61,7 +61,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Un altro programma sullo stesso computer poteva comandare Live al posto di OpenSet. Ora il Remote Script accetta solo i comandi con la chiave che manda a OpenSet.
 - [x] C4 (RED `f5fc84c`, GREEN) Log: se OpenSet restava acceso per giorni, `openset.log` cresceva senza limite (si accorciava solo all'avvio). Ora oltre 1 MB passa a `openset.old.log` anche mentre è acceso.
 - [x] C5 (RED `e9102ef`, GREEN) User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
-- [ ] C6 (RED fatto) Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
+- [x] C6 (RED `4962104`, GREEN) Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
 - [ ] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Trovare la causa e toglierla.
 - [ ] Rilascio 0.6.2: copertura, CHANGELOG, report TDD, versione, `code-review` e correzione di tutto quello che trova, PR, CI, merge, tag
 
