@@ -94,7 +94,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Una password impostata con una versione di prova di questa 0.6.2 (formato intermedio) veniva cancellata senza avviso, lasciando OpenSet aperto a tutti. Ora viene convertita, e un formato sconosciuto lascia OpenSet chiuso (si reimposta dal computer).
   - L'aggiornamento di una password della 0.6 fermava per un attimo OpenSet (calcolo bloccante) mentre suona: ora non blocca.
   - Dopo quell'aggiornamento gli altri iPad potevano vedere comparire il pannello della password o «Password errata» senza motivo.
-- [ ] S3 Dalla seconda revisione, Remote Script: se una delle User Library non si può scrivere, OpenSet diceva «installazione fallita» anche se l'altra (quella del Live in uso) era stata aggiornata.
+- [ ] S3 (RED fatto) Dalla seconda revisione, Remote Script: se una delle User Library non si può scrivere, OpenSet diceva «installazione fallita» anche se l'altra (quella del Live in uso) era stata aggiornata.
 
 ### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
 Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.

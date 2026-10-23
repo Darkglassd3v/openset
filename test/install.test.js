@@ -117,3 +117,17 @@ test("R3: a User Library at the root of a disk", (t) => {
   fs.writeFileSync(path.join(win, "Library.cfg"), libraryCfg("D:\\"));
   assert.equal(userLibraries("win32", { USERPROFILE: "C:\\Users\\ana", APPDATA: appData }, "C:\\x")[0], "D:\\User Library");
 });
+
+test("S3: a User Library that cannot be written does not hide that the other one was updated", { skip: process.platform === "win32" || (process.getuid && process.getuid() === 0) }, (t) => {
+  const f = fixture();
+  const locked = path.join(f.root, "Old Library");
+  fs.mkdirSync(locked);
+  fs.chmodSync(locked, 0o555); // an old Live's library on a read-only or locked folder
+  t.after(() => fs.chmodSync(locked, 0o755));
+  const r = installRemoteScript(f.src, [f.lib, locked]);
+  assert.equal(r.status, "installed");
+  assert.deepEqual(r.paths, [f.target]);
+  assert.equal(r.errors.length, 1);
+  assert.equal(r.errors[0].path, path.join(locked, "Remote Scripts", "OpenSet"));
+  assert.match(r.errors[0].error, /EACCES/);
+});
