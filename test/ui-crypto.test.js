@@ -9,6 +9,11 @@ const vm = require("vm");
 const html = fs.readFileSync(path.join(__dirname, "..", "public", "index.html"), "utf-8");
 const from = html.indexOf("// pbkdf2: begin");
 const ctx = vm.createContext({ TextEncoder });
+// typed arrays that count how many are made: the PBKDF2 loop must make none
+vm.runInContext(
+  "globalThis.made = 0; for (const T of ['Uint8Array', 'Uint32Array']) { const B = globalThis[T]; globalThis[T] = class extends B { constructor(...a) { super(...a); made++; } }; }",
+  ctx
+);
 if (from >= 0) vm.runInContext(html.slice(from, html.indexOf("// pbkdf2: end")), ctx);
 
 const salt = "00112233445566778899aabbccddeeff";
@@ -29,9 +34,11 @@ test("R2: the page computes the same SCRAM proof as OpenSet expects", () => {
   assert.equal(ctx.scramProof("palco-2026", salt, 1000, nonce), Buffer.from(ck.map((x, i) => x ^ sig[i])).toString("hex"));
 });
 
-test("R2: 100000 iterations take well under a second here (no memory churn for old iPads)", () => {
-  const t = process.hrtime.bigint();
-  ctx.scramProof("palco-2026", salt, 100000, "ab".repeat(16));
-  const ms = Number(process.hrtime.bigint() - t) / 1e6;
-  assert.ok(ms < 400, `${ms.toFixed(0)} ms`);
+test("R2: the PBKDF2 rounds take no memory, so old iPads do not stall (100000 rounds)", () => {
+  const made = (iter) => {
+    ctx.made = 0;
+    ctx.scramProof("palco-2026", salt, iter, "ab".repeat(16));
+    return ctx.made;
+  };
+  assert.equal(made(100000), made(2));
 });
