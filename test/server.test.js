@@ -2514,3 +2514,43 @@ test("U7: a password already saved is reported as set, even if updating the page
   assert.match(lines, /password set, but the pages were not updated: state failed/);
   assert.doesNotMatch(lines, /cannot set the password/);
 });
+
+test("F2: in a +LOOPFULL section a jump waits for the loop to finish; +LOOP jumps right away", async (t) => {
+  const looped = (flag) => [{ name: "A", time: 0 }, { name: ">Verse", time: 0 }, { name: `>Chorus ${flag}`, time: 8 }, { name: ">Out", time: 16 }, { name: "B", time: 24 }];
+  const inLoop = { is_playing: true, loop: true, loop_start: 8, loop_length: 8 };
+
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: looped("+LOOPFULL") });
+  await c.at(10, inLoop);
+  const before = c.cmds.length;
+  const off = c.expectCmd({ cmd: "loop", on: false }); // the loop bracket goes: this pass is the last
+  await c.cmd({ cmd: "song", name: "B" });
+  await off;
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "no jump in the middle of the loop");
+  assert.equal((await c.state()).queued.time, 24);
+  const sent = c.expectCmd({ cmd: "jump", time: 24 }); // at the end of the section
+  await c.at(12.5, { ...inLoop, loop: false });
+  await c.at(15.9, { ...inLoop, loop: false });
+  await sent;
+
+  // +LOOP: the jump goes to Live at once (Live quantizes it)
+  const d = await setup(t);
+  await d.connect({ ...LIVE, cues: looped("+LOOP") });
+  await d.at(10, inLoop);
+  const now = d.expectCmd({ cmd: "jump", time: 24 });
+  await d.cmd({ cmd: "song", name: "B" });
+  await now;
+  assert.equal((await d.state()).queued, null);
+});
+
+test("F2: a +LOOP section from a clip, with no locator at its end, also waits for the section to end", async (t) => {
+  const c = await setup(t);
+  const clips = [{ name: "Verse", start: 0, end: 8 }, { name: "Chorus +LOOP", start: 8, end: 16 }, { name: "Out", start: 16, end: 24 }];
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 24 }], tracks: [{ name: "Sections", clips }] });
+  await c.at(10, { is_playing: true, loop: true, loop_start: 8, loop_length: 8 });
+  const before = c.cmds.length;
+  await c.cmd({ cmd: "song", name: "B" });
+  await pause(100);
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "Live could not quantize it to the section end");
+  assert.equal((await c.state()).queued.time, 24);
+});
