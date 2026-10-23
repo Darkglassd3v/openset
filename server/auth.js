@@ -39,52 +39,84 @@ function checkProof(auth, nonce, proof) {
   return crypto.timingSafeEqual(want, Buffer.from(proof, "hex"));
 }
 
-// who is counted: an IPv4 address, or an IPv6 /64 network (a device picks a new
-// address in its /64 at will, so one per guess would never be slowed down)
-function limitKey(ip) {
-  const a = String(ip).split("%")[0].replace(/^::ffff:(?=\d+\.\d+\.\d+\.\d+$)/i, "");
-  if (!a.includes(":")) return a;
+// IPv6 address as 8 numbers (one way to write it), or null for IPv4
+function v6Groups(ip) {
+  const a = String(ip).split("%")[0];
+  if (!a.includes(":") || /^::ffff:\d+\.\d+\.\d+\.\d+$/i.test(a)) return null;
   const [head, tail = ""] = a.split("::");
   const h = head ? head.split(":") : [];
   const t = a.includes("::") && tail ? tail.split(":") : [];
-  const groups = [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t];
-  return groups.slice(0, 4).map((g) => parseInt(g, 16) || 0).join(":") + "::/64";
+  return [...h, ...Array(Math.max(0, 8 - h.length - t.length)).fill("0"), ...t].map((g) => parseInt(g, 16) || 0);
+}
+// one device: its address, written always the same way
+function addrKey(ip) {
+  const g = v6Groups(ip);
+  return g ? g.join(":") : String(ip).replace(/^::ffff:/i, "");
+}
+// its IPv6 network: on a LAN every device has an address in the same /64, and one
+// device can take a new address in it at will
+function netKey(ip) {
+  const g = v6Groups(ip);
+  return g ? g.slice(0, 4).join(":") + "::/64" : null;
 }
 
-// after `max` wrong guesses an address waits `ms` before it can try again
-function createLimiter({ max = 5, ms = 30000, now = Date.now } = {}) {
-  const fails = new Map(); // limitKey -> { count, until }
+// after `max` wrong guesses a device waits `ms` before it can try again; an IPv6 /64
+// waits after `netMax`, so changing address at every guess does not help
+function createLimiter({ max = 5, netMax = 30, ms = 30000, now = Date.now } = {}) {
+  const fails = new Map(); // key -> { count, until }
+  const keys = (ip) => (netKey(ip) ? [[addrKey(ip), max], [netKey(ip), netMax]] : [[addrKey(ip), max]]);
   return {
-    blocked: (ip) => {
-      const f = fails.get(limitKey(ip));
-      return !!f && f.count >= max && now() < f.until;
-    },
+    blocked: (ip) =>
+      keys(ip).some(([k, m]) => {
+        const f = fails.get(k);
+        return !!f && f.count >= m && now() < f.until;
+      }),
     fail: (ip) => {
-      const k = limitKey(ip);
-      const f = fails.get(k) || { count: 0, until: 0 };
-      if (f.count >= max && now() >= f.until) f.count = 0; // the wait is over
-      f.count++;
-      f.until = now() + ms;
-      fails.set(k, f);
+      for (const [k, m] of keys(ip)) {
+        const f = fails.get(k) || { count: 0, until: 0 };
+        if (f.count >= m && now() >= f.until) f.count = 0; // the wait is over
+        f.count++;
+        f.until = now() + ms;
+        fails.set(k, f);
+      }
     },
-    ok: (ip) => fails.delete(limitKey(ip)),
+    // only the device itself: a success nearby must not reset a guesser in the same /64
+    ok: (ip) => fails.delete(addrKey(ip)),
   };
 }
 
-// browsers unlocked with the password: a token works from the address (or IPv6 /64)
-// that got it, until 24 hours pass without use, a new password or a restart
+// a new WebSocket connection: at most perIp per device, perNet per IPv6 /64 and max in
+// all; the computer with OpenSet is never refused and does not use up places
+function connectionAllowed(clients, ip, local, { perIp, perNet, max }) {
+  if (local) return true;
+  const others = clients.filter((c) => !c.local);
+  const net = netKey(ip);
+  return (
+    others.filter((c) => addrKey(c.ip) === addrKey(ip)).length < perIp &&
+    (!net || others.filter((c) => netKey(c.ip) === net).length < perNet) &&
+    others.length < max
+  );
+}
+
+// browsers unlocked with the password: a token works only from the address that got
+// it, until 24 hours pass without use, a new password or a restart
 function createTokens({ idleMs = 24 * 3600e3, max = 200, now = Date.now } = {}) {
   const tokens = new Map(); // token -> { key, used }
   return {
     issue: (ip) => {
       const token = crypto.randomBytes(32).toString("hex");
       if (tokens.size >= max) tokens.delete(tokens.keys().next().value);
-      tokens.set(token, { key: limitKey(ip), used: now() });
+      tokens.set(token, { key: addrKey(ip), used: now() });
       return token;
+    },
+    // used on its open connection: a command, or the heartbeat every 2 s
+    touch: (token) => {
+      const t = typeof token === "string" && tokens.get(token);
+      if (t) t.used = now();
     },
     valid: (token, ip) => {
       const t = typeof token === "string" && tokens.get(token);
-      if (!t || t.key !== limitKey(ip)) return false;
+      if (!t || t.key !== addrKey(ip)) return false;
       if (now() - t.used > idleMs) {
         tokens.delete(token);
         return false;
@@ -96,4 +128,4 @@ function createTokens({ idleMs = 24 * 3600e3, max = 200, now = Date.now } = {}) 
   };
 }
 
-module.exports = { validAuth, hashPassword, checkPassword, checkProof, createLimiter, createTokens };
+module.exports = { validAuth, hashPassword, checkPassword, checkProof, createLimiter, createTokens, connectionAllowed };

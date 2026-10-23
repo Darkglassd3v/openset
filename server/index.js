@@ -29,7 +29,7 @@ const { deviceUrls, lanInterfaces, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
 const crypto = require("crypto");
-const { validAuth, hashPassword, checkPassword, checkProof, createLimiter, createTokens } = require("./auth");
+const { validAuth, hashPassword, checkPassword, checkProof, createLimiter, createTokens, connectionAllowed } = require("./auth");
 const { createLog, liveLogFiles, liveLogLines } = require("./log");
 const { nudgeFor, syncTarget } = require("./ablenet");
 const { version: VERSION } = require("../package.json");
@@ -207,8 +207,9 @@ function start(opts = {}) {
     now: Date.now, // injectable clock for tests
     peerPollMs: 1000,
     pingMs: 2000, // browser latency check
-    wsPerIp: 20, // WebSocket connections from one address
-    wsMax: 100, // and from everyone together
+    wsPerIp: 20, // WebSocket connections from one device
+    wsPerNet: 50, // from one IPv6 /64 (a device can change address in it)
+    wsMax: 100, // and from everyone together (this computer does not count)
     scriptInstall: null, // Remote Script install result, shown by the UI
     netInfo, // platform, host name and interfaces, for /api/connect
     logger: null, // the CLI passes its own, so a crash lands in the same file
@@ -981,7 +982,7 @@ function start(opts = {}) {
         prefs = { ...prefs, auth: pw ? hashPassword(pw) : null };
         savePrefs();
         tokens.clear();
-        for (const ws of wss.clients) ws.authed = false;
+        for (const ws of wss.clients) [ws.authed, ws.token] = [false, null];
         for (const ws of wss.clients) sendAccess(ws);
         changed();
         return true;
@@ -1339,10 +1340,13 @@ function start(opts = {}) {
   }
 
   async function wsAuth(ws, { password, token, proof }) {
+    // already unlocked: a second tap that sends the old number again changes nothing
+    if (ws.authed) return sendAccess(ws, ws.token);
     let ok = false;
-    if (!limiter.blocked(ws.ip)) {
-      if (tokens.valid(token, ws.ip)) ok = true;
-      else if (proof !== undefined || password !== undefined) {
+    // a valid token is never slowed down: the limiter is for guessed passwords
+    if (tokens.valid(token, ws.ip)) ok = true;
+    else if (!limiter.blocked(ws.ip)) {
+      if (proof !== undefined || password !== undefined) {
         // counted before checking: guesses sent in parallel are all counted.
         // An old token alone (OpenSet restarted) is not a wrong password.
         limiter.fail(ws.ip);
@@ -1353,6 +1357,7 @@ function start(opts = {}) {
           if (ok && prefs.auth && !prefs.auth.key) {
             prefs = { ...prefs, auth: hashPassword(password) };
             savePrefs();
+            for (const c of wss.clients) if (c !== ws) sendAccess(c); // the other open pages stop sending it too
           }
         }
       }
@@ -1360,7 +1365,8 @@ function start(opts = {}) {
     }
     ws.nonce = newNonce(); // one attempt per number: a proof seen on the network cannot be used again
     ws.authed = ok;
-    sendAccess(ws, ok ? (tokens.valid(token, ws.ip) ? token : tokens.issue(ws.ip)) : null, !ok && token !== undefined ? { tokenRejected: true } : {});
+    ws.token = ok ? (tokens.valid(token, ws.ip) ? token : tokens.issue(ws.ip)) : null;
+    sendAccess(ws, ws.token, !ok && token !== undefined ? { tokenRejected: true } : {});
   }
 
   // HTTP: X-OpenSet-Password header, or "Authorization: Bearer <token>"
@@ -1412,9 +1418,8 @@ function start(opts = {}) {
     verifyClient: ({ req }, done) => {
       if (!originOk(req)) return done(false, 403);
       // a device opening connections in a loop must not slow OpenSet down for the band
-      const ip = clientIp(req);
-      const fromIp = [...wss.clients].filter((ws) => ws.ip === ip).length;
-      done(fromIp < cfg.wsPerIp && wss.clients.size < cfg.wsMax, 503);
+      const clients = [...wss.clients].map((ws) => ({ ip: ws.ip, local: ws.local }));
+      done(connectionAllowed(clients, clientIp(req), localReq(req), { perIp: cfg.wsPerIp, perNet: cfg.wsPerNet, max: cfg.wsMax }), 503);
     },
   });
   // ws re-emits the HTTP server's errors (e.g. EADDRINUSE); start() handles them
@@ -1438,6 +1443,7 @@ function start(opts = {}) {
     devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null, settings: {} });
     ws.on("pong", () => {
       ws.missed = 0;
+      tokens.touch(ws.token); // connected is in use: an iPad on stage for days keeps its unlock
       const d = devices.get(ws);
       if (d && ws.pingAt) d.latencyMs = Date.now() - ws.pingAt; // shown with the next state update
     });
@@ -1448,6 +1454,7 @@ function start(opts = {}) {
     ws.send(JSON.stringify({ type: "state", state: publicState() }));
     sendAccess(ws);
     ws.on("message", (buf) => {
+      tokens.touch(ws.token);
       let msg;
       try { msg = JSON.parse(buf.toString()); } catch { return; }
       try {

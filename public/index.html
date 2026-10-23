@@ -753,8 +753,12 @@ function hmacHex(keyHex, text) { return toHex(hmac(hmacKey(fromHex(keyHex)), new
 // ---------- password: read-only until unlocked ----------
 let access = { control: true, passwordSet: false };
 let authTried = false;
+let authBusy = false; // a proof is on its way: a second tap would send an old number
 function onAccess(msg) {
   access = msg;
+  authBusy = false;
+  $("authGo").disabled = false;
+  $("authStatus").textContent = "";
   if (msg.token) store.set("openset.token", msg.token);
   if (msg.tokenRejected) store.set("openset.token", "");
   $("unlockApp").hidden = msg.control;
@@ -766,10 +770,14 @@ function onAccess(msg) {
 }
 function openAuth() {
   $("authPanel").hidden = false;
+  $("authStatus").textContent = "";
   $("authPw").value = "";
   $("authPw").focus();
 }
 function tryAuth() {
+  if (authBusy) return;
+  authBusy = true;
+  $("authGo").disabled = true;
   authTried = true;
   const pw = $("authPw").value;
   const c = access.challenge;
