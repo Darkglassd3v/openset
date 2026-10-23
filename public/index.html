@@ -228,6 +228,10 @@
   .mx-strip input[type="range"] { width: 100%; accent-color: var(--amber); }
   .mx-buttons { display: flex; gap: 8px; justify-content: center; }
   .mx-strip.fading .mx-name::after { content: " ↘"; color: var(--amber); }
+  #psCode { width: 100%; min-height: 180px; padding: 10px; border-radius: 8px; border: 1px solid var(--line);
+    background: var(--ink); color: var(--text); font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+  #psLog { max-height: 220px; overflow: auto; white-space: pre-wrap; padding: 10px; border-radius: 8px; background: var(--line); font-size: 12px; }
+  #psLog:empty { display: none; }
   .lyr-track { display: block; text-align: center; margin-bottom: 18px; color: var(--dim); font-size: 14px; }
 
   /* ---- settings ---- */
@@ -536,6 +540,17 @@
       Stile personalizzato: <span class="mono">custom.css</span> accanto all'eseguibile.</p>
     <p>Variabili condivise (OSC <span class="mono">/shared/nome valore</span>, come AbleSet): <span id="sharedList" class="mono"></span></p>
     <label><input type="checkbox" data-set="persistSharedVariables"> Conserva le variabili condivise dopo un riavvio di OpenSet</label>
+
+    <h2>Script di progetto</h2>
+    <p>JavaScript che OpenSet esegue all'avvio e a ogni salvataggio, con le funzioni di AbleSet:
+      <span class="mono">osc</span>, <span class="mono">sendOsc</span>, <span class="mono">onOscChange</span>,
+      <span class="mono">waitForOscValue</span>, <span class="mono">setShared</span>, <span class="mono">log</span>…
+      Per esempio <span class="mono">onOscChange("/global/isPlaying", (v) =&gt; sendOsc("127.0.0.1:8000/luci", v));</span>
+      Si modifica solo dal computer con OpenSet.</p>
+    <textarea id="psCode" rows="10" spellcheck="false" autocapitalize="off" aria-label="Script di progetto"></textarea>
+    <div class="row"><button class="btn primary" id="psSave">Salva ed esegui</button>
+      <button class="btn" id="psStop">Ferma</button> <span id="psStatus" class="dim" role="status"></span></div>
+    <pre id="psLog" class="mono" aria-label="Registro dello script"></pre>
   </div>
 </main>
 
@@ -1550,6 +1565,29 @@ $("mixer").addEventListener("input", (e) => {
   if (s && e.target.type === "range") send({ cmd: "mixer", group: s.dataset.group, volume: +e.target.value });
 });
 
+// ---------- project script: edited and run on the computer with OpenSet ----------
+let psLoaded = false;
+async function loadScript() {
+  let r;
+  try {
+    r = await fetch("/api/script");
+  } catch {
+    return;
+  }
+  if (!r.ok) {
+    $("psStatus").textContent = "Si modifica solo dal computer con OpenSet.";
+    for (const id of ["psCode", "psSave", "psStop"]) $(id).disabled = true;
+    return;
+  }
+  const j = await r.json();
+  if (!psLoaded) { $("psCode").value = j.code; psLoaded = true; } // never overwrites what is being typed
+  $("psStatus").textContent = j.running ? "in esecuzione" : "fermo";
+  $("psLog").textContent = j.log.map((l) => `${l.at.slice(11, 19)} ${l.error ? "⚠ " : ""}${l.text}`).join("\n");
+}
+setInterval(() => { if (view === "settings") loadScript(); }, 1000);
+$("psSave").onclick = () => { send({ cmd: "setProjectScript", code: $("psCode").value }); setTimeout(loadScript, 400); };
+$("psStop").onclick = () => { send({ cmd: "stopProjectScript" }); setTimeout(loadScript, 200); };
+
 // ---------- spoken cues (Web Speech API, on this device) ----------
 function speak(text, interrupt) {
   if (!("speechSynthesis" in window) || !text) return;
@@ -1805,7 +1843,7 @@ function showView(v) {
   for (const id of ["setlist", "stage", "lyrics", "mixer", "settings"]) $(id).hidden = id !== v;
   stageKey = settingsKey = mixerKey = "";
   lyr.song = null;
-  if (v === "settings") loadConnect();
+  if (v === "settings") { loadConnect(); loadScript(); }
   sendDevice();
   render();
 }
