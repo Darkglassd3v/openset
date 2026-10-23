@@ -63,6 +63,8 @@ const test = base.test.extend({
       live: (extra = {}) => { state = { ...state, ...extra }; if (running) send(); },
       // the clips of the Sections and +LYRICS tracks, sent by Live in their own message
       clips: (tracks) => live.send(JSON.stringify({ type: "clips", tracks }), srv.statePort, "127.0.0.1"),
+      // the mixer tracks (index, name, mute, solo, volume, meter), as the Remote Script reports them
+      mixer: (tracks) => live.send(JSON.stringify({ type: "mixer", tracks }), srv.statePort, "127.0.0.1"),
       state: async () => (await fetch(o.url("/api/state"))).json(),
       cmd: (body) => fetch(o.url("/api/cmd"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
       stop: async () => { running = false; await srv.close(); },

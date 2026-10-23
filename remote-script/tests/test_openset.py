@@ -69,6 +69,20 @@ class FakeTrack(object):
             self.arrangement_clips = clips
 
 
+class FakeParam(object):
+    def __init__(self, value):
+        self.value, self.min, self.max = value, 0.0, 1.0
+
+
+class FakeMixerTrack(FakeTrack):
+    # a track with Live's mixer: mute, solo, volume (DeviceParameter) and the output meter
+    def __init__(self, name, volume=0.85, meter=0.0):
+        FakeTrack.__init__(self, name)
+        self.mute = self.solo = False
+        self.mixer_device = types.SimpleNamespace(volume=FakeParam(volume))
+        self.output_meter_level = meter
+
+
 class FakeSong(object):
     def __init__(self):
         self.is_playing = False
@@ -246,6 +260,32 @@ class OpenSetTest(unittest.TestCase):
         self.os._handle({"cmd": "setClipColorsFromNames"})
         self.assertEqual([(x.name, x.color_index) for x in (a, b, c)], [("Verse", 9), ("Chorus", 5), ("Solo x", 1)])
         self.assertEqual((other.name, other.color_index), ("Pad [red]", 3))  # no +CC/+CLIPCOLORS: untouched
+
+    def test_mixer_tracks_are_reported(self):
+        # F6: tracks in a group (+G:/+GROUP:), Click/+CLICK and +NEVERMUTE/+NM; the others are not sent
+        self.song.tracks = [
+            FakeMixerTrack("Vox +G:VOX", 0.7, 0.51234),
+            FakeTrack("Pad"),
+            FakeMixerTrack("Click"),
+            FakeMixerTrack("Guide +NM"),
+        ]
+        self.os._send_mixer()
+        mixer = [m for m in self.received() if m.get("type") == "mixer"]
+        self.assertEqual(mixer[0]["tracks"], [
+            {"i": 0, "name": "Vox +G:VOX", "mute": False, "solo": False, "volume": 0.7, "meter": 0.512},
+            {"i": 2, "name": "Click", "mute": False, "solo": False, "volume": 0.85, "meter": 0.0},
+            {"i": 3, "name": "Guide +NM", "mute": False, "solo": False, "volume": 0.85, "meter": 0.0},
+        ])
+
+    def test_mixer_commands_set_mute_solo_and_volume(self):
+        vox, click = FakeMixerTrack("Vox +G:VOX"), FakeMixerTrack("Click")
+        self.song.tracks = [vox, click]
+        self.os._handle({"cmd": "mixer", "track": 0, "name": "Vox +G:VOX", "mute": True, "volume": 1.7})
+        self.os._handle({"cmd": "mixer", "track": 1, "name": "Click", "solo": True})
+        self.assertEqual((vox.mute, vox.mixer_device.volume.value, click.solo), (True, 1.0, True))
+        # the track list changed since OpenSet asked: the name does not match, nothing happens
+        self.os._handle({"cmd": "mixer", "track": 1, "name": "Vox +G:VOX", "mute": True})
+        self.assertFalse(click.mute)
 
     def test_clip_colors_from_names_read_back_as_the_same_color(self):
         # AbleSet's table (CLIP_COLORS in server/setlist.js): column of Live's palette -> color.

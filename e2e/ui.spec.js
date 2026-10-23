@@ -338,3 +338,22 @@ test("F3: with two singers each device picks its +LYRICS track, and keeps it", a
   await expect(page.locator("#lyrics")).toContainText("Riga dei cori");
   await expect(page.locator("#lyrTrack")).toHaveValue("backing-vox");
 });
+
+test("F6: the Mixer view shows the groups; mute, solo and the volume slider command Live", async ({ page, openset }) => {
+  await openset.mixer([
+    { i: 0, name: "Vox +G:VOX", mute: false, solo: false, volume: 0.85, meter: 0.4 },
+    { i: 1, name: "Click", mute: false, solo: false, volume: 0.85, meter: 0 },
+  ]);
+  const sentTo = (want) => openset.cmds.some((c) => c.cmd === "mixer" && Object.keys(want).every((k) => c[k] === want[k]));
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "mixer");
+  await expect(page.locator("#mixer")).toContainText("Vox");
+  await expect(page.locator("#mixer")).toContainText("Click");
+  await page.click('#mixer [data-group="VOX"] [data-act="mute"]');
+  await expect.poll(() => sentTo({ track: 0, mute: true })).toBe(true);
+  await page.click('#mixer [data-group="VOX"] [data-act="solo"]');
+  await expect.poll(() => sentTo({ track: 0, solo: true })).toBe(true);
+  await page.locator('#mixer [data-group="VOX"] input[type="range"]').fill("0.5");
+  await expect.poll(() => sentTo({ track: 0, volume: 0.5 })).toBe(true);
+});

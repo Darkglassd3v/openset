@@ -2638,3 +2638,69 @@ test("F7: Persist Shared Variables keeps them after a restart; off, they start e
   await second.srv.close();
   assert.deepEqual((await (await setup(t, { baseDir })).state()).shared, { scene: "chorus" });
 });
+
+// the mixer as the Remote Script reports it (F6): index, name, mute, solo, volume, meter
+const MIXER = [
+  { i: 0, name: "Click", mute: false, solo: false, volume: 0.85, meter: 0 },
+  { i: 1, name: "Vox +G:VOX", mute: false, solo: false, volume: 0.85, meter: 0.6 },
+  { i: 2, name: "Cori +G:VOX", mute: false, solo: false, volume: 0.85, meter: 0.2 },
+  { i: 3, name: "Guide +NM", mute: false, solo: false, volume: 0.85, meter: 0 },
+];
+
+test("F6: mixer groups in the state and over OSC; mute, solo and volume from the web app and OSC", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  c.sendLive({ type: "mixer", tracks: MIXER });
+  await c.at(9);
+  await waitFor(async () => (await c.state()).mixer?.length === 2, "mixer groups in the state");
+  assert.deepEqual((await c.state()).mixer, [
+    { name: "CLICK", label: "Click", muted: false, soloed: false, volume: 0.85, meter: 0, isFading: false },
+    { name: "VOX", label: "Vox", muted: false, soloed: false, volume: 0.85, meter: 0.5, isFading: false },
+  ]);
+
+  let sent = c.expectCmd({ cmd: "mixer", track: 2, name: "Cori +G:VOX", mute: true });
+  assert.equal((await c.cmd({ cmd: "mixer", group: "VOX", mute: true })).status, 200);
+  await sent;
+  assert.equal((await c.cmd({ cmd: "mixer", group: "NOPE", mute: true })).status, 400);
+
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.has("/mixer/VOX/volume"), "mixer values over OSC");
+  assert.deepEqual(got.get("/mixer/names"), ["CLICK", "VOX"]);
+  assert.deepEqual(got.get("/mixer/VOX/muted"), [0]);
+  assert.deepEqual(got.get("/mixer/VOX/meter"), [0.5]);
+
+  sent = c.expectCmd({ cmd: "mixer", track: 3, name: "Guide +NM", solo: true }); // +NM soloed with the group
+  sendOsc(c, osc, "/mixer/VOX/solo", [1]);
+  await sent;
+  sent = c.expectCmd({ cmd: "mixer", track: 0, name: "Click", mute: true });
+  sendOsc(c, osc, "/click/mute", ["toggle"]);
+  await sent;
+  sent = c.expectCmd({ cmd: "mixer", track: 1, name: "Vox +G:VOX", volume: 0.5 });
+  sendOsc(c, osc, "/mixer/VOX/volume", [0.5]);
+  await sent;
+});
+
+test("F6: fadeTo moves the group volume step by step to the target, and «previous» goes back", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  c.sendLive({ type: "mixer", tracks: MIXER });
+  await c.at(9);
+  await waitFor(async () => (await c.state()).mixer?.length === 2, "mixer groups");
+  const from = c.cmds.length;
+  const volumes = () => c.cmds.slice(from).filter((m) => m.cmd === "mixer" && m.track === 1).map((m) => m.volume);
+  // speed 10: 0.85 -> 0 in about 0.4 s
+  assert.equal((await c.cmd({ cmd: "mixerFade", group: "VOX", to: 0, speed: 10 })).status, 200);
+  assert.equal((await c.state()).mixer[1].isFading, true);
+  await waitFor(() => volumes().at(-1) === 0, "faded out");
+  assert.ok(volumes().length >= 3, "several steps: " + volumes().join(", "));
+  assert.ok(volumes().every((v, i, a) => i === 0 || v < a[i - 1]), "always down");
+  await waitFor(async () => (await c.state()).mixer[1].isFading === false, "fade over");
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  sendOsc(c, osc, "/mixer/VOX/fadeTo", ["previous", 10]);
+  await waitFor(() => volumes().at(-1) === 0.85, "back to the volume before the fade");
+});
