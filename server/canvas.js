@@ -68,4 +68,16 @@ function parseOscLines(text) {
   return steps;
 }
 
-module.exports = { GRID, TYPES, cleanCanvas, parseOscLines };
+// What changed in OpenSet's OSC values since a client's last message, and what went away.
+// prev and next: address -> the JSON sent; the caller keeps next only once its message is sent
+function oscDiff(prev, values) {
+  const next = {};
+  const changes = {};
+  for (const [k, v] of Object.entries(values)) {
+    next[k] = JSON.stringify(v);
+    if (prev[k] !== next[k]) changes[k] = v;
+  }
+  return { changes, removed: Object.keys(prev).filter((k) => !(k in next)), next };
+}
+
+module.exports = { GRID, TYPES, cleanCanvas, parseOscLines, oscDiff };

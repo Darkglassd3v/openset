@@ -152,13 +152,13 @@ Live finto dei test e va nella lista «Da verificare su un computer vero».
   - [ ] V13 Più file con attesa: Avanti e poi Indietro non annullava l'Avanti, il file si apriva lo stesso
   - [ ] V14 Brani a mano: via OSC (`jumpBySongs`, `jumpBySections`, `jumpByLines`) si contava dalla posizione di Live, non dal brano a mano corrente
   - [ ] V15 Canvas: «Nuovo canvas» prima che l'elenco fosse caricato, o un cambio di nome, poteva sovrascrivere un canvas salvato senza chiedere
-  - [ ] V16 Canvas su Wi-Fi lento: un valore saltato restava sbagliato (segnato come mandato anche quando non partiva)
-  - [ ] V17 Canvas e script: un valore tolto (variabile azzerata, gruppo tolto) restava in `osc()`
+  - [ ] V16 (oscDiff in `canvas.js`; server da collegare) Canvas su Wi-Fi lento: un valore saltato restava sbagliato (segnato come mandato anche quando non partiva)
+  - [ ] V17 (oscDiff in `canvas.js`; server, script e pagina da collegare) Canvas e script: un valore tolto (variabile azzerata, gruppo tolto) restava in `osc()`
   - [ ] V18 Bonjour: l'arrivederci alla chiusura probabilmente non partiva (socket chiuso subito dopo)
   - [ ] V19 Script di progetto: `shared()` poteva restituire un valore vecchio o uno rifiutato dal server
   - [ ] V20 Brani a mano: un testo oltre 20000 caratteri veniva rifiutato senza dirlo, a pannello già chiuso
   - [ ] V21 Canvas: il comando «al rilascio» non partiva se il tocco veniva interrotto (pointercancel)
-  - [ ] V22-V23 Efficienza: valori OSC calcolati due volte per aggiornamento; lo stesso calcolo «cosa è cambiato» in tre punti
+  - [ ] V22-V23 (oscDiff unico in `canvas.js`; uso nel server da fare) Efficienza: valori OSC calcolati due volte per aggiornamento; lo stesso calcolo «cosa è cambiato» in tre punti
   - [ ] V24 Commit `5ba5088`, `88de48a`, `b5d16e9` senza aggiornamento di `TODO.md` (già pubblicati: non riscritti)
 - [ ] Rilascio 1.0.0: versione 1.0.0, CHANGELOG (Novità e Correzioni), guida (capitolo «Funzioni di AbleSet»), README, report TDD `docs/releases/1.0.0/` (copertura righe 97.41%, rami 93.06%) fatti; PR #10 in bozza con CI verde; poi revisione del codice corretta, merge, tag `v1.0.0`
 
