@@ -958,11 +958,14 @@ function start(opts = {}) {
         sendToLive({ cmd: "quant", value: msg.value });
         return true;
       case "setlist": {
-        // the web app edits songs by key; with no songs yet (Live loading) there is nothing to edit,
-        // and settings still by name could not be mixed with keys
-        if (!prefs.keys) return false;
+        // the web app edits songs by key. Settings still by name (0.6.1, Live loading) cannot be
+        // mixed with keys: only a whole setlist with its songs (the web app's, or one copied from
+        // the main computer) replaces them; one pasted with no songs yet would only empty them
+        const whole =
+          Array.isArray(msg.order) && msg.order.length > 0 && ["skip", "stopAfter", "notes"].every((k) => msg[k] !== undefined);
+        if (!prefs.keys && !whole) return false;
         const next = cleanSetlist(msg, prefs);
-        return !!next && setPrefs(next);
+        return !!next && setPrefs({ ...next, keys: true });
       }
       case "settings": {
         const settings = { ...prefs.settings };

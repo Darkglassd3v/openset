@@ -2482,6 +2482,9 @@ test("U6: a backup computer whose setlist is still by song name takes the edits 
   const c = await setup(t, { baseDir });
   // only part of the setlist: it could not be mixed with the settings by name
   assert.equal((await c.cmd({ cmd: "setlist", skip: ["A#2"], mirror: true })).status, 400);
+  // a setlist pasted as text before Live has the songs: nothing matches, nothing is replaced
+  const paste = await fetch(c.url("/api/setlist-text"), { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"text":"B\\nA"}' });
+  assert.equal(paste.status, 400);
   const edit = { cmd: "setlist", order: ["B", "A", "A#2"], skip: ["A#2"], stopAfter: [], notes: { B: "capo 3" }, mirror: true };
   assert.equal((await c.cmd(edit)).status, 200);
   await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] });
