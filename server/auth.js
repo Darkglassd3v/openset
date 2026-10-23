@@ -19,11 +19,30 @@ const validAuth = (a) =>
   /^[0-9a-f]{32}$/.test(a.salt) &&
   ((HEX64.test(a.storedKey) && Number.isInteger(a.iter) && a.iter >= 1000 && a.iter <= 1e7) || HEX64.test(a.hash));
 
+// the password from setlist.json: { salt, hash } of 0.6 and { salt, iter, key } of a 0.6.2 test
+// build are still checked; one that cannot be read keeps the other devices out (never open)
+function readAuth(a) {
+  if (!a) return null;
+  if (validAuth(a)) return a.storedKey ? { salt: a.salt, iter: a.iter, storedKey: a.storedKey } : { salt: a.salt, hash: a.hash };
+  if (a && /^[0-9a-f]{32}$/.test(a.salt) && HEX64.test(a.key) && Number.isInteger(a.iter) && a.iter >= 1000 && a.iter <= 1e7)
+    return { salt: a.salt, iter: a.iter, storedKey: storedKeyOf(Buffer.from(a.key, "hex")).toString("hex") }; // key = salted password
+  return { unreadable: true };
+}
+
 // setting a password is rare: the sync version keeps the command simple
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
   const salted = crypto.pbkdf2Sync(password, Buffer.from(salt, "hex"), ITER, KEY_LEN, "sha256");
   return { salt, iter: ITER, storedKey: storedKeyOf(salted).toString("hex") };
+}
+// the same without blocking: for the upgrade of a 0.6 password, which happens while Live plays
+function hashPasswordAsync(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  return new Promise((resolve, reject) =>
+    crypto.pbkdf2(password, Buffer.from(salt, "hex"), ITER, KEY_LEN, "sha256", (err, salted) =>
+      err ? reject(err) : resolve({ salt, iter: ITER, storedKey: storedKeyOf(salted).toString("hex") })
+    )
+  );
 }
 
 // checked often, so async: the playback engine keeps running meanwhile
@@ -74,7 +93,7 @@ function netKey(ip) {
 // after `max` wrong guesses a device waits `ms` before it can try again; an IPv6 /64
 // waits after `netMax`, so changing address at every guess does not help
 function createLimiter({ max = 5, netMax = 30, ms = 30000, now = Date.now } = {}) {
-  const fails = new Map(); // key -> { count, until }
+  const fails = new Map(); // key -> { count, until }: forgotten `ms` after the last wrong guess
   const keys = (ip) => (netKey(ip) ? [[addrKey(ip), max], [netKey(ip), netMax]] : [[addrKey(ip), max]]);
   return {
     blocked: (ip) =>
@@ -83,9 +102,11 @@ function createLimiter({ max = 5, netMax = 30, ms = 30000, now = Date.now } = {}
         return !!f && f.count >= m && now() < f.until;
       }),
     fail: (ip) => {
-      for (const [k, m] of keys(ip)) {
+      // a device changing address at every guess must not fill the memory
+      if (fails.size > 1000) for (const [k, f] of fails) if (now() >= f.until) fails.delete(k);
+      for (const [k] of keys(ip)) {
         const f = fails.get(k) || { count: 0, until: 0 };
-        if (f.count >= m && now() >= f.until) f.count = 0; // the wait is over
+        if (now() >= f.until) f.count = 0; // the wait is over, or the last typo was long ago
         f.count++;
         f.until = now() + ms;
         fails.set(k, f);
@@ -93,6 +114,7 @@ function createLimiter({ max = 5, netMax = 30, ms = 30000, now = Date.now } = {}
     },
     // only the device itself: a success nearby must not reset a guesser in the same /64
     ok: (ip) => fails.delete(addrKey(ip)),
+    size: () => fails.size,
   };
 }
 
@@ -109,15 +131,16 @@ function connectionAllowed(clients, ip, local, { perIp, perNet, max }) {
   );
 }
 
-// browsers unlocked with the password: a token works only from the address that got
-// it, until 24 hours pass without use, a new password or a restart
+// browsers unlocked with the password: a token works from the IPv4 address that got it,
+// or from its IPv6 /64 (an iPad takes new temporary addresses in it by itself), until 24
+// hours pass without use, a new password or a restart
 function createTokens({ idleMs = 24 * 3600e3, max = 200, now = Date.now } = {}) {
   const tokens = new Map(); // token -> { key, used }
   return {
     issue: (ip) => {
       const token = crypto.randomBytes(32).toString("hex");
       if (tokens.size >= max) tokens.delete(tokens.keys().next().value);
-      tokens.set(token, { key: addrKey(ip), used: now() });
+      tokens.set(token, { key: netKey(ip) || addrKey(ip), used: now() });
       return token;
     },
     // used on its open connection: a command, or the heartbeat every 2 s
@@ -127,7 +150,7 @@ function createTokens({ idleMs = 24 * 3600e3, max = 200, now = Date.now } = {}) 
     },
     valid: (token, ip) => {
       const t = typeof token === "string" && tokens.get(token);
-      if (!t || t.key !== addrKey(ip)) return false;
+      if (!t || t.key !== (netKey(ip) || addrKey(ip))) return false;
       if (now() - t.used > idleMs) {
         tokens.delete(token);
         return false;
@@ -139,4 +162,4 @@ function createTokens({ idleMs = 24 * 3600e3, max = 200, now = Date.now } = {}) 
   };
 }
 
-module.exports = { validAuth, hashPassword, checkPassword, checkProof, createLimiter, createTokens, connectionAllowed };
+module.exports = { validAuth, readAuth, hashPassword, hashPasswordAsync, checkPassword, checkProof, createLimiter, createTokens, connectionAllowed };

@@ -295,7 +295,7 @@ ${h3("sicurezza", "Sicurezza")}
     toccano <b>Sblocca</b>. Il computer con OpenSet non la chiede mai. L'OSC resta aperto a tutta la rete.
     La password non passa sulla rete: il dispositivo manda solo una prova calcolata da lei, e OpenSet ne conserva solo una
     verifica che non basta per sbloccare. Un dispositivo sbloccato resta sbloccato finché lo usi; dopo 24 ore senza usarlo,
-    o se cambia indirizzo di rete, la chiede di nuovo. Scegli una password lunga, meglio una frase: chi ascolta la rete del
+    o se si ricollega da un'altra rete (con IPv4 anche da un altro indirizzo), la chiede di nuovo. Scegli una password lunga, meglio una frase: chi ascolta la rete del
     locale vede la prova e potrebbe provare a indovinare una password corta.</li>
 </ul>
 ${h3("strumenti", "Strumenti")}

@@ -640,6 +640,8 @@ function connect() {
     if (msg.type === "cue") onCue(msg.cue);
     if (msg.type === "device") onDeviceCommand(msg);
     if (msg.type === "access") onAccess(msg);
+    // a 0.6 password just updated by another device: from now on this page sends a proof too
+    if (msg.type === "challenge") access.challenge = msg.challenge;
   };
   ws.onclose = connectionLost;
 }

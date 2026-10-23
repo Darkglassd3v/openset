@@ -29,7 +29,7 @@ const { deviceUrls, lanInterfaces, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
 const crypto = require("crypto");
-const { validAuth, hashPassword, checkPassword, checkProof, createLimiter, createTokens, connectionAllowed } = require("./auth");
+const { readAuth, hashPassword, hashPasswordAsync, checkPassword, checkProof, createLimiter, createTokens, connectionAllowed } = require("./auth");
 const { createLog, liveLogFiles, liveLogLines } = require("./log");
 const { nudgeFor, syncTarget } = require("./ablenet");
 const { version: VERSION } = require("../package.json");
@@ -299,11 +299,7 @@ function start(opts = {}) {
         : [],
       midi: cleanMidi(saved.midi) || [],
       peers: cleanPeers(saved.peers) || [],
-      auth: !validAuth(saved.auth)
-        ? null
-        : saved.auth.storedKey
-          ? { salt: saved.auth.salt, iter: saved.auth.iter, storedKey: saved.auth.storedKey }
-          : { salt: saved.auth.salt, hash: saved.auth.hash },
+      auth: readAuth(saved.auth),
       lastProject: typeof saved.lastProject === "string" ? saved.lastProject : null,
       httpPort: Number.isInteger(saved.httpPort) ? saved.httpPort : null,
     };
@@ -1400,10 +1396,14 @@ function start(opts = {}) {
         else {
           ok = await checkPassword(prefs.auth, password);
           // saved by OpenSet 0.6: from now on the page proves it knows the password instead of sending it
-          if (ok && prefs.auth && !prefs.auth.storedKey) {
-            prefs = { ...prefs, auth: hashPassword(password) };
+          if (ok && prefs.auth && prefs.auth.hash) {
+            prefs = { ...prefs, auth: await hashPasswordAsync(password) };
             savePrefs();
-            for (const c of wss.clients) if (c !== ws) sendAccess(c); // the other open pages stop sending it too
+            // the other open pages stop sending it too: only the numbers, no access message
+            // (that would open their password panel)
+            const { salt, iter } = prefs.auth;
+            for (const c of wss.clients)
+              if (c !== ws && c.readyState === 1) c.send(JSON.stringify({ type: "challenge", challenge: { salt, iter, nonce: c.nonce } }));
           }
         }
       }
@@ -1419,12 +1419,13 @@ function start(opts = {}) {
   async function httpAllowed(req, res) {
     if (!prefs.auth || localReq(req)) return true;
     const ip = clientIp(req);
+    // an unlocked device is never slowed down: the limiter is for guessed passwords
+    const bearer = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    if (bearer && tokens.valid(bearer, ip)) return true;
     if (limiter.blocked(ip)) {
       res.status(429).json({ error: "Too many wrong passwords: try again later" });
       return false;
     }
-    const bearer = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "");
-    if (bearer && tokens.valid(bearer, ip)) return true;
     const pw = req.get("x-openset-password");
     if (pw !== undefined || bearer) limiter.fail(ip); // before scrypt: parallel guesses are all counted
     if (pw !== undefined && (await checkPassword(prefs.auth, pw))) {
