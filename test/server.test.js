@@ -2593,3 +2593,49 @@ test("F3: several +LYRICS tracks: listed in the state, chosen per request, sent 
   sendOsc(c, osc, "/lyrics/jumpByLines", ["leo", 1]);
   await jumped;
 });
+
+test("F7: shared variables from OSC, HTTP and the web app reach every device and OSC client", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  sendOsc(c, osc, "/shared/canvas/color", ["blue"]); // names can contain slashes
+  sendOsc(c, osc, "/shared/items", [1, 2]); // several values: a list
+  await waitFor(async () => (await c.state()).shared?.items, "shared variables in the state");
+  assert.deepEqual((await c.state()).shared, { "canvas/color": "blue", items: [1, 2] });
+  await waitFor(() => got.get("/shared/items")?.length === 2, "forwarded to OSC clients");
+  assert.deepEqual(got.get("/shared/canvas/color"), ["blue"]);
+
+  assert.equal((await c.cmd({ cmd: "setShared", key: "controlsEnabled", value: true })).status, 200);
+  assert.equal((await c.state()).shared.controlsEnabled, true);
+  assert.equal((await c.cmd({ cmd: "resetShared", key: "items" })).status, 200);
+  assert.equal("items" in (await c.state()).shared, false);
+  for (const bad of [
+    { cmd: "setShared", key: "", value: 1 },
+    { cmd: "setShared", key: "a b", value: 1 },
+    { cmd: "setShared", key: "x".repeat(129), value: 1 },
+    { cmd: "setShared", key: "obj", value: { a: 1 } },
+    { cmd: "setShared", key: "long", value: "x".repeat(1001) },
+    { cmd: "setShared", key: "many", value: Array(65).fill(1) },
+    { cmd: "setShared", key: "nan", value: NaN },
+  ])
+    assert.equal((await c.cmd(bad)).status, 400, JSON.stringify(bad).slice(0, 60));
+});
+
+test("F7: Persist Shared Variables keeps them after a restart; off, they start empty", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-shared-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const first = await setup(t, { baseDir });
+  await first.cmd({ cmd: "setShared", key: "scene", value: "verse" });
+  await first.srv.close();
+  assert.deepEqual((await (await setup(t, { baseDir })).state()).shared, {});
+
+  const second = await setup(t, { baseDir });
+  assert.equal((await second.cmd({ cmd: "settings", persistSharedVariables: true })).status, 200);
+  await second.cmd({ cmd: "setShared", key: "scene", value: "chorus" });
+  await second.srv.close();
+  assert.deepEqual((await (await setup(t, { baseDir })).state()).shared, { scene: "chorus" });
+});
