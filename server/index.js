@@ -1029,22 +1029,28 @@ function start(opts = {}) {
         const pw = msg.password;
         if (pw !== "" && (typeof pw !== "string" || pw.length < 6 || pw.length > 128)) return false;
         const seq = ++passwordSeq; // two changes in a row: the last one asked wins
-        return (pw ? hashPassword(pw) : Promise.resolve(null))
-          .then((auth) => {
+        return (pw ? hashPassword(pw) : Promise.resolve(null)).then(
+          (auth) => {
             if (seq !== passwordSeq) return true;
             prefs = { ...prefs, auth };
             authGen++;
             savePrefs();
             tokens.clear();
             for (const ws of wss.clients) [ws.authed, ws.token] = [false, null];
-            for (const ws of wss.clients) sendAccess(ws);
-            changed();
+            // the password is set from here on: a failure telling the pages does not undo it
+            try {
+              for (const ws of wss.clients) sendAccess(ws);
+              changed();
+            } catch (e) {
+              log.error(`[auth] password set, but the pages were not updated: ${e.message}`);
+            }
             return true;
-          })
-          .catch((e) => {
+          },
+          (e) => {
             log.error(`[auth] cannot set the password: ${e.message}`);
             return false;
-          });
+          }
+        );
       }
     }
     return false;
