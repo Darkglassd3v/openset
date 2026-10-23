@@ -79,3 +79,15 @@ test("liveLogLines: OpenSet lines and Remote Script errors only, newest last", (
     `${file}: 5 info: RemoteScriptMessage: (OpenSet) OpenSet: port 39050 busy`,
   ]);
 });
+
+test("C4: a log that grows while OpenSet stays on moves to openset.old.log past maxBytes", (t) => {
+  const dir = tmp();
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const file = path.join(dir, "openset.log");
+  const log = createLog({ file, maxBytes: 200 });
+  for (let i = 0; i < 20; i++) log.info(`riga ${i} ` + "y".repeat(20));
+  assert.ok(fs.statSync(file).size <= 200, "openset.log stays under the limit");
+  const old = fs.readFileSync(path.join(dir, "openset.old.log"), "utf8");
+  assert.ok(old.length > 0 && old.length <= 200);
+  assert.match(fs.readFileSync(file, "utf8"), /riga 19 y+\n$/); // the newest line is in the current file
+});
