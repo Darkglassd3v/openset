@@ -19,6 +19,7 @@ const { parseAls } = require("./als-parser");
 const S = require("./setlist");
 const L = require("./lyrics");
 const M = require("./mixer");
+const { createProjectScript } = require("./script");
 const osc = require("./osc");
 const { createEngine } = require("./engine");
 const { createMeter } = require("./meter");
@@ -92,6 +93,7 @@ const sharedScalar = (v) =>
 const validSharedKey = (k) => typeof k === "string" && /^\S{1,128}$/.test(k);
 const validSharedValue = (v) => sharedScalar(v) || (Array.isArray(v) && v.length <= 64 && v.every(sharedScalar));
 const SHARED_MAX = 500;
+const SCRIPT_MAX = 200000; // characters of the project script
 function cleanShared(obj) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
   return Object.fromEntries(Object.entries(obj).filter(([k, v]) => validSharedKey(k) && validSharedValue(v)).slice(0, SHARED_MAX));
@@ -169,6 +171,7 @@ function defaultPrefs() {
     midi: [],
     peers: [],
     auth: null, // web app password: { salt, iter, storedKey } (SCRAM), or { salt, hash } from OpenSet 0.6
+    projectScript: "", // AbleSet's Project Script (JavaScript), run by server/script.js
   };
 }
 
@@ -301,6 +304,7 @@ function start(opts = {}) {
       ...(cleanSetlist(saved, base) || {}),
       settings,
       shared: settings.persistSharedVariables ? cleanShared(saved.shared) : {},
+      projectScript: typeof saved.projectScript === "string" && saved.projectScript.length <= SCRIPT_MAX ? saved.projectScript : "",
       keys: Object.keys(saved).length ? saved.keys === true : true, // no file yet: nothing from 0.6.1
       measuredKeys: Object.keys(saved).length ? (saved.measuredKeys ?? saved.keys) === true : true,
       keyTimes:
@@ -516,6 +520,42 @@ function start(opts = {}) {
     const st = publicState(list);
     broadcast({ type: "state", state: st });
     pushOsc(st);
+    if (projectScript.running()) projectScript.update(oscValues(st));
+  }
+
+  // ---------------- project script (AbleSet) ----------------
+  let scriptLog = []; // { at, text, error? }: shown in Opzioni on this computer
+  let lastScriptError = null;
+  function addScriptLog(text, error = false) {
+    scriptLog = [...scriptLog.slice(-199), { at: new Date(cfg.now()).toISOString(), text: String(text).slice(0, 2000), ...(error ? { error } : {}) }];
+    // the same error over and over (a failing interval) goes to openset.log once
+    if (error && text !== lastScriptError) log.error(`[script] ${text}`);
+    if (error) lastScriptError = text;
+  }
+  const projectScript = createProjectScript({
+    onLog: (text) => addScriptLog(text),
+    onError: (text) => addScriptLog(text, true),
+    onShared: (key, value) => handleCommand(value === undefined ? { cmd: "resetShared", key } : { cmd: "setShared", key, value }),
+    onSendOsc: (command, args) => {
+      // "/global/play": a command to OpenSet; "host:port/address": out to another program
+      if (command.startsWith("/")) {
+        const plain = args.map((a) => (a && typeof a === "object" && Number.isInteger(a.int) ? a.int : a));
+        if (!handleOsc({ address: command, args: plain }, { address: "127.0.0.1", port: 0 })) addScriptLog(`sendOsc: comando non eseguito «${command}»`, true);
+        return;
+      }
+      const m = /^([\w.-]+):(\d{1,5})(\/\S*)$/.exec(command);
+      if (!m || Number(m[2]) < 1 || Number(m[2]) > 65535) return addScriptLog(`sendOsc: indirizzo non valido «${command}» (es. 127.0.0.1:8000/luci)`, true);
+      try {
+        stateUdp.send(osc.encode(m[3], args), Number(m[2]), m[1]);
+      } catch (e) {
+        addScriptLog(`sendOsc: ${e.message}`, true);
+      }
+    },
+  });
+  function runProjectScript() {
+    scriptLog = [];
+    lastScriptError = null;
+    projectScript.start(prefs.projectScript, prefs.shared, oscValues(publicState()));
   }
 
   // ---------------- UDP: Live bridge + OSC ----------------
@@ -732,8 +772,9 @@ function start(opts = {}) {
   // which is not repeated again). Engine commands are not: each computer runs
   // its own engine on the same set, and Ableton Link keeps the clocks together.
 
-  const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword"]);
-  const HOST_ONLY = new Set(["peers", "setPassword"]); // the computer running OpenSet decides these
+  // each backup runs its own project script: not copied
+  const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword", "setProjectScript", "stopProjectScript"]);
+  const HOST_ONLY = new Set(["peers", "setPassword", "setProjectScript", "stopProjectScript"]); // the computer running OpenSet decides these
   // settings of this computer only: a backup keeps its own scene, network, windows…
   const LOCAL_SETTINGS = ["scene", "driftCorrection", "network", "openBrowser", "floatingWindow", "autoLaunchLive", "defaultView"];
   const peerDenied = new Set(); // backups that refuse the copied commands (a password)
@@ -905,6 +946,7 @@ function start(opts = {}) {
   // a slider moves a variable many times a second: saved once it settles
   let saveTimer = null;
   function sharedChanged() {
+    projectScript.sharedChanged(prefs.shared);
     if (prefs.settings.persistSharedVariables) {
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
@@ -1131,6 +1173,17 @@ function start(opts = {}) {
         changed();
         return true;
       }
+      case "setProjectScript":
+        // this computer only (HOST_ONLY): the script runs here, with OpenSet's rights
+        if (typeof msg.code !== "string" || msg.code.length > SCRIPT_MAX) return false;
+        prefs.projectScript = msg.code;
+        savePrefs();
+        runProjectScript();
+        return true;
+      case "stopProjectScript":
+        projectScript.stop();
+        addScriptLog("Script fermato");
+        return true;
       case "setShared": {
         if (!validSharedKey(msg.key) || !validSharedValue(msg.value)) return false;
         if (!Object.hasOwn(prefs.shared, msg.key) && Object.keys(prefs.shared).length >= SHARED_MAX) return false;
@@ -1649,6 +1702,12 @@ function start(opts = {}) {
     return false;
   }
 
+  // the project script, its log and whether it runs: on this computer only, like its editing
+  app.get("/api/script", (req, res) => {
+    if (!localReq(req)) return res.status(403).json({ error: "Only allowed from this computer" });
+    res.json({ code: prefs.projectScript, log: scriptLog, running: projectScript.running() });
+  });
+
   app.post("/api/load-als", (req, res) => {
     // reads files from disk: only from the computer running OpenSet
     if (!localReq(req)) return res.status(403).json({ error: "Only allowed from this computer" });
@@ -1786,6 +1845,7 @@ function start(opts = {}) {
     clearInterval(peerTimer);
     clearInterval(pingTimer);
     clearInterval(fadeTimer);
+    projectScript.stop();
     for (const c of wss.clients) c.terminate();
     wss.close();
     for (const u of [udp, stateUdp]) try { u.close(); } catch {} // the OSC socket is closed when its port was busy
@@ -1816,6 +1876,7 @@ function start(opts = {}) {
         if (ports.length > 1 && httpPort !== prefs.httpPort) setPrefs({ httpPort });
         if (cfg.log) printAddresses(cfg.netInfo(), httpPort);
         afterListen(httpPort);
+        runProjectScript();
         resolve({ httpPort, udpPort: oscPort, statePort: stateUdp.address().port, close });
       });
     };
