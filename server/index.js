@@ -1033,6 +1033,7 @@ function start(opts = {}) {
           .then((auth) => {
             if (seq !== passwordSeq) return true;
             prefs = { ...prefs, auth };
+            authGen++;
             savePrefs();
             tokens.clear();
             for (const ws of wss.clients) [ws.authed, ws.token] = [false, null];
@@ -1390,6 +1391,9 @@ function start(opts = {}) {
 
   const newNonce = () => crypto.randomBytes(16).toString("hex");
   let passwordSeq = 0;
+  // passwords set on this computer: a check that ends after a change does not unlock.
+  // A 0.6 password stored the new way by another device is the same password, not counted
+  let authGen = 0;
   function sendAccess(ws, token, extra = {}) {
     const a = prefs.auth;
     // the numbers the page needs to prove it knows the password; with a 0.6 password (legacy) the
@@ -1435,11 +1439,12 @@ function start(opts = {}) {
         limiter.fail(ws.ip);
         if (proof !== undefined) ok = checkProof(prefs.auth, ws.nonce, proof);
         else {
-          const auth = prefs.auth;
-          // a password changed on this computer while this one was being checked does not unlock
-          ok = (await checkPassword(auth, password)) && prefs.auth === auth;
+          const [auth, gen] = [prefs.auth, authGen];
+          ok = await checkPassword(auth, password);
           // saved by OpenSet 0.6: from now on the page proves it knows the password instead of sending it
           if (ok && auth.hash) await upgradePassword(ws, auth, password);
+          // a password changed on this computer meanwhile (also during the update) does not unlock
+          ok = ok && gen === authGen;
         }
       }
       if (ok) limiter.ok(ws.ip);
@@ -1463,8 +1468,8 @@ function start(opts = {}) {
     }
     const pw = req.get("x-openset-password");
     if (pw !== undefined || bearer) limiter.fail(ip); // before scrypt: parallel guesses are all counted
-    const auth = prefs.auth;
-    if (pw !== undefined && (await checkPassword(auth, pw)) && prefs.auth === auth) {
+    const [auth, gen] = [prefs.auth, authGen];
+    if (pw !== undefined && (await checkPassword(auth, pw)) && gen === authGen) {
       limiter.ok(ip);
       return true;
     }
