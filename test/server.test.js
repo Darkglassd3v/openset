@@ -698,7 +698,7 @@ test("password: stored as a salted hash, never published, set only from this com
   assert.ok(!JSON.stringify(s).includes("palco-2026") && !("auth" in s));
   const saved = JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8"));
   assert.match(saved.auth.salt, /^[0-9a-f]{32}$/);
-  assert.match(saved.auth.key, /^[0-9a-f]{64}$/);
+  assert.match(saved.auth.storedKey, /^[0-9a-f]{64}$/);
   assert.ok(!fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8").includes("palco-2026"));
   // this computer keeps full control without the password
   assert.equal((await c.cmd({ cmd: "stop" })).status, 200);
@@ -2009,6 +2009,16 @@ test("C3: one address cannot open connections without limit; this computer alway
   for (let i = 0; i < 4; i++) assert.ok((await open()) instanceof WebSocket); // the computer with OpenSet
 });
 
+// SCRAM-SHA-256 proof the page sends to unlock
+function proofFor(challenge, pw = "palco-2026") {
+  const ck = crypto
+    .createHmac("sha256", crypto.pbkdf2Sync(pw, Buffer.from(challenge.salt, "hex"), challenge.iter, 32, "sha256"))
+    .update("Client Key")
+    .digest();
+  const sig = crypto.createHmac("sha256", crypto.createHash("sha256").update(ck).digest()).update(challenge.nonce).digest();
+  return Buffer.from(ck.map((x, i) => x ^ sig[i])).toString("hex");
+}
+
 // a browser on another device of the network, with the access messages it gets
 async function lanSocket(t, c) {
   const ws = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
@@ -2026,10 +2036,9 @@ test("C3: a device unlocks with a proof made from the password; the password its
   const b = await lanSocket(t, c);
   const { challenge } = await b.access(0);
   assert.match(challenge.salt, /^[0-9a-f]{32}$/);
-  assert.equal(challenge.iter, 25000);
+  assert.equal(challenge.iter, 100000);
   assert.match(challenge.nonce, /^[0-9a-f]{32}$/);
-  const key = crypto.pbkdf2Sync("palco-2026", Buffer.from(challenge.salt, "hex"), challenge.iter, 32, "sha256");
-  const proof = (nonce) => crypto.createHmac("sha256", key).update(nonce).digest("hex");
+  const proof = (nonce) => proofFor({ ...challenge, nonce });
   b.send({ type: "auth", proof: "00".repeat(32) });
   const wrong = await b.access(1);
   assert.equal(wrong.control, false);
@@ -2056,7 +2065,7 @@ test("C3: a password saved by an older OpenSet works once and is then stored the
   assert.equal(first.challenge, undefined); // no key yet: the page sends the password this one time
   b.send({ type: "auth", password: "palco-2026" });
   assert.equal((await b.access(1)).control, true);
-  await waitFor(() => JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth.key, "stored as a PBKDF2 key");
+  await waitFor(() => JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth.storedKey, "stored the new way");
 });
 
 test("C3: commands to Live carry the key the Remote Script sent with its state", async (t) => {
@@ -2073,8 +2082,6 @@ test("C3: commands to Live carry the key the Remote Script sent with its state",
   assert.equal((await again).key, "a".repeat(32));
 });
 
-const unlockKey = (challenge, pw = "palco-2026") => crypto.pbkdf2Sync(pw, Buffer.from(challenge.salt, "hex"), challenge.iter, 32, "sha256");
-const proofFor = (challenge, pw) => crypto.createHmac("sha256", unlockKey(challenge, pw)).update(challenge.nonce).digest("hex");
 
 test("R1: a device with a valid unlock is never stopped by someone else's wrong passwords", { skip: !LAN_IP && "no LAN address" }, async (t) => {
   const c = await setup(t);

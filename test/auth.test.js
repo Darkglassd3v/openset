@@ -56,24 +56,39 @@ test("C3: at most 200 unlock tokens are kept, the oldest one goes first", () => 
   assert.equal(tokens.valid(first, "10.0.0.1"), false);
 });
 
-test("C3: the password is stored as a PBKDF2 key that a browser can compute too", async () => {
+// SCRAM-SHA-256 (RFC 5802): what the page computes from the password
+const sha = (b) => crypto.createHash("sha256").update(b).digest();
+const hmac = (k, m) => crypto.createHmac("sha256", k).update(m).digest();
+const clientKey = (pw, a) => hmac(crypto.pbkdf2Sync(pw, Buffer.from(a.salt, "hex"), a.iter, 32, "sha256"), "Client Key");
+const scramProof = (pw, a, nonce) => {
+  const ck = clientKey(pw, a);
+  const sig = hmac(sha(ck), nonce);
+  return Buffer.from(ck.map((x, i) => x ^ sig[i])).toString("hex");
+};
+
+test("R2: only a check of the password is stored (SCRAM stored key), with 100000 iterations", async () => {
   const a = hashPassword("palco-2026");
   assert.match(a.salt, /^[0-9a-f]{32}$/);
-  assert.equal(a.iter, 25000);
-  assert.equal(a.key, crypto.pbkdf2Sync("palco-2026", Buffer.from(a.salt, "hex"), a.iter, 32, "sha256").toString("hex"));
+  assert.equal(a.iter, 100000);
+  assert.equal(a.storedKey, sha(clientKey("palco-2026", a)).toString("hex"));
+  assert.equal(a.key, undefined);
   assert.equal(validAuth(a), true);
   assert.equal(await checkPassword(a, "palco-2026"), true);
   assert.equal(await checkPassword(a, "palco-2027"), false);
 });
 
-test("C3: a proof is the HMAC of a one-time number with the key; a password saved by an older OpenSet still works", async () => {
+test("R2: a proof made from the password unlocks; what is in setlist.json does not", async () => {
   const a = hashPassword("palco-2026");
   const nonce = "ab".repeat(16);
-  const proof = crypto.createHmac("sha256", Buffer.from(a.key, "hex")).update(nonce).digest("hex");
+  const proof = scramProof("palco-2026", a, nonce);
   assert.equal(checkProof(a, nonce, proof), true);
   assert.equal(checkProof(a, "cd".repeat(16), proof), false);
   assert.equal(checkProof(a, nonce, "00".repeat(32)), false);
   assert.equal(checkProof(a, nonce, "zz"), false);
+  // someone with a copy of setlist.json: the stored key alone gives no valid proof
+  const stored = Buffer.from(a.storedKey, "hex");
+  assert.equal(checkProof(a, nonce, hmac(stored, nonce).toString("hex")), false);
+  assert.equal(checkProof(a, nonce, Buffer.from(stored.map((x, i) => x ^ hmac(stored, nonce)[i])).toString("hex")), false);
   const salt = crypto.randomBytes(16).toString("hex");
   const legacy = { salt, hash: crypto.scryptSync("palco-2026", Buffer.from(salt, "hex"), 32).toString("hex") };
   assert.equal(validAuth(legacy), true);
