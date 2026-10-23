@@ -142,7 +142,7 @@ Live finto dei test e va nella lista «Da verificare su un computer vero».
   - [ ] V3 Safe Mode: un pulsante del canvas (oscRun) cambiava brano anche con il Safe Mode attivo
   - [ ] V4 Variabili condivise: si arrivava a 32 MB di valori, mandati a ogni pagina 10 volte al secondo: tetto sul totale
   - [ ] V5 iPad vecchi: la pagina usava `Object.hasOwn` (Safari 15.4): canvas fermo e valori «⚠»
-  - [ ] V6 Windows: «Salva il set aperto» non trovava mai la finestra di Live (AppActivate per titolo): attivare Live per processo
+  - [x] V6 Windows: «Salva il set aperto» non trovava mai la finestra di Live (AppActivate per titolo): attivare Live per processo
   - [ ] V7 Più file: se il file era già aperto in Live o OpenSet ripartiva, nessun brano era corrente: riconoscere il file (nome del primo brano, file ricordato con i suoi locator)
   - [ ] V8 Script del canvas: un testo con «;» o a capo arrivava tagliato (o diventava un secondo comando): comando OSC strutturato `{address, args}`
   - [ ] V9 Riserva: i comandi dello script di progetto venivano copiati sulla riserva, che ha il suo script: eseguiti due volte

@@ -61,7 +61,8 @@ function saveCommand(platform) {
     return ["osascript", ["-e", 'tell application "System Events" to tell process "Live" to set frontmost to true', "-e", "delay 0.3",
       "-e", 'tell application "System Events" to keystroke "s" using command down']];
   if (platform === "win32")
-    return ["powershell", ["-NoProfile", "-Command", "$w = New-Object -ComObject WScript.Shell; if ($w.AppActivate('Ableton Live')) { Start-Sleep -Milliseconds 300; $w.SendKeys('^s') }"]];
+    // by process: Live's window title starts with the set's name ("Show - Ableton Live 12 Suite")
+    return ["powershell", ["-NoProfile", "-Command", "$p = Get-Process -Name 'Ableton Live*' -ErrorAction SilentlyContinue | Select-Object -First 1; $w = New-Object -ComObject WScript.Shell; if ($p -and $w.AppActivate($p.Id)) { Start-Sleep -Milliseconds 300; $w.SendKeys('^s') }"]];
   return null;
 }
 

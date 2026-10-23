@@ -76,7 +76,7 @@ test("F9: the command that saves Live's set before another file opens: Cmd+S on 
   assert.match(macArgs.join(" "), /keystroke "s" using command down/);
   const [win, winArgs] = saveCommand("win32");
   assert.equal(win, "powershell");
-  assert.match(winArgs.join(" "), /AppActivate\('Ableton Live'\)/);
+  assert.match(winArgs.join(" "), /AppActivate\(\$p\.Id\)/); // V6: by process, not by title
   assert.match(winArgs.join(" "), /SendKeys\('\^s'\)/);
   assert.equal(saveCommand("linux"), null); // no Live on Linux
 });
