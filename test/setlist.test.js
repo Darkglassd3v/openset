@@ -530,3 +530,21 @@ test("T1: keys for a long set are found by name, not by comparing every song wit
   buildSetlist(cues, times);
   assert.ok(reads <= 2 * cues.length, `${reads} reads for ${cues.length} songs`);
 });
+
+test("F1: songs added by hand: never under the playhead, counted in the times, placed by the order", () => {
+  const S = require("../server/setlist");
+  assert.equal(typeof S.manualSongs, "function", "manualSongs in server/setlist.js");
+  const live = S.buildSetlist([{ name: "A", time: 0 }, { name: "B", time: 16 }]);
+  const songs = [...live, ...S.manualSongs([{ id: "x1", name: "Acustica", seconds: 200, lyrics: "Prima\nSeconda" }])];
+  const list = S.applyOrder(songs, { order: ["A", "manual:x1", "B"] });
+  assert.deepEqual(list.map((s) => s.key), ["A", "manual:x1", "B"]);
+  assert.equal(list[1].manual, true);
+  assert.equal(list[1].name, "Acustica");
+  assert.equal(S.songAt(list, 1000), 2); // B: Live's playhead is never in a song played by hand
+  assert.equal(S.songSeconds(list[1], 120), 200);
+  assert.equal(S.nextSong(list, 0), 1);
+  assert.deepEqual(Object.keys(S.keyTimesOf(list)), ["A", "B"]);
+  const t = S.timing(list, 1, 0, 120); // the song by hand is the current one
+  assert.deepEqual([t.songLeft, t.songElapsed], [200, 0]);
+  assert.equal(t.setTotal, S.songSeconds(list[0], 120) + S.songSeconds(list[2], 120) + 200);
+});

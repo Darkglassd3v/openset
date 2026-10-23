@@ -2885,3 +2885,59 @@ test("F5: loop values like AbleSet's, and OSC lines that go out to another progr
   await waitFor(() => seen.length, "the OSC message");
   assert.deepEqual(seen[0], { address: "/luci/scena", args: [2, "blu"] });
 });
+
+test("F1: a song added by hand: in the setlist, chosen without Live playing it, with its lyrics; Live stops before it", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  assert.equal((await c.cmd({ cmd: "addManualSong", name: "Acustica", seconds: 200, lyrics: "Prima riga\nSeconda riga" })).status, 200);
+  const m = (await c.state()).setlist.find((s) => s.manual);
+  assert.equal(m.name, "Acustica");
+  assert.equal(m.seconds, 200);
+  assert.match(m.key, /^manual:/);
+  await c.cmd({ cmd: "setlist", order: ["Perché", m.key, "Finale", "Intro Song"], skip: [], stopAfter: [], notes: {} });
+  const idx = (await c.state()).setlist.findIndex((s) => s.manual);
+  assert.equal(idx, 1);
+  const lyr = await (await fetch(c.url("/api/lyrics/" + encodeURIComponent(m.key)))).json();
+  assert.deepEqual([lyr.static, lyr.lines.map((l) => l.segments[0].text)], [true, ["Prima riga", "Seconda riga"]]);
+
+  // Perché ends and the next song is played by hand: Live stops instead of jumping
+  await c.at(60, { is_playing: true });
+  const stopped = c.expectCmd({ cmd: "stop" });
+  await c.at(63);
+  await c.at(66);
+  await c.at(69);
+  await c.at(71.9);
+  await c.at(72.1);
+  await stopped;
+  await c.at(72.1, { is_playing: false });
+  // chosen: it becomes the current song; Live is not asked to play
+  const before = c.cmds.length;
+  assert.equal((await c.cmd({ cmd: "song", index: idx })).status, 200);
+  assert.equal((await c.state()).current, idx);
+  assert.ok(!c.cmds.slice(before).some((x) => x.cmd === "jump" || x.cmd === "play"));
+  // Next: back to Live, at Finale
+  const jumped = c.expectCmd({ cmd: "jump", time: 72 });
+  await c.cmd({ cmd: "next" });
+  await jumped;
+  await c.at(72.5, { is_playing: true });
+  assert.equal((await c.state()).setlist[(await c.state()).current].name, "Finale");
+
+  const id = m.key.slice(7);
+  assert.equal((await c.cmd({ cmd: "updateManualSong", id, name: "Unplugged", seconds: 180 })).status, 200);
+  assert.equal((await c.state()).setlist[idx].name, "Unplugged");
+  for (const bad of [{ cmd: "addManualSong", name: "", seconds: 10 }, { cmd: "addManualSong", name: "X", seconds: -1 },
+    { cmd: "addManualSong", name: "X", seconds: 10, lyrics: "x".repeat(20001) }, { cmd: "updateManualSong", id: "nope", name: "Y" }])
+    assert.equal((await c.cmd(bad)).status, 400, JSON.stringify(bad).slice(0, 60));
+  assert.equal((await c.cmd({ cmd: "deleteManualSong", id })).status, 200);
+  assert.equal((await c.state()).setlist.some((s) => s.manual), false);
+});
+
+test("F1: a song added by hand gets the same key on the backup computer", async (t) => {
+  const main = await setup(t, { peerPollMs: 50 });
+  const backup = await setup(t, { peerPollMs: 50 });
+  await main.cmd({ cmd: "peers", urls: [`http://127.0.0.1:${backup.srv.httpPort}`] });
+  await main.cmd({ cmd: "addManualSong", name: "Acustica", seconds: 200 });
+  const key = (await main.state()).setlist.find((s) => s.manual).key;
+  await waitFor(async () => (await backup.state()).setlist.some((s) => s.manual), "copied to the backup");
+  assert.equal((await backup.state()).setlist.find((s) => s.manual).key, key);
+});
