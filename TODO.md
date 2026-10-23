@@ -148,7 +148,7 @@ Live finto dei test e va nella lista «Da verificare su un computer vero».
   - [ ] V9 Riserva: i comandi dello script di progetto venivano copiati sulla riserva, che ha il suo script: eseguiti due volte
   - [ ] V10 Immagini del canvas: nomi riservati di Windows (`CON.png`) accettati e nessun tetto allo spazio usato
   - [ ] V11 Un pulsante con `//sleep 0` si fermava lì (il resto non partiva, errore nel log)
-  - [ ] V12 Mixer: togliendo il solo al gruppo Click (con «Click +NM») mentre un altro gruppo è in solo, il click non era più in solo
+  - [x] V12 Mixer: togliendo il solo al gruppo Click (con «Click +NM») mentre un altro gruppo è in solo, il click non era più in solo
   - [ ] V13 Più file con attesa: Avanti e poi Indietro non annullava l'Avanti, il file si apriva lo stesso
   - [ ] V14 Brani a mano: via OSC (`jumpBySongs`, `jumpBySections`, `jumpByLines`) si contava dalla posizione di Live, non dal brano a mano corrente
   - [ ] V15 Canvas: «Nuovo canvas» prima che l'elenco fosse caricato, o un cambio di nome, poteva sovrascrivere un canvas salvato senza chiedere

@@ -54,8 +54,14 @@ function mixerCommands(tracks, group, change) {
   const state = mixerState(tracks).find((x) => x.name === group);
   const byIndex = new Map(tracks.map((t) => [t.i, t]));
   const want = new Map(); // track index -> { field: value }
+  // the last word wins: a later pass may take back a change asked before it (a +NEVERMUTE track
+  // un-soloed with its own group stays soloed while another group is)
   const set = (i, field, value) => {
-    if (byIndex.get(i)[field] !== value) want.set(i, { ...want.get(i), [field]: value });
+    const w = { ...want.get(i) };
+    if (byIndex.get(i)[field] !== value) w[field] = value;
+    else delete w[field];
+    if (Object.keys(w).length) want.set(i, w);
+    else want.delete(i);
   };
   if ("mute" in change) {
     const on = change.mute === "toggle" ? !state.muted : change.mute;
