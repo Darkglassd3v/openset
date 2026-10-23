@@ -20,13 +20,14 @@ const S = require("./setlist");
 const L = require("./lyrics");
 const M = require("./mixer");
 const { createProjectScript } = require("./script");
+const MF = require("./multifile");
 const C = require("./canvas");
 const osc = require("./osc");
 const { createEngine } = require("./engine");
 const { createMeter } = require("./meter");
 const { cuesBetween } = require("./cues");
 const { dataDir, migrateData } = require("./datadir");
-const { parseArgs, openBrowser, liveRunning } = require("./launch");
+const { parseArgs, openBrowser, liveRunning, saveCommand } = require("./launch");
 const { userLibraries, installRemoteScript, installSummary, installLog } = require("./install");
 const { deviceUrls, lanInterfaces, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
@@ -83,6 +84,7 @@ const validName = (n) => typeof n === "string" && n.trim().length > 0 && n.lengt
 const SETTING_VALUES = {
   jumpMode: JUMP_MODES,
   countInBars: [1, 2, 4],
+  songFileDelay: [0, 500, 1000, 2000, 3000], // ms, AbleSet's Delay Before Jumping to Song File
   defaultView: ["setlist", "stage", "lyrics", "mixer", "canvas", "settings"],
   openBrowser: ["start", "live", "off"], // AbleSet: Open AbleSet on Start (when Live connects)
   scene: ["main", "backup"], // AbleNet: Connected Scene
@@ -182,6 +184,11 @@ function defaultPrefs() {
       network: "",
       // MIDI Mapping, OSC & Scripting
       persistSharedVariables: false,
+      // multi-file projects (AbleSet) and the mixer between their songs
+      songFileDelay: 0,
+      saveBeforeLoading: true,
+      mixerTransferGroupStates: false,
+      mixerTransferGroupVolumes: false,
     },
     shared: {}, // AbleSet's shared variables (/shared/<name>), saved only with persistSharedVariables
     saved: {},
@@ -193,6 +200,7 @@ function defaultPrefs() {
     projectScript: "", // AbleSet's Project Script (JavaScript), run by server/script.js
     canvases: {}, // AbleSet's Canvas: name -> { name, elements } (server/canvas.js)
     manualSongs: [], // songs added by hand, without a Live project (S.manualSongs)
+    multiFile: "", // folder of a multi-file project (one .als per song), "" when off
   };
 }
 
@@ -257,6 +265,12 @@ function start(opts = {}) {
     logger: null, // the CLI passes its own, so a crash lands in the same file
     openBrowser: null, // (url, { app }) => void: the CLI's, null with --no-open
     openFile: (file) => openBrowser(file), // the last .als, opened with Live
+    // Save Changes Before Loading Project: Cmd+S / Ctrl+S to Live, then the file opens saveWaitMs later
+    saveLiveSet: () => {
+      const c = saveCommand(process.platform);
+      if (c) require("child_process").spawn(c[0], c[1], { stdio: "ignore", windowsHide: true }).on("error", () => {});
+    },
+    saveWaitMs: 1500,
     liveRunning: () => liveRunning(),
     installScript: null, // () => install result: the CLI's, for "Reinstalla il Remote Script"
     quit: null, // the CLI's process exit, for "Esci da OpenSet"
@@ -297,7 +311,14 @@ function start(opts = {}) {
   let offlineProject = null; // from .als parsing
   let queued = null; // { time, type: "song"|"section" }: a jump waiting for its moment
   let manualCurrent = null; // key of the song played by hand right now (Live is not playing it)
+  // multi-file projects: the song files, the one Live is loading ({ key, liveKey, cues, at }) and the loaded one
+  let songFiles = []; // read once prefs are loaded
+  let fileLoading = null;
+  let fileLoaded = null;
+  let pendingSong = null; // { index, timer }: Next/Previous waiting for Delay Before Jumping to Song File
+  let mixerCarry = null; // the groups of the last file, for Sync Group Solos & Mutes Between Songs
   let prefs = loadPrefs();
+  songFiles = prefs.multiFile ? MF.scanSongFiles(prefs.multiFile) : [];
   const engine = createEngine();
   const meter = createMeter();
   const chunks = { id: null, parts: [] };
@@ -331,6 +352,7 @@ function start(opts = {}) {
       projectScript: typeof saved.projectScript === "string" && saved.projectScript.length <= SCRIPT_MAX ? saved.projectScript : "",
       canvases: cleanCanvases(saved.canvases),
       manualSongs: Array.isArray(saved.manualSongs) ? saved.manualSongs.filter(validManual).slice(0, 200) : [],
+      multiFile: typeof saved.multiFile === "string" && saved.multiFile.length <= 1000 ? saved.multiFile : "",
       keys: Object.keys(saved).length ? saved.keys === true : true, // no file yet: nothing from 0.6.1
       measuredKeys: Object.keys(saved).length ? (saved.measuredKeys ?? saved.keys) === true : true,
       keyTimes:
@@ -382,7 +404,9 @@ function start(opts = {}) {
 
   function songs() {
     const source = useLive() ? cues : offlineProject.locators;
-    return [...S.buildSetlist(S.cuesFromLive(source, currentTracks()), prefs.keyTimes), ...S.manualSongs(prefs.manualSongs)];
+    const live = S.buildSetlist(S.cuesFromLive(source, currentTracks()), prefs.keyTimes);
+    const main = prefs.multiFile ? MF.fileSongs(songFiles, fileLoaded, live) : live;
+    return [...main, ...S.manualSongs(prefs.manualSongs)];
   }
 
   // settings saved by OpenSet 0.6.1 use song names: converted once, as soon as there are songs
@@ -534,6 +558,7 @@ function start(opts = {}) {
       lyricsTracks: L.lyricsTracks(currentTracks()), // each device picks one (AbleSet: by slug)
       shared: prefs.shared,
       canvases: Object.keys(prefs.canvases),
+      multiFile: { folder: prefs.multiFile, loading: fileLoading && fileLoading.key, loaded: fileLoaded },
       canvasRev,
       mixer: M.mixerState(mixerTracks).map((g) => ({ ...g, isFading: fades.has(g.name) })),
       scriptInstall: cfg.scriptInstall,
@@ -598,7 +623,7 @@ function start(opts = {}) {
       } else if (skip) continue;
       else if (st.sleep) await new Promise((r) => setTimeout(r, Math.min(st.sleep, 60000)));
       else if (st.awaitJump) await until(() => !queued);
-      else if (st.awaitFileLoad) continue; // shortcut: no file loads until multi-file projects (F9)
+      else if (st.awaitFileLoad) await until(() => !fileLoading);
       else if (st.host) sendOscOut(st.host, st.port, st.address, st.args);
       else handleOsc({ address: st.address, args: st.args }, { address: "127.0.0.1", port: 0 });
     }
@@ -668,6 +693,7 @@ function start(opts = {}) {
       const ok = (t) => t && Number.isInteger(t.i) && typeof t.name === "string" && typeof t.mute === "boolean" &&
         typeof t.solo === "boolean" && num(t.volume) && num(t.meter);
       mixerTracks = Array.isArray(msg.tracks) ? msg.tracks.filter(ok).slice(0, 500) : [];
+      if (mixerCarry && fileLoaded && !fileLoading) applyMixerCarry(); // the new file's mixer
       return;
     }
     if (msg.type === "clips") {
@@ -691,6 +717,15 @@ function start(opts = {}) {
         `[live] connected: Live ${liveState.live_version || "?"}, Remote Script ${liveState.script_version || "older than 0.5.1"}, ` +
           `command port ${liveState.cmd_port === false ? "busy" : "ok"}`
       );
+    // multi-file project: the Remote Script starts again (a new key) or new locators come: the file is in
+    if (fileLoading && ((typeof key === "string" && key !== fileLoading.liveKey) || (Array.isArray(newCues) && JSON.stringify(newCues) !== fileLoading.cues))) {
+      fileLoaded = fileLoading.key;
+      fileLoading = null;
+      log.info(`[files] ${fileLoaded} loaded`);
+    } else if (fileLoading && Date.now() - fileLoading.at > 60000) {
+      log.error(`[files] ${fileLoading.key} did not load within a minute`);
+      fileLoading = null;
+    }
     if (Array.isArray(newCues)) {
       cues = newCues;
       songsMoved();
@@ -739,6 +774,12 @@ function start(opts = {}) {
         }
       }
       if (queued && cmds.some((c) => c.cmd === "jump" && Math.abs(c.time - queued.time) < S.EPS)) queued = null;
+      // multi-file project: the loaded song ended with a stop; like Jump to Next Song After Stop, the next file opens
+      const ended = prefs.multiFile && prefs.settings.autoJump && cmds.some((c) => c.cmd === "stop") && list[S.songAt(list, liveState.beat)];
+      if (ended && ended.end != null && liveState.beat >= ended.end - S.EPS) {
+        const n = S.nextSong(list, list.indexOf(ended));
+        if (n >= 0 && list[n].file && list[n].key !== fileLoaded) loadSongFile(list[n]);
+      }
       // the playhead got to the queued target by itself (the next section or song): done
       const t = queued && queued.time;
       if (queued && liveState.is_playing && prevBeat < t - S.EPS && liveState.beat >= t - S.EPS && liveState.beat - prevBeat < 4)
@@ -851,8 +892,8 @@ function start(opts = {}) {
   // its own engine on the same set, and Ableton Link keeps the clocks together.
 
   // each backup runs its own project script: not copied
-  const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword", "setProjectScript", "stopProjectScript", "oscRun"]);
-  const HOST_ONLY = new Set(["peers", "setPassword", "setProjectScript", "stopProjectScript"]); // the computer running OpenSet decides these
+  const LOCAL_ONLY = new Set(["peers", "midi", "devices", "setPassword", "setProjectScript", "stopProjectScript", "oscRun", "multiFile"]);
+  const HOST_ONLY = new Set(["peers", "setPassword", "setProjectScript", "stopProjectScript", "multiFile"]); // the computer running OpenSet decides these
   // settings of this computer only: a backup keeps its own scene, network, windows…
   const LOCAL_SETTINGS = ["scene", "driftCorrection", "network", "openBrowser", "floatingWindow", "autoLaunchLive", "defaultView"];
   const peerDenied = new Set(); // backups that refuse the copied commands (a password)
@@ -985,6 +1026,7 @@ function start(opts = {}) {
   // a song of the setlist: a Live song is a jump; one played by hand becomes the current song
   // and Live stops (it has nothing to play for it)
   function goToSong(s) {
+    if (s.file && s.key !== fileLoaded) return loadSongFile(s);
     if (!s.manual) {
       manualCurrent = null;
       return jumpTo(s.playStart, "song");
@@ -994,6 +1036,50 @@ function start(opts = {}) {
     if (liveState.is_playing) sendToLive({ cmd: "stop" });
     changed();
     return true;
+  }
+
+  // multi-file project: the song's file opens in Live (the open set saved first, if asked)
+  function loadSongFile(s) {
+    const f = songFiles.find((x) => x.key === s.file);
+    if (!f) return false;
+    // Sync Group Solos & Mutes Between Songs: the groups now, for the next file
+    mixerCarry = prefs.settings.mixerTransferGroupStates ? M.mixerState(mixerTracks) : null;
+    if (liveState.is_playing) sendToLive({ cmd: "stop" });
+    fileLoading = { key: f.key, liveKey, cues: JSON.stringify(cues), at: Date.now() };
+    manualCurrent = null;
+    queued = null;
+    log.info(`[files] opening ${f.file}`);
+    const open = () => fileLoading && fileLoading.key === f.key && cfg.openFile(f.file);
+    if (prefs.settings.saveBeforeLoading) {
+      cfg.saveLiveSet();
+      setTimeout(open, cfg.saveWaitMs);
+    } else open();
+    changed();
+    return true;
+  }
+
+  // Next/Previous: in a multi-file project they wait songFileDelay; pressed again meanwhile, they add up
+  function goToSongSoon(list, i) {
+    const delay = prefs.multiFile ? prefs.settings.songFileDelay : 0;
+    if (!delay) return goToSong(list[i]);
+    clearTimeout(pendingSong && pendingSong.timer);
+    pendingSong = { index: i };
+    pendingSong.timer = setTimeout(() => {
+      const s = setlist()[pendingSong.index];
+      pendingSong = null;
+      if (s) goToSong(s);
+    }, delay);
+    return true;
+  }
+
+  // the mixer of a newly loaded file takes the groups of the previous one
+  function applyMixerCarry() {
+    const carry = mixerCarry;
+    mixerCarry = null;
+    for (const g of carry) {
+      const changes = [{ mute: g.muted }, { solo: g.soloed }, ...(prefs.settings.mixerTransferGroupVolumes ? [{ volume: g.volume }] : [])];
+      for (const change of changes) for (const c of M.mixerCommands(mixerTracks, g.name, change) || []) sendToLive({ cmd: "mixer", ...c });
+    }
   }
 
   // A jump from the user. In the queued jump modes, while playing, it waits
@@ -1120,8 +1206,8 @@ function start(opts = {}) {
       }
       case "next": {
         if (safe) return false;
-        const n = S.nextSong(list, cur);
-        if (n >= 0) goToSong(list[n]);
+        const n = S.nextSong(list, pendingSong ? pendingSong.index : cur);
+        if (n >= 0) goToSongSoon(list, n);
         return true;
       }
       case "prev": {
@@ -1129,10 +1215,20 @@ function start(opts = {}) {
         if (song && !song.manual && !msg.force && prefs.settings.restartBeforeBack && liveState.beat - song.playStart > 1)
           return jumpTo(song.playStart, "song");
         if (safe) return false;
-        const p = S.prevSong(list, cur);
-        if (p >= 0) goToSong(list[p]);
+        const p = S.prevSong(list, pendingSong ? pendingSong.index : cur);
+        if (p >= 0) goToSongSoon(list, p);
         else if (song && !song.manual) jumpTo(song.playStart, "song");
         return true;
+      }
+      case "multiFile": {
+        // a folder on this computer (HOST_ONLY); "" turns the multi-file project off
+        const folder = msg.folder;
+        if (typeof folder !== "string" || folder.length > 1000) return false;
+        if (folder && !(fs.existsSync(folder) && fs.statSync(folder).isDirectory())) return false;
+        songFiles = folder ? MF.scanSongFiles(folder) : [];
+        fileLoading = fileLoaded = null;
+        log.info(folder ? `[files] multi-file project ${folder}: ${songFiles.length} songs` : "[files] multi-file project off");
+        return setPrefs({ multiFile: folder });
       }
       case "addManualSong":
       case "updateManualSong": {
@@ -1545,6 +1641,9 @@ function start(opts = {}) {
       "/global/isRecording": [st.record ? 1 : 0],
       "/global/isConnected": [st.connected ? 1 : 0],
       "/global/beatsPosition": [st.is_playing ? Math.floor(st.beat) : st.beat],
+      "/global/isLoadingFile": [st.multiFile.loading ? 1 : 0],
+      "/global/projectName": [st.multiFile.loaded || ""],
+      "/global/loadingProjectName": [st.multiFile.loading || ""],
       "/global/tempo": [st.tempo],
       "/global/timeSignature": [st.sig_num, st.sig_den],
       "/global/quantization": [QUANT_NAMES[st.quant] || "none"],
@@ -2047,6 +2146,7 @@ function start(opts = {}) {
     clearInterval(peerTimer);
     clearInterval(pingTimer);
     clearInterval(fadeTimer);
+    if (pendingSong) clearTimeout(pendingSong.timer);
     projectScript.stop();
     for (const c of wss.clients) c.terminate();
     wss.close();

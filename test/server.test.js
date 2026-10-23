@@ -2946,7 +2946,7 @@ async function multiSetup(t, extra = {}) {
   for (const f of ["01 Intro.als", "02 Roads [3.00].als", "03 Finale.als"]) fs.writeFileSync(path.join(dir, f), "als");
   const opened = [];
   const saved = [];
-  const c = await setup(t, { openFile: (f) => opened.push(f), saveLiveSet: () => saved.push(Date.now()), ...extra });
+  const c = await setup(t, { openFile: (f) => opened.push(f), saveLiveSet: () => saved.push(Date.now()), saveWaitMs: 50, ...extra });
   await c.connect({ ...LIVE, key: "a".repeat(32), cues: [{ name: "Intro", time: 0 }, { name: "SONG END", time: 16 }] });
   return { c, dir, opened, saved };
 }
@@ -2991,7 +2991,7 @@ test("F9: a multi-file project: the files are the setlist; choosing one saves th
   assert.equal((await c.state()).multiFile.folder, "");
 });
 
-test("F9: Delay Before Jumping to Song File: Next pressed twice opens only the song two ahead", async (t) => {
+test("F9: Delay Before Jumping to Song File: Next pressed twice opens only the second song", async (t) => {
   const { c, dir, opened } = await multiSetup(t);
   await c.cmd({ cmd: "multiFile", folder: dir });
   await c.cmd({ cmd: "settings", songFileDelay: 500, saveBeforeLoading: false });
@@ -3001,7 +3001,7 @@ test("F9: Delay Before Jumping to Song File: Next pressed twice opens only the s
   assert.equal(opened.length, 0, "still waiting");
   await waitFor(() => opened.length, "opened after the delay");
   await pause(300);
-  assert.deepEqual(opened, [path.join(dir, "03 Finale.als")]);
+  assert.deepEqual(opened, [path.join(dir, "02 Roads [3.00].als")]); // nothing loaded yet: 01, then 02
   assert.equal((await c.cmd({ cmd: "settings", songFileDelay: 700 })).status, 400); // None, 500 ms, 1, 2 or 3 s
 });
 

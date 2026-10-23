@@ -177,7 +177,8 @@ function assignKeys(songs, keyTimes) {
 // where each song is, for the next buildSetlist: a song added later with the same name
 // as one already there gets a new key instead of taking the old one's settings
 function keyTimesOf(songs) {
-  return Object.fromEntries(songs.filter((s) => !s.manual).map((s) => [s.key, [s.name, s.time]]));
+  // only songs on Live's timeline: not those added by hand, nor song files not loaded
+  return Object.fromEntries(songs.filter((s) => !s.manual && Number.isFinite(s.time)).map((s) => [s.key, [s.name, s.time]]));
 }
 
 // Songs added by hand in the web app ({ id, name, seconds, lyrics }), without a Live project:
