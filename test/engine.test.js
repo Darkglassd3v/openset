@@ -245,7 +245,7 @@ test("Always Keep Playing When Jumping to Queued Songs: no stop before a queued 
 
 test("Remove Played Songs Automatically: the song end reports the played song first", () => {
   const removing = mode("quantized", { removePlayed: true });
-  const played = (name) => ({ cmd: "played", name });
+  const played = (key) => ({ cmd: "played", key });
   assert.deepEqual(play(set(QSET), [31.9, 32.1], removing), [played("A"), jump(40)]);
   // the next song starts right at the end: no jump, the song is still reported
   const tight = set([{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "C", time: 16 }]);
@@ -309,4 +309,9 @@ test("A4: a late report (Live busy) is not a seek: the STOP in between still fir
   const songs = set([{ name: "A", time: 0 }, { name: "STOP", time: 32 }, { name: "B", time: 40 }]);
   assert.deepEqual(play(songs, [29.2, 33.7], { dt: 2.25, tempo: 120 }), [STOP, jump(40)]);
   assert.deepEqual(play(songs, [10, 33.7], { dt: 0.1, tempo: 120 }), []); // a real seek
+});
+
+test("C2: Remove Played Songs tells which of two songs with the same name was played", () => {
+  const reprise = set([{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }]);
+  assert.deepEqual(play(reprise, [23.9, 24.1], mode("quantized", { removePlayed: true }))[0], { cmd: "played", key: "A#2" });
 });

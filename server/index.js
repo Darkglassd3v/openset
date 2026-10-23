@@ -7,7 +7,6 @@
 // - Speaks AbleSet's OSC API on the same UDP port, for TouchOSC/Companion
 
 const http = require("http");
-const crypto = require("crypto");
 const net = require("net");
 const path = require("path");
 const fs = require("fs");
@@ -25,11 +24,12 @@ const { createMeter } = require("./meter");
 const { cuesBetween } = require("./cues");
 const { dataDir, migrateData } = require("./datadir");
 const { parseArgs, openBrowser, liveRunning } = require("./launch");
-const { userLibraries, installRemoteScript } = require("./install");
+const { userLibraries, installRemoteScript, installSummary, installLog } = require("./install");
 const { deviceUrls, lanInterfaces, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
-const { validAuth, hashPassword, checkPassword, createLimiter } = require("./auth");
+const crypto = require("crypto");
+const { readAuth, hashPassword, checkPassword, checkProof, createLimiter, createTokens, connectionAllowed } = require("./auth");
 const { createLog, liveLogFiles, liveLogLines } = require("./log");
 const { nudgeFor, syncTarget } = require("./ablenet");
 const { version: VERSION } = require("../package.json");
@@ -114,7 +114,10 @@ function defaultPrefs() {
     skip: [],
     stopAfter: [],
     notes: {},
-    measured: {}, // song name -> seconds measured during real playback
+    keys: true, // false: order/skip/stopAfter/notes saved by 0.6.1 and older, by song name (S.setlistByKey)
+    measuredKeys: true, // the same for the measured durations, which saved setlists do not carry
+    keyTimes: {}, // where each song was: a reprise keeps its key, and its settings (S.buildSetlist)
+    measured: {}, // song key -> seconds measured during real playback
     lastProject: null, // the last .als loaded, for Auto-Launch the Last Live Project
     httpPort: null, // the port of the last run: tried first, so saved addresses keep working
     // AbleSet's Settings: General, Playback, Section Count-In, Setlist
@@ -150,7 +153,7 @@ function defaultPrefs() {
     setlistName: null,
     midi: [],
     peers: [],
-    auth: null, // web app password: { salt, hash }
+    auth: null, // web app password: { salt, iter, storedKey } (SCRAM), or { salt, hash } from OpenSet 0.6
   };
 }
 
@@ -207,6 +210,9 @@ function start(opts = {}) {
     now: Date.now, // injectable clock for tests
     peerPollMs: 1000,
     pingMs: 2000, // browser latency check
+    wsPerIp: 20, // WebSocket connections from one device
+    wsPerNet: 50, // from one IPv6 /64 (a device can change address in it)
+    wsMax: 100, // and from everyone together (this computer does not count)
     scriptInstall: null, // Remote Script install result, shown by the UI
     netInfo, // platform, host name and interfaces, for /api/connect
     logger: null, // the CLI passes its own, so a crash lands in the same file
@@ -275,6 +281,14 @@ function start(opts = {}) {
       ...base,
       ...(cleanSetlist(saved, base) || {}),
       settings,
+      keys: Object.keys(saved).length ? saved.keys === true : true, // no file yet: nothing from 0.6.1
+      measuredKeys: Object.keys(saved).length ? (saved.measuredKeys ?? saved.keys) === true : true,
+      keyTimes:
+        saved.keyTimes && typeof saved.keyTimes === "object" && !Array.isArray(saved.keyTimes)
+          ? Object.fromEntries(
+              Object.entries(saved.keyTimes).filter(([, v]) => Array.isArray(v) && typeof v[0] === "string" && num(v[1]))
+            )
+          : {},
       // entries are validated again by cleanSetlist when loaded
       saved: saved.saved && typeof saved.saved === "object" && !Array.isArray(saved.saved) ? saved.saved : {},
       measured:
@@ -287,7 +301,7 @@ function start(opts = {}) {
         : [],
       midi: cleanMidi(saved.midi) || [],
       peers: cleanPeers(saved.peers) || [],
-      auth: validAuth(saved.auth) ? { salt: saved.auth.salt, hash: saved.auth.hash } : null,
+      auth: readAuth(saved.auth),
       lastProject: typeof saved.lastProject === "string" ? saved.lastProject : null,
       httpPort: Number.isInteger(saved.httpPort) ? saved.httpPort : null,
     };
@@ -299,7 +313,8 @@ function start(opts = {}) {
       // 0600: the password hash is for this user only.
       const tmp = PREFS_FILE + ".tmp";
       fs.rmSync(tmp, { force: true });
-      fs.writeFileSync(tmp, JSON.stringify(prefs, null, 2), { mode: 0o600 });
+      const auth = prefs.auth && prefs.auth.unreadable ? prefs.auth.raw : prefs.auth; // as it was in the file
+      fs.writeFileSync(tmp, JSON.stringify({ ...prefs, auth }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, PREFS_FILE);
     } catch (e) {
       log.error(`[prefs] cannot save ${PREFS_FILE}: ${e.message}`);
@@ -314,9 +329,46 @@ function start(opts = {}) {
     return useLive() ? tracks : offlineProject.tracks || [];
   }
 
-  function setlist() {
+  function songs() {
     const source = useLive() ? cues : offlineProject.locators;
-    return S.applyOrder(S.buildSetlist(S.cuesFromLive(source, currentTracks())), prefs);
+    return S.buildSetlist(S.cuesFromLive(source, currentTracks()), prefs.keyTimes);
+  }
+
+  // settings saved by OpenSet 0.6.1 use song names: converted once, as soon as there are songs
+  function migrate(list) {
+    if ((prefs.keys && prefs.measuredKeys) || !list.length) return;
+    const { order, skip, stopAfter, notes, keys } = prefs;
+    prefs = { ...prefs, ...S.setlistByKey({ order, skip, stopAfter, notes, keys }, list) }; // unchanged if by key
+    if (!prefs.measuredKeys) prefs = { ...prefs, ...S.migrateNames({ measured: prefs.measured }, list), measuredKeys: true };
+    savePrefs();
+    log.info("[setlist] settings from OpenSet 0.6.1 converted song by song (same-name songs kept apart)");
+  }
+
+  // the locators changed: where each song is now, so reprises keep their keys, also after a
+  // restart (never cleared while there are no songs yet)
+  function songsMoved() {
+    const list = songs();
+    if (!list.length) return;
+    migrate(list);
+    const keyTimes = S.keyTimesOf(list);
+    if (JSON.stringify(keyTimes) === JSON.stringify(prefs.keyTimes)) return;
+    prefs.keyTimes = keyTimes;
+    savePrefs();
+  }
+
+  function setlist() {
+    const list = songs();
+    migrate(list);
+    return S.applyOrder(list, prefs);
+  }
+
+  // a saved setlist or backup, loaded now: by key if there are songs (list: the current setlist,
+  // every song), otherwise as it was saved
+  function loadSaved(raw, setlistName, list) {
+    const loaded = cleanSetlist(raw, defaultPrefs());
+    if (!loaded) return false;
+    const { order, skip, stopAfter, notes, keys } = S.setlistByKey({ ...loaded, keys: raw.keys === true }, list);
+    return setPrefs({ order, skip, stopAfter, notes, keys, setlistName });
   }
 
   // Tempo map of the loaded .als: offline, or while Live plays the same set
@@ -339,7 +391,7 @@ function start(opts = {}) {
         `OSC ${oscPort === null ? "off (busy)" : oscPort}, commands to Live ${cfg.livePort}`,
       `Live: ${st.connected ? "connected" : "not connected"}, Live ${st.live_version || "?"}, Remote Script ${st.script_version || "?"}, command port ${st.cmd_port === false ? "busy" : "ok"}`,
       `liveIssues: ${st.liveIssues.join(", ") || "none"}`,
-      `Remote Script install: ${install ? `${install.status} ${install.path || ""}` : "-"}`,
+      `Remote Script install: ${installSummary(install)}`,
       `setlist: ${st.setlist.length} songs${st.offline ? " (offline .als)" : ""}: ${st.setlist.map((s) => s.name).join(" | ")}`,
       `devices: ${st.devices.length}, backup computers: ${st.peers.map((p) => `${p.url} ${p.online ? "online" : "offline"}`).join(", ") || "none"}`,
       `settings: ${JSON.stringify(st.settings)}`,
@@ -453,8 +505,9 @@ function start(opts = {}) {
     if (prefs.settings.reEnableAutomation) sendToLive({ cmd: "reEnableAutomation" });
     if (prefs.settings.backToArrangement) sendToLive({ cmd: "backToArrangement" });
   }
+  let liveKey = null; // from the Remote Script's state: it obeys only commands that carry it
   function sendToLive(obj, fromEngine = false) {
-    stateUdp.send(Buffer.from(JSON.stringify(obj)), cfg.livePort, cfg.liveHost);
+    stateUdp.send(Buffer.from(JSON.stringify(liveKey ? { ...obj, key: liveKey } : obj)), cfg.livePort, cfg.liveHost);
     // AbleSet: Re-Enable Automation / Reset Tracks Back to Arrangement on Song Jump
     const { reEnableAutomation, backToArrangement } = prefs.settings;
     if ((obj.cmd === "jump" || obj.cmd === "seek") && (reEnableAutomation || backToArrangement) &&
@@ -480,7 +533,8 @@ function start(opts = {}) {
     const wasConnected = liveState.connected;
     const wasPlaying = liveState.is_playing;
     const prevBeat = liveState.beat;
-    const { type, cues: newCues, ...rest } = msg;
+    const { type, cues: newCues, key, ...rest } = msg;
+    if (typeof key === "string") liveKey = key; // kept out of the published state
     liveState = { ...liveState, ...rest, connected: true };
     if (!wasConnected && prefs.settings.openBrowser === "live") openUi();
     if (!wasConnected)
@@ -488,7 +542,10 @@ function start(opts = {}) {
         `[live] connected: Live ${liveState.live_version || "?"}, Remote Script ${liveState.script_version || "older than 0.5.1"}, ` +
           `command port ${liveState.cmd_port === false ? "busy" : "ok"}`
       );
-    if (Array.isArray(newCues)) cues = newCues;
+    if (Array.isArray(newCues)) {
+      cues = newCues;
+      songsMoved();
+    }
     // count-in: the click goes back to normal at the section, or when playback stops
     if (countIn) {
       if (liveState.is_playing && liveState.beat < countIn.until - S.EPS) countIn.started = true;
@@ -527,9 +584,9 @@ function start(opts = {}) {
       });
       for (const c of cmds) {
         if (c.cmd !== "played") sendToLive(c, true);
-        else if (!prefs.skip.includes(c.name)) {
-          log.info(`[setlist] ${c.name} played to the end: removed from the setlist`);
-          setPrefs({ skip: [...prefs.skip, c.name] });
+        else if (!prefs.skip.includes(c.key)) {
+          log.info(`[setlist] ${c.key} played to the end: removed from the setlist`);
+          setPrefs({ skip: [...prefs.skip, c.key] });
         }
       }
       if (queued && cmds.some((c) => c.cmd === "jump" && Math.abs(c.time - queued.time) < S.EPS)) queued = null;
@@ -552,7 +609,7 @@ function start(opts = {}) {
         now: cfg.now(),
       });
       if (measured) {
-        prefs.measured = { ...prefs.measured, [measured.name]: measured.seconds };
+        prefs.measured = { ...prefs.measured, [measured.key]: measured.seconds };
         savePrefs();
       }
       for (const cue of cuesBetween({
@@ -678,6 +735,7 @@ function start(opts = {}) {
           redirect: "error",
         })
           .then((res) => {
+            if (!prefs.peers.includes(url)) return; // removed while the command was on its way
             const denied = res.status === 401 || res.status === 429;
             if (denied !== peerDenied.has(url)) {
               if (denied) peerDenied.add(url);
@@ -700,8 +758,8 @@ function start(opts = {}) {
   async function pollPeers() {
     prunePeers();
     const before = JSON.stringify([...peerStatus]);
-    for (const url of prefs.peers) {
-      if (!prefs.peers.includes(url)) continue; // removed while this poll waited for another backup
+    // all at once: a backup that does not answer must not hold back the others
+    await Promise.all(prefs.peers.map(async (url) => {
       try {
         const t0 = Date.now();
         const res = await fetch(url + "/api/state", { signal: AbortSignal.timeout(800), redirect: "error" });
@@ -727,7 +785,7 @@ function start(opts = {}) {
         peerStatus.set(url, { url, online: false });
         peerClock.delete(url);
       }
-    }
+    }));
     // AbleSet: Automatic Drift Correction, with Live's phase nudge: a backup follows the main
     // computer, never the other way round (two computers nudging each other would wobble)
     const lead = prefs.settings.driftCorrection && prefs.settings.scene === "backup" && liveState.is_playing && leader();
@@ -901,8 +959,14 @@ function start(opts = {}) {
         sendToLive({ cmd: "quant", value: msg.value });
         return true;
       case "setlist": {
+        // the web app edits songs by key. Settings still by name (0.6.1, Live loading) cannot be
+        // mixed with keys: only a whole setlist with its songs (the web app's, or one copied from
+        // the main computer) replaces them; one pasted with no songs yet would only empty them
+        const whole =
+          Array.isArray(msg.order) && msg.order.length > 0 && ["skip", "stopAfter", "notes"].every((k) => msg[k] !== undefined);
+        if (!prefs.keys && !whole) return false;
         const next = cleanSetlist(msg, prefs);
-        return !!next && setPrefs(next);
+        return !!next && setPrefs({ ...next, keys: true });
       }
       case "settings": {
         const settings = { ...prefs.settings };
@@ -933,17 +997,15 @@ function start(opts = {}) {
         const backups = Object.hasOwn(prefs.saved, msg.name)
           ? [{ name: msg.name, at: new Date(cfg.now()).toISOString(), data: prefs.saved[msg.name] }, ...prefs.backups].slice(0, 20)
           : prefs.backups;
-        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes } }, setlistName: msg.name, backups });
+        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes, keys: prefs.keys } }, setlistName: msg.name, backups });
       }
       case "restoreBackup": {
         const b = prefs.backups.find((x) => x.name === msg.name && x.at === msg.at);
-        const loaded = b && cleanSetlist(b.data, defaultPrefs());
-        return !!loaded && setPrefs({ ...loaded, setlistName: b.name });
+        return !!b && loadSaved(b.data, b.name, list);
       }
       case "loadSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;
-        const loaded = cleanSetlist(prefs.saved[msg.name], defaultPrefs());
-        return !!loaded && setPrefs({ ...loaded, setlistName: msg.name });
+        return loadSaved(prefs.saved[msg.name], msg.name, list);
       }
       case "deleteSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;
@@ -966,16 +1028,33 @@ function start(opts = {}) {
       case "devices":
         return deviceCommand(msg);
       case "setPassword": {
-        // "" removes it; only browsers that may command get here
+        // "" removes it; only browsers that may command get here. A promise: computed without
+        // blocking (Live keeps playing), and the HTTP answer waits for it
         const pw = msg.password;
         if (pw !== "" && (typeof pw !== "string" || pw.length < 6 || pw.length > 128)) return false;
-        prefs = { ...prefs, auth: pw ? hashPassword(pw) : null };
-        savePrefs();
-        tokens.clear();
-        for (const ws of wss.clients) ws.authed = false;
-        for (const ws of wss.clients) sendAccess(ws);
-        changed();
-        return true;
+        const seq = ++passwordSeq; // two changes in a row: the last one asked wins
+        return (pw ? hashPassword(pw) : Promise.resolve(null)).then(
+          (auth) => {
+            if (seq !== passwordSeq) return true;
+            prefs = { ...prefs, auth };
+            authGen++;
+            savePrefs();
+            tokens.clear();
+            for (const ws of wss.clients) [ws.authed, ws.token] = [false, null];
+            // the password is set from here on: a failure telling the pages does not undo it
+            try {
+              for (const ws of wss.clients) sendAccess(ws);
+              changed();
+            } catch (e) {
+              log.error(`[auth] password set, but the pages were not updated: ${e.message}`);
+            }
+            return true;
+          },
+          (e) => {
+            log.error(`[auth] cannot set the password: ${e.message}`);
+            return false;
+          }
+        );
       }
     }
     return false;
@@ -1254,7 +1333,7 @@ function start(opts = {}) {
       case "installScript":
         if (!cfg.installScript) return unavailable();
         cfg.scriptInstall = cfg.installScript();
-        log.info(`[live] Remote Script ${cfg.scriptInstall.status} ${cfg.scriptInstall.path || ""} (from the web app)`);
+        (cfg.scriptInstall.errors ? log.error : log.info)(`[live] Remote Script ${installSummary(cfg.scriptInstall)} (from the web app)`);
         changed();
         return res.json(cfg.scriptInstall);
       case "quit":
@@ -1308,59 +1387,99 @@ function start(opts = {}) {
 
   app.post("/api/cmd", route(async (req, res) => {
     if (!(await httpAllowed(req, res))) return;
-    if (runCommand(req.body, "web", localReq(req))) res.json({ ok: true });
+    if (await runCommand(req.body, "web", localReq(req))) res.json({ ok: true });
     else res.status(400).json({ error: "Unknown or invalid command" });
   }));
 
   // ---------------- web app password ----------------
   // With a password set, only this computer and unlocked browsers give
   // commands; everyone can still read the state. OSC is not covered.
-  const tokens = new Set(); // unlocked browsers, until the next restart or password change
+  const tokens = createTokens({ now: cfg.now }); // unlocked browsers
   const limiter = createLimiter({ now: cfg.now });
   const clientIp = (req) => String(req.socket.remoteAddress || "").replace(/^::ffff:/, "");
   const canControl = (ws) => !prefs.auth || ws.local || ws.authed;
 
+  const newNonce = () => crypto.randomBytes(16).toString("hex");
+  let passwordSeq = 0;
+  // passwords set on this computer: a check that ends after a change does not unlock.
+  // A 0.6 password stored the new way by another device is the same password, not counted
+  let authGen = 0;
   function sendAccess(ws, token, extra = {}) {
+    const a = prefs.auth;
+    // the numbers the page needs to prove it knows the password; with a 0.6 password (legacy) the
+    // page sends it once; one OpenSet cannot read (unreadable) is set again on this computer
+    const challenge = !a
+      ? {}
+      : a.unreadable
+        ? { unreadable: true }
+        : a.storedKey
+          ? { challenge: { salt: a.salt, iter: a.iter, nonce: ws.nonce } }
+          : { legacy: true };
     if (ws.readyState === 1)
-      ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!prefs.auth, ...(token ? { token } : {}), ...extra }));
+      ws.send(JSON.stringify({ type: "access", control: canControl(ws), passwordSet: !!a, ...challenge, ...(token ? { token } : {}), ...extra }));
   }
 
-  function newToken() {
-    const token = crypto.randomBytes(32).toString("hex");
-    if (tokens.size >= 200) tokens.delete(tokens.values().next().value);
-    tokens.add(token);
-    return token;
+  async function upgradePassword(ws, auth, password) {
+    let upgraded;
+    try {
+      upgraded = await hashPassword(password);
+    } catch (e) {
+      return log.error(`[auth] cannot update the 0.6 password: ${e.message}`); // still unlocked, kept as it was
+    }
+    if (prefs.auth !== auth) return; // changed on this computer meanwhile: that one stays
+    prefs = { ...prefs, auth: upgraded };
+    savePrefs();
+    // the other open pages stop sending it too: only the numbers, no access message
+    // (that would open their password panel)
+    const { salt, iter } = upgraded;
+    for (const c of wss.clients)
+      if (c !== ws && c.readyState === 1) c.send(JSON.stringify({ type: "challenge", challenge: { salt, iter, nonce: c.nonce } }));
   }
 
-  async function wsAuth(ws, { password, token }) {
+  async function wsAuth(ws, { password, token, proof }) {
+    // already unlocked: a second tap that sends the old number again changes nothing
+    if (ws.authed) return sendAccess(ws, ws.token);
     let ok = false;
-    if (!limiter.blocked(ws.ip)) {
-      if (typeof token === "string" && tokens.has(token)) ok = true;
-      else if (password !== undefined) {
-        // counted before scrypt: guesses sent in parallel are all counted.
+    // a valid token is never slowed down: the limiter is for guessed passwords
+    if (tokens.valid(token, ws.ip)) ok = true;
+    else if (!limiter.blocked(ws.ip)) {
+      if (proof !== undefined || password !== undefined) {
+        // counted before checking: guesses sent in parallel are all counted.
         // An old token alone (OpenSet restarted) is not a wrong password.
         limiter.fail(ws.ip);
-        ok = await checkPassword(prefs.auth, password);
+        if (proof !== undefined) ok = checkProof(prefs.auth, ws.nonce, proof);
+        else {
+          const [auth, gen] = [prefs.auth, authGen];
+          ok = await checkPassword(auth, password);
+          // saved by OpenSet 0.6: from now on the page proves it knows the password instead of sending it
+          if (ok && auth.hash) await upgradePassword(ws, auth, password);
+          // a password changed on this computer meanwhile (also during the update) does not unlock
+          ok = ok && gen === authGen;
+        }
       }
       if (ok) limiter.ok(ws.ip);
     }
+    ws.nonce = newNonce(); // one attempt per number: a proof seen on the network cannot be used again
     ws.authed = ok;
-    sendAccess(ws, ok ? (tokens.has(token) ? token : newToken()) : null, !ok && token !== undefined ? { tokenRejected: true } : {});
+    ws.token = ok ? (tokens.valid(token, ws.ip) ? token : tokens.issue(ws.ip)) : null;
+    sendAccess(ws, ws.token, !ok && token !== undefined ? { tokenRejected: true } : {});
   }
 
   // HTTP: X-OpenSet-Password header, or "Authorization: Bearer <token>"
   async function httpAllowed(req, res) {
     if (!prefs.auth || localReq(req)) return true;
     const ip = clientIp(req);
+    // an unlocked device is never slowed down: the limiter is for guessed passwords
+    const bearer = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    if (bearer && tokens.valid(bearer, ip)) return true;
     if (limiter.blocked(ip)) {
       res.status(429).json({ error: "Too many wrong passwords: try again later" });
       return false;
     }
-    const bearer = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "");
-    if (bearer && tokens.has(bearer)) return true;
     const pw = req.get("x-openset-password");
     if (pw !== undefined || bearer) limiter.fail(ip); // before scrypt: parallel guesses are all counted
-    if (pw !== undefined && (await checkPassword(prefs.auth, pw))) {
+    const [auth, gen] = [prefs.auth, authGen];
+    if (pw !== undefined && (await checkPassword(auth, pw)) && gen === authGen) {
       limiter.ok(ip);
       return true;
     }
@@ -1375,6 +1494,7 @@ function start(opts = {}) {
     if (!isAls(file)) return res.status(400).json({ error: "Not a Live project (.als)" });
     try {
       offlineProject = parseAls(file);
+      songsMoved();
       setPrefs({ lastProject: path.resolve(file) });
       res.json({ ok: true, locators: offlineProject.locators.length });
     } catch (e) {
@@ -1394,7 +1514,12 @@ function start(opts = {}) {
     server,
     maxPayload: 256 * 1024,
     perMessageDeflate: true,
-    verifyClient: ({ req }, done) => done(originOk(req), 403),
+    verifyClient: ({ req }, done) => {
+      if (!originOk(req)) return done(false, 403);
+      // a device opening connections in a loop must not slow OpenSet down for the band
+      const clients = [...wss.clients].map((ws) => ({ ip: ws.ip, local: ws.local }));
+      done(connectionAllowed(clients, clientIp(req), localReq(req), { perIp: cfg.wsPerIp, perNet: cfg.wsPerNet, max: cfg.wsMax }), 503);
+    },
   });
   // ws re-emits the HTTP server's errors (e.g. EADDRINUSE); start() handles them
   wss.on("error", () => {});
@@ -1412,10 +1537,12 @@ function start(opts = {}) {
     ws.ip = ip;
     ws.local = localReq(req);
     ws.authed = false;
+    ws.nonce = newNonce();
     ws.on("error", () => ws.terminate()); // a malformed frame closes this socket, never OpenSet
     devices.set(ws, { name: "", ip, view: null, locked: false, latencyMs: null, settings: {} });
     ws.on("pong", () => {
       ws.missed = 0;
+      tokens.touch(ws.token); // connected is in use: an iPad on stage for days keeps its unlock
       const d = devices.get(ws);
       if (d && ws.pingAt) d.latencyMs = Date.now() - ws.pingAt; // shown with the next state update
     });
@@ -1426,13 +1553,14 @@ function start(opts = {}) {
     ws.send(JSON.stringify({ type: "state", state: publicState() }));
     sendAccess(ws);
     ws.on("message", (buf) => {
+      tokens.touch(ws.token);
       let msg;
       try { msg = JSON.parse(buf.toString()); } catch { return; }
       try {
         if (msg && msg.type === "device") deviceInfo(devices.get(ws), msg);
         else if (msg && msg.type === "auth") wsAuth(ws, msg).catch((e) => log.error(`[auth] ${e.message}`));
         else if (!canControl(ws)) sendAccess(ws); // read-only: tell the browser to ask for the password
-        else runCommand(msg, "web", ws.local);
+        else Promise.resolve(runCommand(msg, "web", ws.local)).catch((e) => log.error(`[ws] ${e.message}`));
       } catch (e) {
         log.error(`[ws] ${e.message}`);
       }
@@ -1477,6 +1605,7 @@ function start(opts = {}) {
       offlineProject = parseAls(cfg.alsFile);
       prefs = { ...prefs, lastProject: path.resolve(cfg.alsFile) };
       savePrefs();
+      songsMoved();
       log.info(`[als] loaded ${offlineProject.locators.length} locators from ${cfg.alsFile}`);
     } catch (e) {
       log.error(`[als] parse failed: ${e.message}`);
@@ -1591,12 +1720,7 @@ if (require.main === module) {
   const args = parseArgs(process.argv.slice(2));
   const libs = userLibraries(process.platform, process.env, os.homedir());
   const install = installRemoteScript(path.join(BASE_DIR, "remote-script", "OpenSet"), libs);
-  if (install.status === "installed" || install.status === "updated")
-    log.info(`[live] Remote Script ${install.status} in ${install.path}: restart Live and pick OpenSet as Control Surface`);
-  else if (install.status === "error") log.error(`[live] cannot install the Remote Script in ${install.path}: ${install.error}`);
-  else if (install.status === "not-found" && libs.length)
-    log.info("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
-  else if (install.path) log.info(`[live] Remote Script ${install.status} in ${install.path}`);
+  for (const [level, text] of installLog(install, libs.length)) log[level](text);
   const openUrl = (url, opts) => openBrowser(url, process.platform, undefined, opts);
   start({
     baseDir: dir,

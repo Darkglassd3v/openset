@@ -7,7 +7,7 @@ const { EPS, songAt } = require("./setlist");
 const MAX_STEP = 4; // beats between two updates in normal playback; more is a seek
 
 function createMeter() {
-  let run = null; // { name, end, startedAt, looped }
+  let run = null; // { key, end, startedAt, looped }
   let lastNow = null;
 
   function update({ songs, prevBeat: prev, beat, playing, loop, tempo, now }) {
@@ -27,7 +27,7 @@ function createMeter() {
       else if (playing && !natural && prev >= run.end - 1 - EPS && prev < run.end + EPS)
         endedAt = prevNow + (run.end - prev) * msPerBeat;
       if (endedAt != null) {
-        if (!run.looped) done = { name: run.name, seconds: Math.round((endedAt - run.startedAt) / 100) / 10 };
+        if (!run.looped) done = { key: run.key, seconds: Math.round((endedAt - run.startedAt) / 100) / 10 };
         run = null;
       } else if (!natural) run = null; // stopped, seeked or jumped elsewhere
     }
@@ -38,7 +38,7 @@ function createMeter() {
       if (stop != null && beat >= s.playStart - EPS && beat - s.playStart < 1) {
         const startedAt =
           natural && prev < s.playStart - EPS ? at(s.playStart) : now - (beat - s.playStart) * msPerBeat;
-        run = { name: s.name, end: stop, startedAt, looped: false };
+        run = { key: s.key, end: stop, startedAt, looped: false };
       }
     }
     return done;

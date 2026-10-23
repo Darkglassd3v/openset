@@ -102,10 +102,10 @@ function parseSetlistText(text, songs) {
       continue;
     }
     used.add(i);
-    picked.push(songs[i].name);
-    if (note && note.trim()) notes[songs[i].name] = note.trim();
+    picked.push(songs[i].key);
+    if (note && note.trim()) notes[songs[i].key] = note.trim();
   }
-  const skip = songs.filter((_, i) => !used.has(i)).map((s) => s.name);
+  const skip = songs.filter((_, i) => !used.has(i)).map((s) => s.key);
   return { order: [...picked, ...skip], skip, stopAfter, notes, unmatched };
 }
 

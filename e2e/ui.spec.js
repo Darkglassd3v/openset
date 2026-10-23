@@ -204,3 +204,120 @@ test("A4: a connection that goes quiet (sleeping iPad, half-open Wi-Fi) is notic
   await expect(page.locator("#connLabel")).toHaveText("OpenSet non raggiungibile…", { timeout: 9000 });
   await expect(page.locator("#connLabel")).toHaveText("Live connesso", { timeout: 9000 });
 });
+
+test("C2: two songs with the same name (a reprise) are edited one at a time", async ({ page, openset }) => {
+  openset.live({ cues: [{ name: "Uno", time: 0 }, { name: "Due", time: 8 }, { name: "Uno", time: 16 }] });
+  await page.goto(openset.url());
+  await connected(page);
+  await page.click('[data-act="edit"]');
+  await page.click('#setlist [data-act="skip"][data-i="2"]');
+  await expect.poll(async () => (await openset.state()).setlist.map((s) => [s.key, s.skip])).toEqual([["Uno", false], ["Due", false], ["Uno#2", true]]);
+  await page.fill('#setlist input.note[data-i="0"]', "prima");
+  await page.press('#setlist input.note[data-i="0"]', "Enter");
+  await expect.poll(async () => (await openset.state()).setlist.map((s) => s.notes)).toEqual(["prima", "", ""]);
+});
+
+test("C3: unlocking sends a proof made from the password, never the password", async ({ page, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const sent = [];
+  page.on("websocket", (ws) => ws.on("framesent", (f) => sent.push(String(f.payload))));
+  await page.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.click("#authGo");
+  await expect(page.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  expect(sent.some((p) => p.includes('"proof"'))).toBe(true);
+  expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
+});
+
+test("C7: the first state arrives quickly after the page opens", async ({ page, openset }) => {
+  // measured in the page, from the start of the navigation: browser start-up does not count
+  await page.addInitScript(() => {
+    const W = window.WebSocket;
+    window.WebSocket = function (u) {
+      const ws = new W(u);
+      ws.addEventListener("message", () => { if (!window.firstMessageAt) window.firstMessageAt = performance.now(); });
+      return ws;
+    };
+    window.WebSocket.prototype = W.prototype;
+  });
+  await page.goto(openset.url());
+  await connected(page);
+  // ~50 ms on a developer computer; 1-2.4 s was the delay of the chrome-devtools tool used to measure
+  expect(await page.evaluate(() => window.firstMessageAt)).toBeLessThan(1000);
+});
+
+test("R1: two taps on Sblocca unlock; «Controllo la password…» does not stay", async ({ page, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.cmd({ cmd: "setPassword", password: "palco-2026" });
+  await page.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.click("#authGo");
+  await page.click("#authGo", { force: true }).catch(() => {}); // a second tap while the key is computed
+  await expect(page.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  await page.waitForTimeout(500);
+  await expect(page.locator("#unlockApp")).toBeHidden();
+  await expect(page.locator("#authStatus")).toHaveText("");
+});
+
+test("S2: Enter and a tap on Sblocca together unlock once", async ({ page, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const sent = [];
+  page.on("websocket", (ws) => ws.on("framesent", (f) => sent.push(String(f.payload))));
+  await page.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.press("#authPw", "Enter");
+  await page.press("#authPw", "Enter");
+  await expect(page.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  expect(sent.filter((p) => p.includes('"proof"')).length).toBe(1);
+});
+
+test("S2: after another iPad updates a 0.6 password, this one unlocks without sending it", async ({ page, browser, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.stop();
+  const salt = require("crypto").randomBytes(16).toString("hex");
+  const hash = require("crypto").scryptSync("palco-2026", Buffer.from(salt, "hex"), 32).toString("hex");
+  fs.writeFileSync(path.join(openset.baseDir, "setlist.json"), JSON.stringify({ auth: { salt, hash } }));
+  await openset.restart();
+  const other = await browser.newPage();
+  const sent = [];
+  page.on("websocket", (ws) => ws.on("framesent", (f) => sent.push(String(f.payload))));
+  await page.goto(openset.url("/", LAN_IP));
+  await other.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await connected(other);
+  await other.click("#unlockApp");
+  await other.fill("#authPw", "palco-2026");
+  await other.click("#authGo");
+  await expect(other.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  await expect(page.locator("#authPanel")).toBeHidden(); // nothing pops up on this iPad
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.click("#authGo");
+  await expect(page.locator("#unlockApp")).toBeHidden({ timeout: 10000 });
+  expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
+  await other.close();
+});
+
+test("T2: with a password OpenSet cannot read, the page sends nothing and says to set it again", async ({ page, openset }) => {
+  test.skip(!LAN_IP, "no LAN address");
+  await openset.stop();
+  fs.writeFileSync(path.join(openset.baseDir, "setlist.json"), JSON.stringify({ auth: { scheme: "argon2id", salt: "zz" } }));
+  await openset.restart();
+  const sent = [];
+  page.on("websocket", (ws) => ws.on("framesent", (f) => sent.push(String(f.payload))));
+  await page.goto(openset.url("/", LAN_IP));
+  await connected(page);
+  await page.click("#unlockApp");
+  await page.fill("#authPw", "palco-2026");
+  await page.click("#authGo");
+  await expect(page.locator("#authStatus")).toContainText("computer");
+  expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
+});

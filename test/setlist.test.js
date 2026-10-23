@@ -6,6 +6,9 @@ const {
   cuesFromLive,
   CLIP_COLORS,
   applyOrder,
+  keyTimesOf,
+  migrateNames,
+  setlistByKey,
   songAt,
   sectionAt,
   nextSong,
@@ -449,4 +452,78 @@ test("parseName: thousands of >>> do not overflow the stack (audit A3)", () => {
 test("A4: sections after the song end are ignored; a section never ends after its song", () => {
   const songs = buildSetlist([{ name: "A", time: 0 }, { name: ">V +LOOP", time: 8 }, { name: "SONG END", time: 16 }, { name: ">X", time: 20 }, { name: "B", time: 32 }]);
   assert.deepEqual(songs[0].sections.map((x) => [x.name, x.time, x.end]), [["V", 8, 16]]);
+});
+
+test("C2: songs with the same name (a reprise) get their own key, the second is «Name#2»", () => {
+  const base = buildSetlist([{ name: "Intro", time: 0 }, { name: "B", time: 8 }, { name: "Intro", time: 16 }]);
+  assert.deepEqual(base.map((s) => s.key), ["Intro", "B", "Intro#2"]);
+  const songs = applyOrder(base, {
+    order: ["Intro#2", "B", "Intro"],
+    skip: ["Intro"],
+    stopAfter: ["Intro#2"],
+    notes: { "Intro#2": "ripresa" },
+    measured: { "Intro#2": 90 },
+  });
+  assert.deepEqual(
+    songs.map((s) => [s.key, s.skip, s.stopAfter, s.notes, s.measured]),
+    [["Intro#2", false, true, "ripresa", 90], ["B", false, false, "", null], ["Intro", true, false, "", null]]
+  );
+});
+
+test("R4: a song really named «Intro#2» is not mixed up with the reprise of «Intro»", () => {
+  const songs = buildSetlist([{ name: "Intro", time: 0 }, { name: "Intro#2", time: 8 }, { name: "Intro", time: 16 }]);
+  assert.deepEqual(songs.map((s) => s.key), ["Intro", "Intro#2", "Intro#3"]);
+});
+
+test("R4: a reprise that stays where it was keeps its key when a song with the same name is added or removed", () => {
+  const before = buildSetlist([{ name: "Intro", time: 0 }, { name: "B", time: 50 }, { name: "Intro", time: 100 }]);
+  const times = keyTimesOf(before);
+  const added = buildSetlist([{ name: "Intro", time: 0 }, { name: "Intro", time: 40 }, { name: "B", time: 50 }, { name: "Intro", time: 100 }], times);
+  assert.deepEqual(added.map((s) => s.key), ["Intro", "Intro#3", "B", "Intro#2"]);
+  const removed = buildSetlist([{ name: "B", time: 50 }, { name: "Intro", time: 100 }], times);
+  assert.deepEqual(removed.map((s) => s.key), ["B", "Intro#2"]);
+});
+
+test("S1: settings saved by OpenSet 0.6.1 (by name) become one entry per song with that name", () => {
+  const songs = buildSetlist([{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }]);
+  const old = { order: ["B", "A"], skip: ["A"], stopAfter: ["A"], notes: { A: "capo 2" }, measured: { A: 90, Gone: 10 } };
+  assert.deepEqual(migrateNames(old, songs), {
+    order: ["B", "A", "A#2"],
+    skip: ["A", "A#2"],
+    stopAfter: ["A", "A#2"],
+    notes: { A: "capo 2", "A#2": "capo 2" },
+    measured: { A: 90, "A#2": 90, Gone: 10 },
+  });
+  // an order left to the timeline stays so: songs added later in Live go in their place
+  assert.deepEqual(migrateNames({ order: [], skip: [], stopAfter: [], notes: {}, measured: {} }, songs).order, []);
+});
+
+test("S1: a second song with the name of one already there does not take its settings", () => {
+  const one = buildSetlist([{ name: "Intro", time: 100 }]);
+  const two = buildSetlist([{ name: "Intro", time: 40 }, { name: "Intro", time: 100 }], keyTimesOf(one));
+  assert.deepEqual(two.map((s) => s.key), ["Intro#2", "Intro"]);
+});
+
+test("T1: a setlist from OpenSet 0.6.1 is converted only when there are songs to tell the names apart", () => {
+  const songs = buildSetlist([{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }]);
+  const old = { order: [], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } };
+  // Live not connected yet: kept by name, and it says so
+  assert.deepEqual(setlistByKey(old, []), { ...old, keys: false });
+  assert.deepEqual(setlistByKey(old, songs), { order: [], skip: ["A", "A#2"], stopAfter: [], notes: { A: "capo 2", "A#2": "capo 2" }, keys: true });
+  // already by key: never expanded again, with or without songs
+  const keyed = { order: [], skip: ["A"], stopAfter: [], notes: {}, keys: true };
+  assert.deepEqual(setlistByKey(keyed, songs), keyed);
+  assert.deepEqual(setlistByKey(keyed, []), keyed);
+  // only the fields it gets: a saved setlist has no measured durations
+  assert.equal("measured" in migrateNames(old, songs), false);
+});
+
+test("T1: keys for a long set are found by name, not by comparing every song with every other", () => {
+  const cues = Array.from({ length: 600 }, (_, i) => ({ name: "Brano " + (i % 300), time: i * 8 }));
+  let reads = 0; // how many times a previous song's name is looked at
+  const times = Object.fromEntries(
+    Object.entries(keyTimesOf(buildSetlist(cues))).map(([k, v]) => [k, new Proxy(v, { get: (o, p) => (p === "0" && reads++, o[p]) })])
+  );
+  buildSetlist(cues, times);
+  assert.ok(reads <= 2 * cues.length, `${reads} reads for ${cues.length} songs`);
 });

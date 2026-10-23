@@ -3,7 +3,9 @@
 # Install: copy the "OpenSet" folder into your User Library / Remote Scripts
 # then select "OpenSet" as a Control Surface in Live's Link/MIDI preferences.
 
+import binascii
 import json
+import os
 import re
 import socket
 import time
@@ -15,13 +17,14 @@ except ImportError:
     # Legacy fallback
     from _Framework.ControlSurface import ControlSurface
 
-VERSION = "0.6.1"                    # OpenSet version, same as package.json (checked by the tests)
+VERSION = "0.6.2"                    # OpenSet version, same as package.json (checked by the tests)
 SERVER_ADDR = ("127.0.0.1", 39061)   # where the Node server listens; 39051 is AbleSet's OSC port
 LISTEN_PORT = 39050                  # where this script listens for commands
 TICK_MS = 100                        # state broadcast interval
 MAX_DATAGRAM = 8000                  # macOS caps loopback UDP datagrams at 9216 bytes
 CHUNK_CHARS = 1000                   # bigger messages go in chunks; room for JSON escaping
 CLIPS_EVERY = 20                     # ticks between scans of Sections/+LYRICS clips (~2 s)
+CUES_EVERY = 10                      # ticks between reads of the locators (~1 s): hundreds of them weigh on Live
 RESEND_EVERY = 100                   # ticks between full resends of cues and clips (~10 s): a lost chunk is not forever
 MAX_COMMANDS = 64                    # commands read per tick: a flooding sender cannot freeze Live
 LOG_EVERY = 60                       # seconds before the same message is logged again
@@ -79,6 +82,8 @@ class OpenSet(ControlSurface):
         self._clips_sent = None
         self._soloed = []         # tracks soloed for a count-in, unsoloed after it
         self._nudge_ticks = 0     # ticks left with a phase nudge button held
+        # sent only to OpenSet with the state: commands without it (another program) are ignored
+        self._key = binascii.hexlify(os.urandom(16)).decode("ascii")
         self._log("OpenSet script %s started (Live %s)" % (VERSION, self._live_version or "unknown"))
         if not self._cmd_port:
             self._log("OpenSet: port %d busy" % LISTEN_PORT)
@@ -119,7 +124,7 @@ class OpenSet(ControlSurface):
             self._was_playing = playing
             if self._ticks % RESEND_EVERY == 0:
                 self._cues_sent = self._clips_sent = None
-            self._send_state()
+            self._send_state(self._ticks % CUES_EVERY == 0 or self._cues_sent is None)
             if self._ticks % CLIPS_EVERY == 0:
                 self._send_clips()
         except Exception as e:
@@ -165,11 +170,9 @@ class OpenSet(ControlSurface):
         except Exception:
             return False  # inside Live a send error must never raise
 
-    def _send_state(self):
+    def _send_state(self, read_cues=True):
         s = self._song
         try:
-            cues = [{"name": c.name, "time": c.time} for c in s.cue_points]
-            cues.sort(key=lambda c: c["time"])
             state = {
                 "type": "state",
                 "is_playing": s.is_playing,
@@ -184,10 +187,15 @@ class OpenSet(ControlSurface):
                 "script_version": VERSION,
                 "live_version": self._live_version,
                 "cmd_port": self._cmd_port,
+                "key": self._key,
             }
-            key = json.dumps(cues)
-            if key != self._cues_sent:
-                state["cues"] = cues
+            key = self._cues_sent
+            if read_cues:
+                cues = [{"name": c.name, "time": c.time} for c in s.cue_points]
+                cues.sort(key=lambda c: c["time"])
+                key = json.dumps(cues)
+                if key != self._cues_sent:
+                    state["cues"] = cues
             if self._send(state):
                 self._cues_sent = key  # only once delivered to the socket
         except Exception as e:
@@ -239,7 +247,11 @@ class OpenSet(ControlSurface):
             except OSError:
                 break
             try:
-                self._handle(json.loads(data.decode("utf-8")))
+                msg = json.loads(data.decode("utf-8"))
+                if not isinstance(msg, dict) or msg.get("key") != self._key:
+                    self._log("OpenSet: a command without OpenSet's key was ignored")
+                    continue
+                self._handle(msg)
             except Exception as e:
                 self._log("OpenSet cmd error: %s" % e)
 
@@ -332,6 +344,7 @@ class OpenSet(ControlSurface):
                     s.set_or_delete_cue()
         finally:
             s.current_song_time = back  # the next Play starts where the user left it
+            self._cues_sent = None  # the new locators go out at the next tick, not within a second
 
     def _click_solo(self, on):
         # AbleSet: the first track or group with "click", +CLICK tracks and Lifesine

@@ -14,7 +14,14 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 
 ## In corso
 
-- [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` solo locale (nessun push: `release.yml` userebbe lo spazio degli artefatti), zip e guida in `build/release-0.5.1/`
+Richiesta dell'utente (2026-10-23, prima di andare a dormire): «correggi tutte le cose … FAI TUTTO NON LASCIARE NIENTE IN SOSPESO», piano con `ecc:plan` e `ecc:tdd-workflow`, bug descritti in parole semplici; se qualcosa non va si segna qui «da verificare»; **alla fine spegnere il PC (`systemctl poweroff`) comunque**.
+
+- [ ] v0.6.2 — correzioni (sezione «v0.6.2» sotto), release
+- [ ] v0.7.0 — funzioni di AbleSet che mancavano (sezione «v0.7.0» sotto), release
+- [ ] v0.8.0 — Node recente dentro i programmi (sezione «v0.8.0» sotto), release
+- [ ] fine: `/ecc:ck save`, memoria aggiornata, spegnere il PC
+
+- [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` pubblicato il 2026-10-24 (la vecchia `release.yml` partita dal tag annullata subito, run 39938930663; l'unico artefatto che aveva caricato, 17,8 MB, cancellato); nessuna release con gli zip (decisione dell'utente: la 0.6.x la sostituisce, e sarebbe apparsa come «ultima»); zip e guida restano in `build/release-0.5.1/`
 - [x] v0.6.0: PR #3 (merge `279f7fa`), 4 zip e guida PDF anche in `build/release-0.6.0/`; release su GitHub dal tag (vedi sotto), CI verde su Windows, macOS e Ubuntu
 - [x] Release senza artefatti delle Actions (scelta dell'utente, 2026-10-22): `release.yml` con un solo job su macOS (PR #4, merge `c70dcd1`), tag `v0.6.0` spostato su `c70dcd1` e pushato: release pubblica https://github.com/Darkglassd3v/openset/releases/tag/v0.6.0 con 4 zip e guida, 0 artefatti (run 39840370127)
   - [x] RED `packaging.test.js`: niente `upload-artifact`/`download-artifact`, un solo job su `macos-latest`, `codesign` del programma arm64, prova sulle PR, pubblicazione solo dai tag
@@ -38,6 +45,111 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [ ] Prossimo: pacchetto log dal tester (bug della scaletta che sparisce, `superpowers:systematic-debugging`)
 
 ## Da fare
+
+### v0.6.2 — correzioni (branch `release/v0.6.2`)
+Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
+
+- [x] C1 Computer di riserva — RED `d4c5c55`, GREEN (`server.test.js`: una riserva silenziosa non blocca le altre; risposta «rifiuta» arrivata dopo averla tolta)
+  - Quando togli dalla lista un computer di riserva con password e intanto gli stava arrivando un comando, rimettendolo la lista lo segnava ancora come «rifiuta i comandi». Ora la risposta di un computer già tolto viene ignorata (`peerDenied`).
+  - Con un computer di riserva spento, gli altri si aggiornavano in ritardo (fino a 0,8 s ciascuno) perché OpenSet li leggeva uno alla volta. Ora li legge tutti insieme (`pollPeers` in parallelo).
+- [x] C2 (RED `b7bfe9f`, GREEN) Brani con lo stesso nome: con due brani uguali in scaletta (una ripresa), togliere, spostare o scrivere una nota su uno cambiava anche l'altro. Ora ogni brano ha una sua chiave: il secondo è «Nome#2» (ordine, tolti, stop, note, durate misurate).
+- [x] C3 Password e accessi (C3a limiti di rete, C3b scadenza dei token, C3c sfida e risposta, C3d chiave del Remote Script)
+  - Quando un iPad sblocca OpenSet, la password passava in chiaro sulla rete. Ora l'iPad manda solo una prova calcolata dalla password e da un numero nuovo a ogni volta (sfida e risposta): la password non viaggia più.
+  - Un iPad sbloccato restava sbloccato fino al riavvio di OpenSet, da qualsiasi indirizzo. Ora l'accesso scade dopo 24 ore senza uso e vale solo dall'indirizzo che l'ha ottenuto.
+  - Chi prova password a caso con IPv6 poteva cambiare indirizzo a ogni tentativo e non essere mai fermato. Ora i tentativi si contano per rete (/64).
+  - Un dispositivo poteva aprire connessioni senza limite fino a rallentare OpenSet. Ora al massimo 20 per indirizzo e 100 in tutto.
+  - Un altro programma sullo stesso computer poteva comandare Live al posto di OpenSet. Ora il Remote Script accetta solo i comandi con la chiave che manda a OpenSet.
+- [x] C4 (RED `f5fc84c`, GREEN) Log: se OpenSet restava acceso per giorni, `openset.log` cresceva senza limite (si accorciava solo all'avvio). Ora oltre 1 MB passa a `openset.old.log` anche mentre è acceso.
+- [x] C5 (RED `e9102ef`, GREEN) User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
+- [x] C6 (RED `4962104`, GREEN) Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
+- [x] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Causa trovata: non era OpenSet ma lo strumento usato per misurare (Chrome comandato da `chrome-devtools`). Misurato in Chrome normale, dal computer e dall'indirizzo di rete, con Live collegato e 300 locator: primo stato in 40-100 ms, «Live connesso» in 100-220 ms; anche la versione di allora (`f883623`) è veloce. Test di guardia in `e2e/ui.spec.js` (primo stato entro 1 s)
+- [ ] Rilascio 0.6.2: copertura (righe 99.34%, rami 93.81%), CHANGELOG, report TDD, versione, guida e README fatti; PR #9 aperta; tre `code-review` corrette (R1-R4, S1-S3, T1-T3); revisione finale corretta (U1-U10); poi CI, merge, tag
+- [x] R1 (RED `25910f3`, GREEN) Dalla revisione, accessi (rischio: dispositivi bloccati durante il concerto)
+  - Con IPv6 tutti i dispositivi di casa o del locale stanno nella stessa rete /64: cinque password sbagliate da un telefono bloccavano per 30 s anche gli iPad della band, e un iPad che si ricollegava con il suo accesso valido lo perdeva. Ora i tentativi si contano per dispositivo, la rete /64 si blocca solo dopo molti tentativi, e un accesso valido non viene mai bloccato.
+  - Un iPad acceso e usato per più di 24 ore (prova e poi concerto) veniva bloccato al primo calo del Wi-Fi, perché l'uso contava solo quando si ricollegava. Ora ogni comando e ogni segnale di vita della connessione contano come uso.
+  - Premendo due volte Sblocca su un iPad lento, il secondo tentativo (con un numero già usato) bloccava di nuovo il dispositivo appena sbloccato. Ora un dispositivo sbloccato resta sbloccato, e il pulsante non si può premere di nuovo mentre calcola.
+  - Il limite di 100 connessioni valeva anche per il computer di OpenSet, e un dispositivo IPv6 poteva aggirare il limite per indirizzo cambiando indirizzo. Ora il computer di OpenSet non ha limiti e c'è anche un limite per rete /64.
+  - Un accesso copiato da un iPad funzionava da un altro dispositivo della stessa rete IPv6. Ora vale solo dall'indirizzo esatto.
+  - Con una password della 0.6, dopo lo sblocco del primo iPad gli altri già aperti continuavano a mandarla in chiaro. Ora ricevono subito il nuovo modo.
+  - Il messaggio «Controllo la password…» restava scritto anche dopo, e ricompariva aprendo di nuovo il pannello.
+- [x] R2 (RED `956bbb4`, GREEN) Dalla revisione, password salvata: chi copia `setlist.json` poteva sbloccare OpenSet senza conoscere la password, e indovinare password brevi da un file o da uno sblocco ascoltato costava poco. Ora si salva solo una verifica che non basta per sbloccare (schema SCRAM), con più iterazioni, e la pagina calcola senza sprechi di memoria (gli iPad vecchi non si bloccano)
+- [x] R3 (RED `de7fb2a`, GREEN) Dalla revisione, Remote Script: con due versioni di Live e User Library diverse, OpenSet aggiornava solo una delle due (poteva restare il Remote Script vecchio). Ora lo installa in tutte. Una User Library nella radice di un disco (`D:\`) finiva in un posto sbagliato
+- [x] R4 (RED `f11654e`, GREEN) Dalla revisione, brani con lo stesso nome
+  - Chi aggiorna dalla 0.6.1 con una ripresa già tolta o annotata la vedeva ricomparire senza nota. Ora le impostazioni salvate prima valgono come allora finché non si modifica la scaletta.
+  - Un brano chiamato davvero «Intro#2» si confondeva con la ripresa di «Intro».
+  - Aggiungendo in Live un altro brano con lo stesso nome prima della ripresa, nota e «tolto» passavano al brano sbagliato. Ora una ripresa che resta nella stessa posizione tiene le sue impostazioni.
+  - Trovato durante la correzione: con impostazioni della 0.6.1 e «Togli i brani suonati», il primo brano suonato toglieva anche la ripresa. Ora prima della modifica le impostazioni vengono convertite brano per brano (anche le durate misurate).
+- Nota: i commit `c31b597` e `c8588cf` non aggiornano `TODO.md` (storia già pubblicata sulla PR, non riscritta)
+- [x] S1 (RED `226585a`, GREEN) Dalla seconda revisione, brani con lo stesso nome (rifatto più semplice: le impostazioni della 0.6.1 si convertono una volta sola, appena arriva la scaletta)
+  - Riavviando OpenSet, la posizione delle riprese si perdeva (veniva cancellata prima che Live mandasse i locator): una ripresa aggiunta prima tornava a prendersi le impostazioni dell'altra.
+  - Con una scaletta nuova (senza file delle impostazioni) OpenSet partiva come se le impostazioni fossero della 0.6.1: la durata misurata di un brano valeva anche per la sua ripresa.
+  - Con impostazioni della 0.6.1, un incolla o una modifica parziale perdeva «tolto» e note della ripresa; caricare una scaletta salvata perdeva la durata misurata.
+  - Aggiungendo in Live un secondo brano con il nome di uno già presente (prima ce n'era uno solo), quello nuovo si prendeva note e «tolto» del vecchio.
+  - Con «Togli i brani suonati» e impostazioni della 0.6.1, l'ordine veniva congelato: un locator aggiunto dopo in Live finiva in fondo alla scaletta invece che al suo posto.
+  - La scaletta veniva ricalcolata più volte al secondo con scritture su disco: ora la posizione dei brani si salva solo quando i locator cambiano.
+- [x] S2 (RED `971ae79`, GREEN) Dalla seconda revisione, accessi
+  - Incollare una scaletta o scaricare il pacchetto log da un iPad sbloccato veniva rifiutato («troppi tentativi») se un altro dispositivo aveva sbagliato la password.
+  - I tentativi sbagliati sotto il limite non scadevano mai: in giorni di prove, 30 errori di battitura sparsi della band bloccavano per 30 s gli sblocchi; e la memoria cresceva con ogni indirizzo IPv6 che sbagliava.
+  - Con IPv6 l'iPad cambia da solo indirizzo (indirizzi temporanei): dopo un calo del Wi-Fi perdeva lo sblocco a metà concerto. Ora con IPv6 lo sblocco vale in tutta la rete del locale (/64), con IPv4 dall'indirizzo esatto.
+  - Una password impostata con una versione di prova di questa 0.6.2 (formato intermedio) veniva cancellata senza avviso, lasciando OpenSet aperto a tutti. Ora viene convertita, e un formato sconosciuto lascia OpenSet chiuso (si reimposta dal computer).
+  - L'aggiornamento di una password della 0.6 fermava per un attimo OpenSet (calcolo bloccante) mentre suona: ora non blocca.
+  - Dopo quell'aggiornamento gli altri iPad potevano vedere comparire il pannello della password o «Password errata» senza motivo.
+- [x] S3 (RED `4df0709`, GREEN) Dalla seconda revisione, Remote Script: se una delle User Library non si può scrivere, OpenSet diceva «installazione fallita» anche se l'altra (quella del Live in uso) era stata aggiornata.
+- [x] T1 (RED `0dc68fb`, GREEN) Dalla terza revisione, scalette della 0.6.1 (la conversione va nel modulo `setlist.js`, con i test, una regola sola: ogni scaletta dice se è per nome o per chiave)
+  - Caricando o salvando una scaletta mentre Live non è ancora collegato, una scaletta della 0.6.1 perdeva il suo significato: la ripresa tornava senza «tolto» e senza nota, o al contrario veniva tolta per sbaglio.
+  - Con set lunghi (150 brani) l'assegnazione delle chiavi faceva molti confronti più volte al secondo: ora è proporzionale ai brani.
+  - Un commento descriveva ancora il vecchio comportamento.
+- [x] T2 (RED `091ed6f`, GREEN) Dalla terza revisione, password
+  - Se una password della 0.6 veniva aggiornata proprio mentre dal computer si cambiava la password (o si toglieva un brano suonato), la modifica fatta in quell'istante veniva persa: la password vecchia poteva tornare.
+  - Una password vecchia controllata mentre dal computer la si cambiava sbloccava comunque il dispositivo.
+  - Con una password che OpenSet non sa leggere, gli iPad mandavano la password in chiaro a ogni tentativo (senza mai riuscire), e al primo salvataggio la password originale veniva cancellata dal file. Ora non si manda nulla, la pagina dice di reimpostarla dal computer, e il file resta com'era.
+  - Impostare la password dal computer bloccava ancora OpenSet per un attimo: ora anche quello non blocca (una funzione sola).
+  - Con migliaia di tentativi da indirizzi diversi ogni tentativo diventava lento e la memoria cresceva: ora c'è un tetto.
+  - Se il calcolo per aggiornare una password della 0.6 falliva, l'iPad restava con «Sblocca» disattivato.
+  - Con IPv6 lo sblocco vale in tutta la rete del locale (/64): scelta voluta, perché gli iPad cambiano indirizzo da soli. Su HTTP senza cifratura chi legge il traffico del Wi-Fi può copiare un accesso in ogni caso (anche legandolo all'indirizzo esatto, che sulla stessa rete si può imitare): la guida lo dice e consiglia una rete Wi-Fi propria per la band.
+- [x] T3 (RED `78968d3`, GREEN) Dalla terza revisione, Remote Script: «Reinstalla il Remote Script» dalla web app e il pacchetto log non mostravano le User Library non scrivibili; se nessuna era scrivibile si vedeva solo il primo errore.
+- [x] U Dalla revisione finale (12 punti; RED `83ce5af`, GREEN uno per modulo; copertura righe 99.35%, rami 93.93%, 314 test Node, 43 Python, 21 E2E)
+  - [x] U1 Password: se dal computer si cambiava la password proprio mentre un iPad sbloccava con la password della 0.6, l'iPad restava sbloccato con la password vecchia (riceveva anche un nuovo accesso).
+  - [x] U2 Password: un file con una password rovinata o di un OpenSet più nuovo poteva essere scambiato per una password della 0.6 (e la pagina la mandava in chiaro a ogni tentativo) o far restare la pagina su «Controllo la password…» per sempre, o far calcolare un vecchio iPad per minuti. Ora OpenSet dice di reimpostarla dal computer (`readAuth` la segna come illeggibile).
+  - [x] U3 Password: due iPad che sbloccavano nello stesso momento con la password della 0.6 (o un programma via HTTP): quello più lento riceveva «Password errata» anche con la password giusta, perché l'aggiornamento fatto dall'altro sembrava un cambio di password. Ora conta solo un vero cambio dal computer (un contatore delle password, non il confronto degli oggetti).
+  - [x] U4 Remote Script: se nessuna User Library era scrivibile, la web app mostrava solo il primo errore; ora elenca ogni cartella con il motivo (`scriptNote`).
+  - [x] U5 Remote Script: all'avvio un'installazione fallita scriveva nel log anche una riga «INFO Remote Script error in …» che sembrava un percorso; ora c'è solo la riga di errore (`installLog`).
+  - [x] U6 Computer di riserva aggiornato dalla 0.6.1 e acceso prima che Live caricasse il set: le modifiche alla scaletta copiate dal computer principale venivano rifiutate senza dirlo, e le due scalette restavano diverse. Ora una scaletta intera (ordine, tolti, stop, note) viene accettata; solo una parte, o una scaletta incollata come testo prima che Live abbia i brani (non troverebbe nulla e svuoterebbe la scaletta), resta rifiutata finché la scaletta è per nome.
+  - [x] U7 Password: se dopo aver salvato la nuova password qualcosa andava storto nell'avvisare le pagine, la web app diceva «comando non valido» e il log «impossibile impostare la password», ma la password era già cambiata. Ora risponde che è impostata e il log dice cosa non è andato.
+  - [x] U8 Velocità: caricare una scaletta salvata ricostruiva la scaletta due volte, e la conversione dei nomi della 0.6.1 confrontava ogni nome con ogni brano. Ora una volta sola e con un indice per nome.
+  - [x] U9 Semplificazione: la scelta «per chiave o per nome» stava in due punti (`migrate` e `setlistByKey`); ora in uno.
+  - [x] U10 Commit `caa0365`: mette insieme più correzioni (tetto della memoria del limitatore, avviso HTTP nella guida, CHANGELOG, password non bloccante, password illeggibile, corse). Già pubblicato sul branch della PR: non riscritto (servirebbe un force push); da qui in avanti un commit per modulo.
+
+### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
+Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.
+
+- [ ] F1 Brani aggiunti a mano dalla UI, senza progetto Live (scaletta, note e testi)
+- [ ] F2 `+LOOPFULL` come in AbleSet (oggi si comporta come `+LOOP`)
+- [ ] F3 Testi da più tracce `+LYRICS` (oggi solo la prima)
+- [ ] F4 Colori delle clip con la tabella di AbleSet (oggi per tonalità)
+- [ ] F5 Canvas: viste personalizzate fatte di riquadri
+- [ ] F6 Mixer: volumi, mute e solo delle tracce dalla UI
+- [ ] F7 Variabili condivise (e Persist Shared Variables)
+- [ ] F8 Script di progetto
+- [ ] F9 Progetti su più file `.als` (e Delay Before Jumping to Song File)
+- [ ] F10 Due computer: solo e volumi dei gruppi sincronizzati
+- [ ] F11 OSC visibile in rete (Bonjour)
+- [ ] Rilascio 0.7.0 (guida con tutte le novità)
+
+### v0.8.0 — Node recente dentro i programmi (branch `release/v0.8.0`)
+- [ ] I programmi contengono Node 18, che non riceve più aggiornamenti di sicurezza da aprile 2025 (pkg 5.8.1 non va oltre). Passare a Node SEA con un Node attuale, per Windows, macOS (arm64 e Intel) e Linux, con icona, firma ad hoc e guida dentro gli zip; prova di avvio in CI su ogni sistema
+- [ ] Rilascio 0.8.0
+
+### Da verificare su un computer vero (qui non si può provare)
+- C5: formato di `Library.cfg` (`<UserLibrary><LibraryProject><ProjectPath Value=…/><ProjectName Value=…/>`) su un Mac e un Windows con Live 11/12 e la User Library spostata: se il formato è diverso, OpenSet usa ancora le cartelle standard come prima
+
+- C7: tempo della prima connessione su Safari di un iPad vero (in Chrome 40-100 ms)
+
+### Non fattibili su questo computer (detto all'utente il 2026-10-23)
+- Pacchetto log del tester (bug della scaletta che sparisce): serve il file che deve mandare lui.
+- Prove su iPad/Safari, Mac, Windows, Live veri e con due computer veri: qui c'è solo Linux; si prova con Chrome, un Live simulato e la CI su Windows e macOS.
+- Scambio automatico dell'audio tra due computer, Audio Interfaces, LTC, AbleSet Controller: servono hardware o Max for Live.
+- Automazione del tempo letta da Live mentre suona: l'API di Live non la dà ai Remote Script (resta la lettura dal file `.als`).
 
 ### v0.5.1 — feedback all'avvio e convivenza con AbleSet (hotfix)
 
@@ -124,7 +236,7 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 - [x] GREEN: `remote-script/OpenSet/OpenSet.py`, server (clip uguali ignorate)
 - Non corretti: lettura dei cue a ogni tick con set molto grandi (non misurato in Live, da rivedere se il pacchetto log mostra rallentamenti); comandi da altri programmi dello stesso computer (la porta 39050 è già solo su 127.0.0.1)
 - [x] `ecc:e2e-testing` (Playwright) per i flussi principali della UI: `e2e/ui.spec.js` (A2), in CI su Ubuntu
-- [ ] Verificare su Safari/iPad il tempo della prima connessione WebSocket: nel Chrome di test 1-2,4 s (da Node 8 ms, HTTP 3 ms)
+- [x] Tempo della prima connessione WebSocket: misurato in C7 (v0.6.2), 40-100 ms in Chrome; su Safari/iPad vero resta in «Da verificare»
 - [ ] prima di ogni merge `code-review` sulla PR; ai rilasci grossi `ecc:orch-review`
 - Un primo audit generico era partito in background ed è stato fermato su richiesta dell'utente (si rifà con queste skill)
 

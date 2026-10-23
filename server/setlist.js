@@ -64,7 +64,8 @@ function parseName(raw) {
   return { name, description, tags, duration, nosong, transpose, classes, flags, transition, color };
 }
 
-function buildSetlist(cues) {
+// keyTimes: { key: [name, time] } of every song of the last setlist (see keyTimesOf)
+function buildSetlist(cues, keyTimes = {}) {
   const songs = [];
   let current = null;
   const endSong = (time, marker, p) => {
@@ -145,7 +146,61 @@ function buildSetlist(cues) {
       if (first) s.playStart = first.time;
     }
   });
+  assignKeys(songs, keyTimes);
   return songs;
+}
+
+// A reprise has the same name: setlist settings use the key, «Name#2» for the second one.
+// A song that shared its name and is still where it was keeps its key, so adding another
+// song with that name earlier does not move its settings. Never the name of another song.
+function assignKeys(songs, keyTimes) {
+  const names = new Set(songs.map((s) => s.name));
+  const used = new Set();
+  const prev = new Map(); // name -> [[key, time]]: a song looks only at the songs with its name
+  for (const [k, v] of Object.entries(keyTimes || {})) {
+    const n = v[0];
+    if (!prev.has(n)) prev.set(n, []);
+    prev.get(n).push([k, v[1]]);
+  }
+  for (const s of songs) {
+    const hit = (prev.get(s.name) || []).find(([k, t]) => Math.abs(t - s.time) < EPS && !used.has(k) && (k === s.name || !names.has(k)));
+    if (hit) used.add((s.key = hit[0]));
+  }
+  for (const s of songs) {
+    if (s.key) continue;
+    let key = s.name;
+    // the name for the first one, then Name#2, Name#3…: never a key taken or the name of another song
+    for (let n = 2; used.has(key) || (key !== s.name && names.has(key)); n++) key = `${s.name}#${n}`;
+    used.add((s.key = key));
+  }
+}
+
+// where each song is, for the next buildSetlist: a song added later with the same name
+// as one already there gets a new key instead of taking the old one's settings
+function keyTimesOf(songs) {
+  return Object.fromEntries(songs.map((s) => [s.key, [s.name, s.time]]));
+}
+
+// settings saved by OpenSet 0.6.1 and older use song names: one entry per song with that
+// name (what they meant then); names of songs not in the set stay as they are. Only the
+// fields it gets: order, skip, stopAfter (lists), notes, measured (maps)
+function migrateNames(data, songs) {
+  const byName = new Map(); // name -> keys of its songs, built once: long setlists convert quickly
+  for (const s of songs) byName.set(s.name, [...(byName.get(s.name) || []), s.key]);
+  const keysOf = (name) => byName.get(name) || [name];
+  const out = {};
+  for (const f of ["order", "skip", "stopAfter"]) if (data[f]) out[f] = [...new Set(data[f].flatMap(keysOf))];
+  for (const f of ["notes", "measured"])
+    if (data[f]) out[f] = Object.fromEntries(Object.entries(data[f]).flatMap(([name, v]) => keysOf(name).map((k) => [k, v])));
+  return out;
+}
+
+// A setlist (the current one, a saved one, a backup) says whether it is by key (keys: true,
+// written by 0.6.2) or by song name (0.6.1). By name it is converted only when there are
+// songs to tell same-name songs apart; until then it stays by name, and says so.
+function setlistByKey(data, songs) {
+  if (data.keys === true || !songs.length) return { ...data, keys: data.keys === true };
+  return { ...data, ...migrateNames(data, songs), keys: true };
 }
 
 // The sections track (AbleSet): named "Sections…" or flagged +SECTIONS
@@ -177,7 +232,7 @@ function cuesFromLive(cues, tracks) {
   return [...named, ...extra].sort((a, b) => a.time - b.time || isSection(a) - isSection(b));
 }
 
-// prefs: { order: [name], skip: [name], stopAfter: [name], notes: {name: text} }
+// prefs: { order: [key], skip: [key], stopAfter: [key], notes: {key: text}, measured: {key: seconds} }
 function applyOrder(songs, prefs = {}) {
   const order = prefs.order || [];
   const skip = new Set(prefs.skip || []);
@@ -185,17 +240,17 @@ function applyOrder(songs, prefs = {}) {
   const notes = prefs.notes || {};
   const measured = prefs.measured || {};
   const rank = (s) => {
-    const i = order.indexOf(s.name);
+    const i = order.indexOf(s.key);
     return i < 0 ? order.length : i;
   };
   let n = 0;
   return songs
     .map((s) => ({
       ...s,
-      skip: skip.has(s.name),
-      stopAfter: stopAfter.has(s.name),
-      notes: Object.hasOwn(notes, s.name) ? notes[s.name] : "",
-      measured: Object.hasOwn(measured, s.name) ? measured[s.name] : null,
+      skip: skip.has(s.key),
+      stopAfter: stopAfter.has(s.key),
+      notes: Object.hasOwn(notes, s.key) ? notes[s.key] : "",
+      measured: Object.hasOwn(measured, s.key) ? measured[s.key] : null,
     }))
     .sort((a, b) => rank(a) - rank(b)) // stable: unlisted songs keep timeline order
     .map((s) => ({ ...s, number: s.skip || s.nosong ? null : ++n }));
@@ -327,6 +382,9 @@ module.exports = {
   COLORS,
   CLIP_COLORS,
   applyOrder,
+  keyTimesOf,
+  migrateNames,
+  setlistByKey,
   songAt,
   sectionAt,
   nextSong,

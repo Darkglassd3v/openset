@@ -640,6 +640,8 @@ function connect() {
     if (msg.type === "cue") onCue(msg.cue);
     if (msg.type === "device") onDeviceCommand(msg);
     if (msg.type === "access") onAccess(msg);
+    // a 0.6 password just updated by another device: from now on this page sends a proof too
+    if (msg.type === "challenge") access.challenge = msg.challenge;
   };
   ws.onclose = connectionLost;
 }
@@ -667,11 +669,128 @@ function send(obj) {
   if (obj.cmd) lastCommand = Date.now();
 }
 
+// pbkdf2: begin. SHA-256, HMAC, PBKDF2 and the SCRAM proof in plain JavaScript: crypto.subtle
+// exists only on HTTPS and OpenSet runs on plain HTTP. Checked against Node by test/ui-crypto.test.js
+const K256 = new Uint32Array([
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
+const H0 = [0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19];
+const W256 = new Uint32Array(64);
+// one 64-byte block, as 16 big-endian words, into the state h
+function compress(h, block) {
+  const w = W256;
+  for (let i = 0; i < 16; i++) w[i] = block[i];
+  for (let i = 16; i < 64; i++) {
+    const x = w[i - 15], y = w[i - 2];
+    const s0 = ((x >>> 7) | (x << 25)) ^ ((x >>> 18) | (x << 14)) ^ (x >>> 3);
+    const s1 = ((y >>> 17) | (y << 15)) ^ ((y >>> 19) | (y << 13)) ^ (y >>> 10);
+    w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+  }
+  let a = h[0], b = h[1], c = h[2], d = h[3], e = h[4], f = h[5], g = h[6], k = h[7];
+  for (let i = 0; i < 64; i++) {
+    const s1 = ((e >>> 6) | (e << 26)) ^ ((e >>> 11) | (e << 21)) ^ ((e >>> 25) | (e << 7));
+    const t1 = (k + s1 + ((e & f) ^ (~e & g)) + K256[i] + w[i]) | 0;
+    const s0 = ((a >>> 2) | (a << 30)) ^ ((a >>> 13) | (a << 19)) ^ ((a >>> 22) | (a << 10));
+    const t2 = (s0 + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+    k = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+  }
+  h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += k;
+}
+function toWords(bytes, off, out, n) {
+  for (let i = 0; i < n; i++) {
+    const o = off + 4 * i;
+    out[i] = (bytes[o] << 24) | (bytes[o + 1] << 16) | (bytes[o + 2] << 8) | bytes[o + 3];
+  }
+  return out;
+}
+function toBytes(words) {
+  const out = new Uint8Array(4 * words.length);
+  for (let i = 0; i < words.length; i++) { out[4 * i] = words[i] >>> 24; out[4 * i + 1] = words[i] >>> 16; out[4 * i + 2] = words[i] >>> 8; out[4 * i + 3] = words[i]; }
+  return out;
+}
+// SHA-256 of bytes, starting from a state that already holds `before` bytes (whole blocks)
+function sha256(bytes, init, before) {
+  const h = new Uint32Array(init || H0);
+  const padded = new Uint8Array(((bytes.length + 72) >> 6) << 6);
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+  const bits = ((before || 0) + bytes.length) * 8;
+  const n = padded.length;
+  const hi = Math.floor(bits / 0x100000000);
+  padded[n - 8] = hi >>> 24; padded[n - 7] = hi >>> 16; padded[n - 6] = hi >>> 8; padded[n - 5] = hi;
+  padded[n - 4] = bits >>> 24; padded[n - 3] = bits >>> 16; padded[n - 2] = bits >>> 8; padded[n - 1] = bits;
+  const block = new Uint32Array(16);
+  for (let off = 0; off < n; off += 64) compress(h, toWords(padded, off, block, 16));
+  return toBytes(h);
+}
+// the key's inner and outer blocks hashed once, reused by every HMAC of PBKDF2
+function hmacKey(key) {
+  if (key.length > 64) key = sha256(key);
+  const inner = new Uint8Array(64), outer = new Uint8Array(64);
+  for (let i = 0; i < 64; i++) { inner[i] = (key[i] || 0) ^ 0x36; outer[i] = (key[i] || 0) ^ 0x5c; }
+  const k = { inner: new Uint32Array(H0), outer: new Uint32Array(H0) };
+  compress(k.inner, toWords(inner, 0, new Uint32Array(16), 16));
+  compress(k.outer, toWords(outer, 0, new Uint32Array(16), 16));
+  return k;
+}
+function hmac(k, msg) { return sha256(sha256(msg, k.inner, 64), k.outer, 64); }
+// HMAC of a 32-byte message as 8 words, into out (may be the message): PBKDF2 runs it
+// 100000 times, so no memory is taken in the loop (old iPads would stall on it)
+const HB = new Uint32Array(16);
+function hmacWords(k, msg, out) {
+  for (let i = 0; i < 8; i++) HB[i] = msg[i];
+  HB[8] = 0x80000000;
+  for (let i = 9; i < 15; i++) HB[i] = 0;
+  HB[15] = 768; // 64 key bytes + 32 message bytes, in bits
+  out.set(k.inner);
+  compress(out, HB);
+  for (let i = 0; i < 8; i++) HB[i] = out[i];
+  out.set(k.outer);
+  compress(out, HB);
+}
+const utf8 = (text) => new TextEncoder().encode(text);
+function fromHex(h) { const b = new Uint8Array(h.length >> 1); for (let i = 0; i < b.length; i++) b[i] = parseInt(h.substr(2 * i, 2), 16); return b; }
+function toHex(b) { let s = ""; for (let i = 0; i < b.length; i++) s += (b[i] < 16 ? "0" : "") + b[i].toString(16); return s; }
+// PBKDF2-HMAC-SHA256 with a 32-byte result (one block)
+function pbkdf2(password, salt, iter) {
+  const k = hmacKey(utf8(password));
+  const first = new Uint8Array(salt.length + 4);
+  first.set(salt);
+  first[salt.length + 3] = 1;
+  const u = toWords(hmac(k, first), 0, new Uint32Array(8), 8);
+  const t = u.slice();
+  for (let i = 1; i < iter; i++) {
+    hmacWords(k, u, u);
+    for (let j = 0; j < 8; j++) t[j] ^= u[j];
+  }
+  return toBytes(t);
+}
+function pbkdf2Hex(password, saltHex, iter) { return toHex(pbkdf2(password, fromHex(saltHex), iter)); }
+// SCRAM-SHA-256: client key XOR HMAC(stored key, one-time number). OpenSet checks it with the
+// stored key alone, which cannot make a proof: the password and the client key never leave the page
+function scramProof(password, saltHex, iter, nonce) {
+  const clientKey = hmac(hmacKey(pbkdf2(password, fromHex(saltHex), iter)), utf8("Client Key"));
+  const sig = hmac(hmacKey(sha256(clientKey)), utf8(nonce));
+  for (let i = 0; i < 32; i++) sig[i] ^= clientKey[i];
+  return toHex(sig);
+}
+// pbkdf2: end
+
 // ---------- password: read-only until unlocked ----------
 let access = { control: true, passwordSet: false };
 let authTried = false;
+let authBusy = false; // a proof is on its way: a second tap would send an old number
 function onAccess(msg) {
   access = msg;
+  authBusy = false;
+  $("authGo").disabled = false;
+  $("authStatus").textContent = "";
   if (msg.token) store.set("openset.token", msg.token);
   if (msg.tokenRejected) store.set("openset.token", "");
   $("unlockApp").hidden = msg.control;
@@ -683,12 +802,31 @@ function onAccess(msg) {
 }
 function openAuth() {
   $("authPanel").hidden = false;
+  $("authStatus").textContent = "";
   $("authPw").value = "";
   $("authPw").focus();
 }
 function tryAuth() {
+  if (authBusy) return;
+  authBusy = true;
+  $("authGo").disabled = true;
   authTried = true;
-  send({ type: "auth", password: $("authPw").value });
+  const pw = $("authPw").value;
+  const c = access.challenge;
+  // a password saved by OpenSet 0.6 (legacy): sent this one time, then OpenSet stores it the new way.
+  // One OpenSet cannot read: nothing is sent, it is set again on the computer
+  if (!c && access.legacy) return send({ type: "auth", password: pw });
+  if (!c) {
+    authBusy = false;
+    $("authGo").disabled = false;
+    authTried = false;
+    $("authStatus").textContent = "OpenSet non riesce a leggere la password salvata: reimpostala dal computer con OpenSet (Opzioni → Sicurezza).";
+    return;
+  }
+  $("authStatus").textContent = "Controllo la password…";
+  // only a proof travels (SCRAM, made with a one-time number). After a repaint:
+  // computing the key takes a moment on older iPads
+  setTimeout(() => send({ type: "auth", proof: scramProof(pw, c.salt, c.iter, c.nonce) }), 20);
 }
 $("unlockApp").onclick = openAuth;
 $("authGo").onclick = tryAuth;
@@ -827,10 +965,12 @@ function renderSetlist() {
 
 function scriptNote(inst) {
   const st = inst && inst.status;
-  if (st === "installed" || st === "updated") return `Remote Script installato in <span class="mono">${esc(inst.path)}</span>.`;
-  if (st === "current") return "Remote Script già installato.";
+  // a User Library that could not be written (an old Live's, read-only): copy it there by hand
+  const failed = (inst && inst.errors || []).map((e) => ` Non è stato possibile scriverlo in <span class="mono">${esc(e.path)}</span> (${esc(e.error)}): copialo lì a mano se usi quel Live.`).join("");
+  if (st === "installed" || st === "updated") return `Remote Script installato in <span class="mono">${(inst.paths || [inst.path]).map(esc).join("</span> e in <span class=\"mono\">")}</span>.` + failed;
+  if (st === "current") return "Remote Script già installato." + failed;
   return "Copia la cartella <b>remote-script/OpenSet</b> (accanto al programma) nella cartella " +
-    "<b>Remote Scripts</b> della User Library di Live." + (st === "error" ? ` Installazione automatica fallita: ${esc(inst.error)}` : "");
+    "<b>Remote Scripts</b> della User Library di Live." + (st === "error" ? " Installazione automatica fallita." + failed : "");
 }
 
 // why Live and OpenSet are not talking (state.liveIssues from the server)
@@ -937,15 +1077,16 @@ function buildSetlist() {
 
 // setlist edits: send the whole order/skip/stop/notes picture
 function editSetlist(change) {
-  const rows = state.setlist.map((s) => ({ name: s.name, skip: s.skip, stopAfter: s.stopAfter, notes: s.notes || "" }));
+  // key: the name, «Name#2» for a reprise with the same name
+  const rows = state.setlist.map((s) => ({ key: s.key, skip: s.skip, stopAfter: s.stopAfter, notes: s.notes || "" }));
   change(rows);
   const notes = {};
-  rows.forEach((r) => { if (r.notes) notes[r.name] = r.notes; });
+  rows.forEach((r) => { if (r.notes) notes[r.key] = r.notes; });
   send({
     cmd: "setlist",
-    order: rows.map((r) => r.name),
-    skip: rows.filter((r) => r.skip).map((r) => r.name),
-    stopAfter: rows.filter((r) => r.stopAfter).map((r) => r.name),
+    order: rows.map((r) => r.key),
+    skip: rows.filter((r) => r.skip).map((r) => r.key),
+    stopAfter: rows.filter((r) => r.stopAfter).map((r) => r.key),
     notes,
   });
 }
@@ -1025,10 +1166,10 @@ function openSearch() {
 }
 // picked songs are played again and move after the last played song
 function addSongs(indexes) {
-  const names = new Set(indexes.map((i) => state.setlist[i] && state.setlist[i].name));
+  const keys = new Set(indexes.map((i) => state.setlist[i] && state.setlist[i].key));
   editSetlist((rows) => {
-    const picked = rows.filter((r) => names.has(r.name));
-    const rest = rows.filter((r) => !names.has(r.name));
+    const picked = rows.filter((r) => keys.has(r.key));
+    const rest = rows.filter((r) => !keys.has(r.key));
     picked.forEach((r) => { r.skip = false; });
     let at = 0;
     rest.forEach((r, k) => { if (!r.skip) at = k + 1; });

@@ -47,7 +47,7 @@ function events(songs, idx, opts) {
   const songEnd = (at) => {
     const ev = endOfSong(at);
     if (!opts.removePlayed) return ev;
-    const played = { cmd: "played", name: song.name };
+    const played = { cmd: "played", key: song.key };
     return ev ? { ...ev, cmds: [played, ...ev.cmds] } : { at, cmds: [played] };
   };
 

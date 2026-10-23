@@ -8,6 +8,7 @@ const zlib = require("zlib");
 const http = require("http");
 const net = require("net");
 const WebSocket = require("ws");
+const crypto = require("crypto");
 const { start } = require("../server/index");
 const { encode, decode } = require("../server/osc");
 
@@ -697,7 +698,7 @@ test("password: stored as a salted hash, never published, set only from this com
   assert.ok(!JSON.stringify(s).includes("palco-2026") && !("auth" in s));
   const saved = JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8"));
   assert.match(saved.auth.salt, /^[0-9a-f]{32}$/);
-  assert.match(saved.auth.hash, /^[0-9a-f]{64}$/);
+  assert.match(saved.auth.storedKey, /^[0-9a-f]{64}$/);
   assert.ok(!fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8").includes("palco-2026"));
   // this computer keeps full control without the password
   assert.equal((await c.cmd({ cmd: "stop" })).status, 200);
@@ -1905,21 +1906,60 @@ test("A4: a peer removed while its poll is still running is not brought back", a
   assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400);
 });
 
-test("A4: with more backups, a removed one is not followed while the others answer, nor asked again", async (t) => {
+test("A4: with more backups, a removed one is not followed while the others answer", async (t) => {
   const a = await gatedPeer(t, () => ({ is_playing: true, beat: 8 }));
   const b = await gatedPeer(t, () => ({ is_playing: false, beat: 0 }));
-  const gone = await gatedPeer(t, () => ({ is_playing: true, beat: 8 }));
   const c = await setup(t, { peerPollMs: 50 });
   await c.connect();
-  await c.cmd({ cmd: "peers", urls: [a.url, b.url, gone.url] });
+  await c.cmd({ cmd: "peers", urls: [a.url, b.url] });
   await a.asked;
   await c.cmd({ cmd: "peers", urls: [b.url] });
   a.release();
-  await b.asked; // the answer of the removed backup is in, the poll waits for the next one
+  await b.asked;
+  await pause(100); // the answer of the removed backup is in, the poll still waits for the other one
   assert.equal((await c.cmd({ cmd: "syncPlayback" })).status, 400);
-  b.release();
-  await pause(150);
-  assert.equal(gone.hits, 0, "a backup removed during the poll is not asked");
+});
+
+test("C1: a backup that does not answer does not hold back the others", async (t) => {
+  const silent = await gatedPeer(t, () => ({ is_playing: false, beat: 0 }));
+  const other = await fakePeer(t, () => ({ is_playing: true, beat: 4 }));
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect();
+  await c.cmd({ cmd: "peers", urls: [silent.url, other] });
+  await silent.asked;
+  // one by one, the second backup would wait for the first one's 800 ms timeout
+  await waitFor(async () => (await c.state()).peers[1]?.playing, "the second backup while the first is silent", 400);
+});
+
+test("C1: a backup removed while a copied command was on its way is not shown as refusing when added again", async (t) => {
+  let release;
+  const go = new Promise((r) => (release = r));
+  let asked;
+  const cmdAsked = new Promise((r) => (asked = r));
+  // a backup with a password: it refuses the copied command, but late
+  const srv = http.createServer(async (q, res) => {
+    if (q.url === "/api/cmd") {
+      asked();
+      await go;
+      res.statusCode = 401;
+      return res.end("{}");
+    }
+    res.end(JSON.stringify({ connected: true, tempo: 120, sig_num: 4, sig_den: 4, setlist: [], current: -1, settings: { scene: "backup" } }));
+  });
+  await new Promise((r) => srv.listen(0, "127.0.0.1", r));
+  t.after(() => (release(), srv.close()));
+  const url = `http://127.0.0.1:${srv.address().port}`;
+  const c = await setup(t, { peerPollMs: 50 });
+  await c.connect();
+  await c.cmd({ cmd: "peers", urls: [url] });
+  await c.cmd({ cmd: "play" }); // copied to the backup
+  await cmdAsked;
+  await c.cmd({ cmd: "peers", urls: [] });
+  release();
+  await pause(100); // the refusal arrives after the backup left the list
+  await c.cmd({ cmd: "peers", urls: [url] });
+  await waitFor(async () => (await c.state()).peers[0]?.online, "backup polled again");
+  assert.equal((await c.state()).peers[0].denied, false);
 });
 
 test("A4: a backup poll that ends after OpenSet is closed does not throw", async (t) => {
@@ -1940,4 +1980,537 @@ test("A4: a backup poll that ends after OpenSet is closed does not throw", async
   a.release();
   await pause(150);
   assert.deepEqual(errors, []);
+});
+
+test("C2: Remove Played Songs takes out only the reprise that was played", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] });
+  await c.cmd({ cmd: "settings", removePlayed: true });
+  await c.at(23.9, { is_playing: true });
+  await c.at(24.1, { is_playing: true });
+  await waitFor(async () => (await c.state()).setlist.find((s) => s.key === "A#2")?.skip, "the reprise removed");
+  assert.equal((await c.state()).setlist.find((s) => s.key === "A").skip, false);
+});
+
+test("C3: one address cannot open connections without limit; this computer always can", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t, { wsPerIp: 2, wsMax: 3 });
+  // resolves with the open socket, or with the HTTP status of a refusal
+  const open = (host = "127.0.0.1") =>
+    new Promise((resolve) => {
+      const ws = new WebSocket(`ws://${host}:${c.srv.httpPort}`);
+      ws.once("open", () => resolve(ws));
+      ws.once("unexpected-response", (_req, res) => resolve(res.statusCode));
+      ws.on("error", () => {});
+      t.after(() => ws.terminate());
+    });
+  assert.ok((await open(LAN_IP)) instanceof WebSocket);
+  assert.ok((await open(LAN_IP)) instanceof WebSocket);
+  assert.equal(await open(LAN_IP), 503);
+  for (let i = 0; i < 4; i++) assert.ok((await open()) instanceof WebSocket); // the computer with OpenSet
+});
+
+// SCRAM-SHA-256 proof the page sends to unlock
+function proofFor(challenge, pw = "palco-2026") {
+  const ck = crypto
+    .createHmac("sha256", crypto.pbkdf2Sync(pw, Buffer.from(challenge.salt, "hex"), challenge.iter, 32, "sha256"))
+    .update("Client Key")
+    .digest();
+  const sig = crypto.createHmac("sha256", crypto.createHash("sha256").update(ck).digest()).update(challenge.nonce).digest();
+  return Buffer.from(ck.map((x, i) => x ^ sig[i])).toString("hex");
+}
+
+// a browser on another device of the network, with the access messages it gets
+async function lanSocket(t, c) {
+  const ws = new WebSocket(`ws://${LAN_IP}:${c.srv.httpPort}`);
+  const msgs = [];
+  ws.on("message", (b) => msgs.push(JSON.parse(b)));
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  const nth = (type, n) => waitFor(() => msgs.filter((m) => m.type === type)[n], `${type} message ${n}`);
+  return { ws, msgs, send: (m) => ws.send(JSON.stringify(m)), access: (n) => nth("access", n), nth };
+}
+
+test("C3: a device unlocks with a proof made from the password; the password itself never travels", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const b = await lanSocket(t, c);
+  const { challenge } = await b.access(0);
+  assert.match(challenge.salt, /^[0-9a-f]{32}$/);
+  assert.equal(challenge.iter, 100000);
+  assert.match(challenge.nonce, /^[0-9a-f]{32}$/);
+  const proof = (nonce) => proofFor({ ...challenge, nonce });
+  b.send({ type: "auth", proof: "00".repeat(32) });
+  const wrong = await b.access(1);
+  assert.equal(wrong.control, false);
+  assert.notEqual(wrong.challenge.nonce, challenge.nonce); // a new number after every attempt
+  b.send({ type: "auth", proof: proof(challenge.nonce) }); // an old proof, replayed
+  const replayed = await b.access(2);
+  assert.equal(replayed.control, false);
+  b.send({ type: "auth", proof: proof(replayed.challenge.nonce) });
+  const ok = await b.access(3);
+  assert.equal(ok.control, true);
+  assert.match(ok.token, /^[0-9a-f]{64}$/);
+});
+
+test("C3: a password saved by an older OpenSet works once and is then stored the new way", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-legacy-"));
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync("palco-2026", Buffer.from(salt, "hex"), 32).toString("hex");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: { salt, hash } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const b = await lanSocket(t, c);
+  const first = await b.access(0);
+  assert.equal(first.passwordSet, true);
+  assert.equal(first.challenge, undefined); // no key yet: the page sends the password this one time
+  b.send({ type: "auth", password: "palco-2026" });
+  assert.equal((await b.access(1)).control, true);
+  await waitFor(() => JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth.storedKey, "stored the new way");
+});
+
+test("C3: commands to Live carry the key the Remote Script sent with its state", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, key: "a".repeat(32) });
+  const sent = c.expectCmd({ cmd: "play" });
+  await c.cmd({ cmd: "play" });
+  assert.equal((await sent).key, "a".repeat(32));
+  // never published: a program on this computer could read it from /api/state
+  assert.ok(!JSON.stringify(await c.state()).includes("a".repeat(32)));
+  await c.at(9); // a state without the key (an older Remote Script) keeps the last one
+  const again = c.expectCmd({ cmd: "stop" });
+  await c.cmd({ cmd: "stop" });
+  assert.equal((await again).key, "a".repeat(32));
+});
+
+
+test("R1: a device with a valid unlock is never stopped by someone else's wrong passwords", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const a = await lanSocket(t, c);
+  a.send({ type: "auth", proof: proofFor((await a.access(0)).challenge) });
+  const { token } = await a.access(1);
+  assert.match(token, /^[0-9a-f]{64}$/);
+  // five wrong guesses from this address (in a band: another phone of the same /64)
+  for (let i = 0; i < 5; i++)
+    await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json", "X-OpenSet-Password": "x" + i }, body: "{}" });
+  const b = await lanSocket(t, c);
+  await b.access(0);
+  b.send({ type: "auth", token }); // the iPad reconnecting after a Wi-Fi blip
+  const again = await b.access(1);
+  assert.equal(again.control, true);
+  assert.equal(again.tokenRejected, undefined);
+});
+
+test("R1: an iPad in use keeps its unlock past 24 hours", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  let clock = Date.now();
+  const c = await setup(t, { now: () => clock });
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const a = await lanSocket(t, c);
+  a.send({ type: "auth", proof: proofFor((await a.access(0)).challenge) });
+  const { token } = await a.access(1);
+  clock += 23 * 3600e3;
+  a.send({ cmd: "stop" }); // used during the rehearsal
+  await pause(100);
+  clock += 23 * 3600e3;
+  const b = await lanSocket(t, c);
+  await b.access(0);
+  b.send({ type: "auth", token });
+  assert.equal((await b.access(1)).control, true);
+});
+
+test("R1: a second tap on Sblocca with an old number does not lock the device again", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const a = await lanSocket(t, c);
+  const first = (await a.access(0)).challenge;
+  a.send({ type: "auth", proof: proofFor(first) });
+  a.send({ type: "auth", proof: proofFor(first) }); // sent before the answer to the first one
+  assert.equal((await a.access(1)).control, true);
+  assert.equal((await a.access(2)).control, true);
+});
+
+test("R1: when a password from OpenSet 0.6 is upgraded, the other open pages stop sending it", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  let syncHashes = 0;
+  const pbkdf2Sync = crypto.pbkdf2Sync;
+  crypto.pbkdf2Sync = (...a) => (syncHashes++, pbkdf2Sync(...a));
+  t.after(() => (crypto.pbkdf2Sync = pbkdf2Sync));
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-legacy-"));
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync("palco-2026", Buffer.from(salt, "hex"), 32).toString("hex");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: { salt, hash } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const a = await lanSocket(t, c);
+  const b = await lanSocket(t, c);
+  assert.equal((await b.access(0)).challenge, undefined);
+  await a.access(0);
+  a.send({ type: "auth", password: "palco-2026" });
+  // the 0.6 hash is replaced without stopping OpenSet: no blocking PBKDF2 on the computer driving Live
+  assert.equal((await a.access(1)).control, true);
+  assert.equal(syncHashes, 0);
+  // the other page gets only the numbers to prove with: no access message, no password panel
+  assert.ok((await b.nth("challenge", 0)).challenge.nonce);
+  await pause(100);
+  assert.equal(b.msgs.filter((m) => m.type === "access").length, 1);
+});
+
+test("R4: a setlist saved by OpenSet 0.6.1 keeps its meaning until it is edited", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  const old = { order: ["A", "B"], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } };
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ ...old, saved: { Tour: old } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const reprise = { ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] };
+  await c.connect(reprise);
+  const skips = async () => (await c.state()).setlist.map((s) => [s.key, s.skip, s.notes]);
+  assert.deepEqual(await skips(), [["A", true, "capo 2"], ["A#2", true, "capo 2"], ["B", false, ""]]);
+  // edited with 0.6.2: the key is the song
+  await c.cmd({ cmd: "setlist", order: ["A", "A#2", "B"], skip: ["A#2"], stopAfter: [], notes: {} });
+  assert.deepEqual(await skips(), [["A", false, ""], ["A#2", true, ""], ["B", false, ""]]);
+  // the old saved setlist, loaded again, means what it meant
+  await c.cmd({ cmd: "loadSetlist", name: "Tour" });
+  assert.deepEqual(await skips(), [["A", true, "capo 2"], ["A#2", true, "capo 2"], ["B", false, ""]]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).saved.Tour.keys, undefined); // kept as it was
+});
+
+test("R4: a reprise keeps its settings when Live gets another song with the same name before it", async (t) => {
+  const c = await setup(t);
+  const cues = [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }];
+  await c.connect({ ...LIVE, cues });
+  await c.cmd({ cmd: "setlist", order: ["A", "B", "A#2"], skip: ["A#2"], stopAfter: [], notes: { "A#2": "finale" } });
+  c.sendLive({ ...LIVE, cues: [cues[0], { name: "A", time: 4 }, ...cues.slice(1)] });
+  await waitFor(async () => (await c.state()).setlist.length === 4, "the new song");
+  const byTime = Object.fromEntries((await c.state()).setlist.map((s) => [s.time, [s.skip, s.notes]]));
+  assert.deepEqual(byTime, { 0: [false, ""], 4: [false, ""], 8: [false, ""], 16: [true, "finale"] });
+});
+
+test("R4: with a 0.6.1 setlist, Remove Played Songs takes out only the song that was played", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ order: [], skip: [], stopAfter: [], notes: { A: "capo 2" }, measured: { A: 90 } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "SONG END", time: 8 }, { name: "B", time: 12 }, { name: "A", time: 20 }] });
+  await c.cmd({ cmd: "settings", removePlayed: true });
+  await c.at(7.9, { is_playing: true });
+  await c.at(8.1, { is_playing: true });
+  await waitFor(async () => (await c.state()).setlist.find((s) => s.key === "A").skip, "the first A removed");
+  const reprise = (await c.state()).setlist.find((s) => s.key === "A#2");
+  assert.deepEqual([reprise.skip, reprise.notes, reprise.measured], [false, "capo 2", 90]);
+  // the order stays with the timeline: a locator added later in Live goes in its place
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).order, []);
+  // and after an edit from the web app
+  await c.cmd({ cmd: "setlist", stopAfter: ["B"] });
+  assert.equal((await c.state()).setlist.find((s) => s.key === "A#2").measured, 90);
+});
+
+test("S1: a reprise keeps its settings across a restart of OpenSet", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const cues = [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }];
+  const more = [cues[0], { name: "A", time: 4 }, ...cues.slice(1)];
+  const c = await setup(t, { baseDir });
+  await c.connect({ ...LIVE, cues });
+  await c.cmd({ cmd: "setlist", order: [], skip: ["A#2"], stopAfter: [], notes: { "A#2": "finale" } });
+  c.sendLive({ ...LIVE, cues: more });
+  await waitFor(async () => (await c.state()).setlist.length === 4, "the new song");
+  await c.srv.close();
+  const d = await setup(t, { baseDir });
+  await d.state(); // a page asks before Live sends its locators
+  await d.connect({ ...LIVE, cues: more });
+  const byTime = Object.fromEntries((await d.state()).setlist.map((s) => [s.time, [s.skip, s.notes]]));
+  assert.deepEqual(byTime[16], [true, "finale"]);
+  assert.deepEqual(byTime[4], [false, ""]);
+});
+
+test("S1: a new OpenSet (no settings yet) uses the song keys from the start", async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "settings", removePlayed: true });
+  assert.equal(JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8")).keys, true);
+});
+
+test("S1: with 0.6.1 settings, a partial edit keeps the reprise's settings", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ order: [], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } }));
+  const c = await setup(t, { baseDir });
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] });
+  await c.cmd({ cmd: "setlist", stopAfter: ["B"] });
+  const list = (await c.state()).setlist;
+  assert.deepEqual(list.filter((s) => s.name === "A").map((s) => [s.skip, s.notes]), [[true, "capo 2"], [true, "capo 2"]]);
+});
+
+test("S2: an unlocked iPad pastes a setlist even after someone else's wrong passwords", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const a = await lanSocket(t, c);
+  a.send({ type: "auth", proof: proofFor((await a.access(0)).challenge) });
+  const { token } = await a.access(1);
+  const lan = (p, headers) => fetch(`http://${LAN_IP}:${c.srv.httpPort}${p}`, { method: "POST", headers: { "Content-Type": "application/json", ...headers }, body: JSON.stringify({ text: "Finale" }) });
+  for (let i = 0; i < 5; i++) await lan("/api/cmd", { "X-OpenSet-Password": "x" + i });
+  assert.equal((await lan("/api/setlist-text", { Authorization: "Bearer " + token })).status, 200);
+});
+
+test("S2: a password set with a test build of 0.6.2 still protects OpenSet", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+  const salt = crypto.randomBytes(16).toString("hex");
+  const key = crypto.pbkdf2Sync("palco-2026", Buffer.from(salt, "hex"), 25000, 32, "sha256").toString("hex");
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: { salt, iter: 25000, key } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  assert.equal((await c.state()).passwordSet, true);
+  const lan = await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"cmd":"stop"}' });
+  assert.equal(lan.status, 401);
+  const a = await lanSocket(t, c);
+  a.send({ type: "auth", proof: proofFor((await a.access(0)).challenge) });
+  assert.equal((await a.access(1)).control, true);
+});
+
+test("S2: a password setting OpenSet cannot read keeps the other devices out", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: { salt: "zz", future: true } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  assert.equal((await c.state()).passwordSet, true);
+  const lan = await fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"cmd":"stop"}' });
+  assert.equal(lan.status, 401);
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "nuova-2026" })).status, 200); // set again from this computer
+});
+
+test("T1: a 0.6.1 setlist loaded or saved before Live is connected keeps its meaning", async (t) => {
+  const reprise = { ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] };
+  const old = { order: [], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } };
+  const byKey = { order: [], skip: ["A"], stopAfter: [], notes: {}, keys: true };
+  const dir = () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+    t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(d, "setlist.json"), JSON.stringify({ ...old, saved: { Tour: old, Nuova: byKey } }));
+    return d;
+  };
+  const skipsOfA = async (c) => (await c.state()).setlist.filter((s) => s.name === "A").map((s) => [s.skip, s.notes]);
+
+  const c = await setup(t, { baseDir: dir() });
+  await c.cmd({ cmd: "saveSetlist", name: "Copia" }); // Live still loading: saved as it is, by name
+  await c.cmd({ cmd: "loadSetlist", name: "Tour" });
+  await c.connect(reprise);
+  assert.deepEqual(await skipsOfA(c), [[true, "capo 2"], [true, "capo 2"]]);
+  await c.cmd({ cmd: "loadSetlist", name: "Copia" });
+  assert.deepEqual(await skipsOfA(c), [[true, "capo 2"], [true, "capo 2"]]);
+
+  // a setlist saved by key, loaded before Live is there: the reprise is not taken out
+  const d = await setup(t, { baseDir: dir() });
+  await d.cmd({ cmd: "loadSetlist", name: "Nuova" });
+  await d.connect(reprise);
+  assert.deepEqual(await skipsOfA(d), [[true, ""], [false, ""]]);
+});
+
+// holds back the answer of the next crypto.pbkdf2 (or scrypt, the 0.6 check) until release():
+// the moment while OpenSet computes; later calls go through
+function holdCrypto(t, fn, { fail = false } = {}) {
+  const real = crypto[fn];
+  let release;
+  const gate = new Promise((r) => (release = r));
+  let held = 0;
+  crypto[fn] = (...a) => {
+    const cb = a.pop();
+    if (held++) return real(...a, cb);
+    real(...a, (err, key) => gate.then(() => cb(fail ? new Error(`${fn} failed`) : err, key)));
+  };
+  t.after(() => (crypto[fn] = real));
+  return { release, held: () => held };
+}
+const holdPbkdf2 = (t, opts) => holdCrypto(t, "pbkdf2", opts);
+const legacyDir = (t, pw = "palco-2026") => {
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+  t.after(() => fs.rmSync(d, { recursive: true, force: true }));
+  const salt = crypto.randomBytes(16).toString("hex");
+  fs.writeFileSync(path.join(d, "setlist.json"), JSON.stringify({ auth: { salt, hash: crypto.scryptSync(pw, Buffer.from(salt, "hex"), 32).toString("hex") } }));
+  return d;
+};
+const { checkPassword: checkSaved } = require("../server/auth");
+
+test("T2, U1: a new password set while a 0.6 one is being updated is not undone, and the old one does not unlock", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = legacyDir(t);
+  const c = await setup(t, { baseDir });
+  const a = await lanSocket(t, c);
+  await a.access(0);
+  const hold = holdPbkdf2(t);
+  a.send({ type: "auth", password: "palco-2026" }); // the 0.6 password: OpenSet updates it
+  await waitFor(() => hold.held() > 0, "update under way");
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "nuova-2026" })).status, 200); // meanwhile, on the computer
+  hold.release();
+  await a.access(1); // the new password: every page locked
+  const answer = await a.access(2); // then the answer to the old password
+  assert.equal(answer.control, false);
+  assert.equal(answer.token, undefined);
+  const saved = JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth;
+  assert.equal(await checkSaved(saved, "nuova-2026"), true);
+});
+
+test("T2: an old password checked while the computer changes it does not unlock", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  const hold = holdPbkdf2(t);
+  const pending = fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-OpenSet-Password": "palco-2026" },
+    body: '{"cmd":"stop"}',
+  });
+  await waitFor(() => hold.held() > 0, "check under way");
+  await c.cmd({ cmd: "setPassword", password: "nuova-2026" });
+  hold.release();
+  assert.equal((await pending).status, 401);
+});
+
+test("T2: setting the password on the computer does not stop OpenSet", async (t) => {
+  const c = await setup(t);
+  let syncHashes = 0;
+  const pbkdf2Sync = crypto.pbkdf2Sync;
+  crypto.pbkdf2Sync = (...a) => (syncHashes++, pbkdf2Sync(...a));
+  t.after(() => (crypto.pbkdf2Sync = pbkdf2Sync));
+  assert.equal((await c.cmd({ cmd: "setPassword", password: "palco-2026" })).status, 200);
+  assert.equal(syncHashes, 0);
+  assert.equal((await c.state()).passwordSet, true); // already in place when the answer comes
+});
+
+test("T2: if updating a 0.6 password fails, the iPad still gets its answer", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t, { baseDir: legacyDir(t) });
+  const a = await lanSocket(t, c);
+  await a.access(0);
+  const hold = holdPbkdf2(t, { fail: true });
+  a.send({ type: "auth", password: "palco-2026" });
+  await waitFor(() => hold.held() > 0, "update under way");
+  hold.release();
+  assert.equal((await a.access(1)).control, true); // the password was right: unlocked, kept in the 0.6 form
+});
+
+test("T2: with a password OpenSet cannot read, pages are told to set it again and the file keeps it", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const future = { scheme: "argon2id", salt: "zz", data: "…" };
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth: future }));
+  const c = await setup(t, { baseDir });
+  const a = await lanSocket(t, c);
+  const first = await a.access(0);
+  assert.equal(first.challenge, undefined);
+  assert.equal(first.legacy, undefined); // only a 0.6 password may be sent once
+  assert.equal(first.unreadable, true);
+  await c.cmd({ cmd: "settings", removePlayed: true }); // any save
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth, future);
+});
+
+test("T2: a 0.6 password is announced as such: the only case where the page sends it", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t, { baseDir: legacyDir(t) });
+  const a = await lanSocket(t, c);
+  assert.equal((await a.access(0)).legacy, true);
+});
+
+test("T3: a reinstall from the web app shows in the log and the log package which library could not be written", async (t) => {
+  const result = { status: "updated", path: "/Live 12/Remote Scripts/OpenSet", paths: ["/Live 12/Remote Scripts/OpenSet"], errors: [{ path: "/Live 11/Remote Scripts/OpenSet", error: "EACCES: permission denied" }] };
+  const c = await setup(t, { installScript: () => result });
+  await fetch(c.url("/api/host/installScript"), { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+  const lines = (await (await fetch(c.url("/api/logs"))).json()).lines.join("\n");
+  assert.match(lines, /cannot write \/Live 11\/Remote Scripts\/OpenSet \(EACCES/);
+  const pkg = await (await fetch(c.url("/api/log-package"))).text();
+  assert.match(pkg, /Remote Script install: updated in \/Live 12\/Remote Scripts\/OpenSet; cannot write \/Live 11/);
+});
+
+test("U2: a password record that is damaged or from a newer OpenSet is never offered as a 0.6 one or as numbers to prove", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  for (const auth of [
+    { salt: "0".repeat(32), hash: "$argon2id$v=19$m=65536,t=3,p=4$c2FsdA$aGFzaA" }, // the page would send the password on every try
+    { salt: "0".repeat(32), hash: "AB".repeat(32) },
+    { storedKey: "a".repeat(64), iter: 100000 }, // no salt: the page could not compute anything
+    { salt: "0".repeat(32), storedKey: "a".repeat(64), iter: 2e7 }, // an old iPad would compute for minutes
+  ]) {
+    const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-auth-"));
+    t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+    fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ auth }));
+    const c = await setup(t, { baseDir });
+    const a = await lanSocket(t, c);
+    const first = await a.access(0);
+    assert.deepEqual([first.unreadable, first.legacy, first.challenge], [true, undefined, undefined], JSON.stringify(auth));
+    assert.equal(first.control, false);
+    await c.cmd({ cmd: "settings", removePlayed: true }); // any save keeps it as it was
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).auth, auth);
+  }
+});
+
+test("U3: two iPads unlocking with the same 0.6 password at the same moment both unlock", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t, { baseDir: legacyDir(t) });
+  const a = await lanSocket(t, c);
+  const b = await lanSocket(t, c);
+  await a.access(0);
+  await b.access(0);
+  const update = holdCrypto(t, "pbkdf2");
+  a.send({ type: "auth", password: "palco-2026" }); // right: OpenSet stores it the new way
+  await waitFor(() => update.held() > 0, "A's update under way");
+  const check = holdCrypto(t, "scrypt");
+  b.send({ type: "auth", password: "palco-2026" });
+  await waitFor(() => check.held() > 0, "B's check under way");
+  update.release();
+  assert.equal((await a.access(1)).control, true); // A's update is saved while B's check runs
+  check.release();
+  assert.equal((await b.access(1)).control, true);
+});
+
+test("U3: a tool sending the 0.6 password over HTTP while an iPad updates it is let in", { skip: !LAN_IP && "no LAN address" }, async (t) => {
+  const c = await setup(t, { baseDir: legacyDir(t) });
+  const a = await lanSocket(t, c);
+  await a.access(0);
+  const update = holdCrypto(t, "pbkdf2");
+  a.send({ type: "auth", password: "palco-2026" });
+  await waitFor(() => update.held() > 0, "the iPad's update under way");
+  const check = holdCrypto(t, "scrypt");
+  const pending = fetch(`http://${LAN_IP}:${c.srv.httpPort}/api/cmd`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-OpenSet-Password": "palco-2026" },
+    body: '{"cmd":"stop"}',
+  });
+  await waitFor(() => check.held() > 0, "the tool's check under way");
+  update.release();
+  assert.equal((await a.access(1)).control, true);
+  check.release();
+  assert.equal((await pending).status, 200);
+});
+
+test("U6: a backup computer whose setlist is still by song name takes the edits copied from the main one", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  // upgraded from 0.6.1, its Live still loading the set
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ order: [], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } }));
+  const c = await setup(t, { baseDir });
+  // only part of the setlist: it could not be mixed with the settings by name
+  assert.equal((await c.cmd({ cmd: "setlist", skip: ["A#2"], mirror: true })).status, 400);
+  // a setlist pasted as text before Live has the songs: nothing matches, nothing is replaced
+  const paste = await fetch(c.url("/api/setlist-text"), { method: "POST", headers: { "Content-Type": "application/json" }, body: '{"text":"B\\nA"}' });
+  assert.equal(paste.status, 400);
+  const edit = { cmd: "setlist", order: ["B", "A", "A#2"], skip: ["A#2"], stopAfter: [], notes: { B: "capo 3" }, mirror: true };
+  assert.equal((await c.cmd(edit)).status, 200);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] });
+  assert.deepEqual(
+    (await c.state()).setlist.map((s) => [s.key, s.skip, s.notes || ""]),
+    [["B", false, "capo 3"], ["A", false, ""], ["A#2", true, ""]]
+  );
+});
+
+test("U7: a password already saved is reported as set, even if updating the pages then fails", async (t) => {
+  const c = await setup(t);
+  const S = require("../server/setlist");
+  const real = S.buildSetlist;
+  t.after(() => (S.buildSetlist = real));
+  const hold = holdPbkdf2(t);
+  const pending = c.cmd({ cmd: "setPassword", password: "palco-2026" });
+  await waitFor(() => hold.held() > 0, "hashing");
+  S.buildSetlist = () => {
+    throw new Error("state failed");
+  };
+  hold.release();
+  const res = await pending;
+  S.buildSetlist = real;
+  assert.equal(res.status, 200);
+  assert.equal((await c.state()).passwordSet, true);
+  const lines = (await (await fetch(c.url("/api/logs"))).json()).lines.join("\n");
+  assert.match(lines, /password set, but the pages were not updated: state failed/);
+  assert.doesNotMatch(lines, /cannot set the password/);
 });
