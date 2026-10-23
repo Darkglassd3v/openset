@@ -561,6 +561,15 @@ function start(opts = {}) {
     if (Object.keys(changes).length && ws.bufferedAmount < 1 << 20) ws.send(JSON.stringify({ type: "osc", values: changes }));
   }
 
+  // OSC to another program (canvas buttons, project script); errors only logged
+  function sendOscOut(host, port, address, args) {
+    try {
+      stateUdp.send(osc.encode(address, args), port, host, (e) => e && log.error(`[osc] ${host}:${port}${address}: ${e.message}`));
+    } catch (e) {
+      log.error(`[osc] ${host}:${port}${address}: ${e.message}`);
+    }
+  }
+
   // AbleSet's OSC lines (canvas buttons): one command after the other, with //sleep, //if…
   async function runOscLines(text) {
     let skip = false;
@@ -577,6 +586,7 @@ function start(opts = {}) {
       else if (st.sleep) await new Promise((r) => setTimeout(r, Math.min(st.sleep, 60000)));
       else if (st.awaitJump) await until(() => !queued);
       else if (st.awaitFileLoad) continue; // shortcut: no file loads until multi-file projects (F9)
+      else if (st.host) sendOscOut(st.host, st.port, st.address, st.args);
       else handleOsc({ address: st.address, args: st.args }, { address: "127.0.0.1", port: 0 });
     }
   }
@@ -603,11 +613,7 @@ function start(opts = {}) {
       }
       const m = /^([\w.-]+):(\d{1,5})(\/\S*)$/.exec(command);
       if (!m || Number(m[2]) < 1 || Number(m[2]) > 65535) return addScriptLog(`sendOsc: indirizzo non valido «${command}» (es. 127.0.0.1:8000/luci)`, true);
-      try {
-        stateUdp.send(osc.encode(m[3], args), Number(m[2]), m[1]);
-      } catch (e) {
-        addScriptLog(`sendOsc: ${e.message}`, true);
-      }
+      sendOscOut(m[1], Number(m[2]), m[3], args);
     },
   });
   function runProjectScript() {
@@ -1518,6 +1524,12 @@ function start(opts = {}) {
       "/setlist/queuedName": queuedNames(st),
       "/settings/safeMode": [st.settings.safeMode ? 1 : 0],
       "/setlist/queuedIndex": st.queued ? [st.queued.song, st.queued.section] : [-1, -1],
+      // AbleSet's loop values (the canvas Loop button)
+      "/setlist/loopEnabled": [st.loop ? 1 : 0],
+      "/setlist/loopStart": [st.loop_start],
+      "/setlist/loopEnd": [st.loop_start + st.loop_length],
+      "/setlist/activeSectionLoopMode": [section && section.flags.LOOPFULL ? "loopfull" : section && section.flags.LOOP ? "loop" : ""],
+      "/setlist/activeSectionLoopCount": [section ? Number(section.flags.LOOPFULL ?? section.flags.LOOP) || 0 : 0],
       ...lyricsOsc(song, st.beat),
       ...Object.fromEntries(Object.entries(st.shared).map(([k, v]) => [`/shared/${k}`, Array.isArray(v) ? v : [v]])),
       "/mixer/names": st.mixer.map((g) => g.name),

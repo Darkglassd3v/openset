@@ -40,7 +40,8 @@ function args(text) {
   return out;
 }
 
-// AbleSet's OSC lines: commands separated by new lines or ";", and the control statements
+// AbleSet's OSC lines: commands separated by new lines or ";" (to OpenSet, or host:port/address
+// to another program), and the control statements
 // //sleep <ms>, //awaitJump, //awaitFileLoad, //if [!]playing|recording|looping (":" or ";"
 // may follow), //endif. Anything else is ignored, like AbleSet does.
 function parseOscLines(text) {
@@ -59,7 +60,10 @@ function parseOscLines(text) {
     else if (line === "//awaitFileLoad") steps.push({ awaitFileLoad: true });
     else if ((m = /^\/\/if\s+(!?)(playing|recording|looping)$/.exec(line))) steps.push({ if: m[2], not: m[1] === "!" });
     else if (line === "//endif") steps.push({ endif: true });
-    else if ((m = /^(\/[^\s/][^\s]*)\s*(.*)$/.exec(line))) steps.push({ address: m[1], args: args(m[2]) });
+    else if ((m = /^([\w.-]+):(\d{1,5})(\/[^\s/]\S*)\s*(.*)$/.exec(line))) {
+      // to another program (lights, video): host:port/address
+      if (Number(m[2]) >= 1 && Number(m[2]) <= 65535) steps.push({ host: m[1], port: Number(m[2]), address: m[3], args: args(m[4]) });
+    } else if ((m = /^(\/[^\s/][^\s]*)\s*(.*)$/.exec(line))) steps.push({ address: m[1], args: args(m[2]) });
   }
   return steps;
 }
