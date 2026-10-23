@@ -188,6 +188,7 @@ class OpenSet(ControlSurface):
                 "loop": s.loop,
                 "loop_start": s.loop_start,
                 "loop_length": s.loop_length,
+                "record": bool(getattr(s, "record_mode", False)),
                 "quant": int(s.clip_trigger_quantization),
                 "script_version": VERSION,
                 "live_version": self._live_version,
@@ -304,6 +305,11 @@ class OpenSet(ControlSurface):
                 s.loop_start = float(msg["start"])
                 s.loop_length = float(msg["length"])
             s.loop = on
+        elif cmd == "record":
+            # AbleSet: starting to record also starts playback when Live is stopped
+            s.record_mode = bool(msg.get("on"))
+            if msg.get("play") and not s.is_playing:
+                s.start_playing()
         elif cmd == "tempo":
             s.tempo = float(msg.get("bpm", s.tempo))
         elif cmd == "quant":

@@ -1173,6 +1173,13 @@ function start(opts = {}) {
         changed();
         return true;
       }
+      case "record": {
+        // AbleSet: recording starts playback too when Live is stopped
+        const on = msg.on === "toggle" ? !liveState.record : msg.on;
+        if (typeof on !== "boolean") return false;
+        sendToLive({ cmd: "record", on, ...(on && !liveState.is_playing ? { play: true } : {}) });
+        return true;
+      }
       case "setProjectScript":
         // this computer only (HOST_ONLY): the script runs here, with OpenSet's rights
         if (typeof msg.code !== "string" || msg.code.length > SCRIPT_MAX) return false;
@@ -1302,6 +1309,10 @@ function start(opts = {}) {
         return runOsc({ cmd: "playPause" });
       case "/global/playStop":
         return runOsc({ cmd: "playStop" });
+      case "/global/startRecording":
+      case "/global/stopRecording":
+      case "/global/toggleRecording":
+        return runOsc({ cmd: "record", on: address === "/global/toggleRecording" ? "toggle" : address === "/global/startRecording" });
       case "/global/reEnableAutomation":
         return runOsc({ cmd: "reEnableAutomation" });
       case "/global/backToArrangement":
@@ -1396,6 +1407,9 @@ function start(opts = {}) {
     const bar = (st.sig_num * 4) / st.sig_den;
     return {
       "/global/isPlaying": [st.is_playing ? 1 : 0],
+      "/global/isRecording": [st.record ? 1 : 0],
+      "/global/isConnected": [st.connected ? 1 : 0],
+      "/global/beatsPosition": [st.is_playing ? Math.floor(st.beat) : st.beat],
       "/global/tempo": [st.tempo],
       "/global/timeSignature": [st.sig_num, st.sig_den],
       "/global/quantization": [QUANT_NAMES[st.quant] || "none"],
