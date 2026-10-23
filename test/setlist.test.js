@@ -6,6 +6,7 @@ const {
   cuesFromLive,
   CLIP_COLORS,
   applyOrder,
+  keyTimesOf,
   songAt,
   sectionAt,
   nextSong,
@@ -465,4 +466,29 @@ test("C2: songs with the same name (a reprise) get their own key, the second is 
     songs.map((s) => [s.key, s.skip, s.stopAfter, s.notes, s.measured]),
     [["Intro#2", false, true, "ripresa", 90], ["B", false, false, "", null], ["Intro", true, false, "", null]]
   );
+});
+
+test("R4: a song really named «Intro#2» is not mixed up with the reprise of «Intro»", () => {
+  const songs = buildSetlist([{ name: "Intro", time: 0 }, { name: "Intro#2", time: 8 }, { name: "Intro", time: 16 }]);
+  assert.deepEqual(songs.map((s) => s.key), ["Intro", "Intro#2", "Intro#3"]);
+});
+
+test("R4: a reprise that stays where it was keeps its key when a song with the same name is added or removed", () => {
+  const before = buildSetlist([{ name: "Intro", time: 0 }, { name: "B", time: 50 }, { name: "Intro", time: 100 }]);
+  const times = keyTimesOf(before);
+  const added = buildSetlist([{ name: "Intro", time: 0 }, { name: "Intro", time: 40 }, { name: "B", time: 50 }, { name: "Intro", time: 100 }], times);
+  assert.deepEqual(added.map((s) => s.key), ["Intro", "Intro#3", "B", "Intro#2"]);
+  const removed = buildSetlist([{ name: "B", time: 50 }, { name: "Intro", time: 100 }], times);
+  assert.deepEqual(removed.map((s) => s.key), ["B", "Intro#2"]);
+});
+
+test("R4: settings saved by OpenSet 0.6.1 (by name) still apply to every song with that name", () => {
+  const base = buildSetlist([{ name: "Intro", time: 0 }, { name: "B", time: 8 }, { name: "Intro", time: 16 }]);
+  const old = { keys: false, order: ["B", "Intro"], skip: ["Intro"], stopAfter: ["Intro"], notes: { Intro: "capo 2" }, measured: { Intro: 90 } };
+  assert.deepEqual(
+    applyOrder(base, old).map((s) => [s.key, s.skip, s.stopAfter, s.notes, s.measured]),
+    [["B", false, false, "", null], ["Intro", true, true, "capo 2", 90], ["Intro#2", true, true, "capo 2", 90]]
+  );
+  // saved by 0.6.2: the key is the song
+  assert.deepEqual(applyOrder(base, { ...old, keys: true }).map((s) => s.skip), [false, true, false]);
 });

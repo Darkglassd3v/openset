@@ -2144,3 +2144,32 @@ test("R1: when a password from OpenSet 0.6 is upgraded, the other open pages sto
   assert.equal((await a.access(1)).control, true);
   assert.ok((await b.access(1)).challenge, "the other page can now prove instead of sending the password");
 });
+
+test("R4: a setlist saved by OpenSet 0.6.1 keeps its meaning until it is edited", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  const old = { order: ["A", "B"], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } };
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ ...old, saved: { Tour: old } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const reprise = { ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] };
+  await c.connect(reprise);
+  const skips = async () => (await c.state()).setlist.map((s) => [s.key, s.skip, s.notes]);
+  assert.deepEqual(await skips(), [["A", true, "capo 2"], ["A#2", true, "capo 2"], ["B", false, ""]]);
+  // edited with 0.6.2: the key is the song
+  await c.cmd({ cmd: "setlist", order: ["A", "A#2", "B"], skip: ["A#2"], stopAfter: [], notes: {} });
+  assert.deepEqual(await skips(), [["A", false, ""], ["A#2", true, ""], ["B", false, ""]]);
+  // the old saved setlist, loaded again, means what it meant
+  await c.cmd({ cmd: "loadSetlist", name: "Tour" });
+  assert.deepEqual(await skips(), [["A", true, "capo 2"], ["A#2", true, "capo 2"], ["B", false, ""]]);
+});
+
+test("R4: a reprise keeps its settings when Live gets another song with the same name before it", async (t) => {
+  const c = await setup(t);
+  const cues = [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }];
+  await c.connect({ ...LIVE, cues });
+  await c.cmd({ cmd: "setlist", order: ["A", "B", "A#2"], skip: ["A#2"], stopAfter: [], notes: { "A#2": "finale" } });
+  c.sendLive({ ...LIVE, cues: [cues[0], { name: "A", time: 4 }, ...cues.slice(1)] });
+  await waitFor(async () => (await c.state()).setlist.length === 4, "the new song");
+  const byTime = Object.fromEntries((await c.state()).setlist.map((s) => [s.time, [s.skip, s.notes]]));
+  assert.deepEqual(byTime, { 0: [false, ""], 4: [false, ""], 8: [false, ""], 16: [true, "finale"] });
+});
