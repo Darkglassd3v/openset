@@ -430,3 +430,37 @@ test("F3: «show page lyrics/<slug>» (OSC /devices/showPage) opens that +LYRICS
   await openset.cmd({ cmd: "devices", action: "showPage", devices: "all", page: "lyrics/backing-vox" });
   await expect(page.locator("#lyrics")).toContainText("Riga dei cori");
 });
+
+test("F1: a song added by hand from the editor: in the setlist with its time, chosen, with its lyrics", async ({ page, openset }) => {
+  await page.goto(openset.url());
+  await connected(page);
+  await page.click('[data-act="edit"]');
+  await page.click('[data-act="manual"]');
+  await page.fill("#manName", "Acustica");
+  await page.fill("#manTime", "3:20");
+  await page.fill("#manLyrics", "Prima riga\nSeconda riga");
+  await page.click("#manSave");
+  await expect(page.locator("#setlist")).toContainText("Acustica");
+  await page.click('[data-act="done"]');
+  const row = page.locator("#setlist .song", { hasText: "Acustica" });
+  await expect(row).toContainText("3:20");
+  await expect(row).toContainText("a mano");
+  await row.locator(".song-head").click();
+  await expect(row).toHaveClass(/current/);
+  await tab(page, "lyrics");
+  await expect(page.locator("#lyrics")).toContainText("Seconda riga");
+
+  await tab(page, "setlist");
+  await page.click('[data-act="edit"]');
+  await page.locator("#setlist .song", { hasText: "Acustica" }).locator('[data-act="editManual"]').click();
+  await expect(page.locator("#manName")).toHaveValue("Acustica");
+  await expect(page.locator("#manTime")).toHaveValue("3:20");
+  await page.fill("#manName", "Unplugged");
+  await page.click("#manSave");
+  await expect(page.locator("#setlist")).toContainText("Unplugged");
+  const del = page.locator("#setlist .song", { hasText: "Unplugged" }).locator('[data-act="deleteManual"]');
+  await del.click(); // a second tap confirms
+  await expect(page.locator("#setlist")).toContainText("Unplugged");
+  await page.locator("#setlist .song", { hasText: "Unplugged" }).locator('[data-act="deleteManual"]').click();
+  await expect(page.locator("#setlist")).not.toContainText("Unplugged");
+});
