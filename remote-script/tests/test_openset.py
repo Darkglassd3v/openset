@@ -390,6 +390,49 @@ class OpenSetTest(unittest.TestCase):
         self.assertEqual(self.song.calls, ["stop"])
         self.assertTrue(any("cmd error" in m for m in self.os.logged))
 
+    # ---------- C6: big sets ----------
+
+    def counting_song(self):
+        reads = []
+
+        class Counting(FakeSong):
+            @property
+            def cue_points(self):
+                reads.append(1)
+                return self._cues
+
+            @cue_points.setter
+            def cue_points(self, value):
+                self._cues = value
+
+        song = Counting()
+        other = script.OpenSet(song)
+        self.addCleanup(other.disconnect)
+        return song, other, reads
+
+    def test_locators_are_read_once_a_second_not_at_every_tick(self):
+        # hundreds of locators read 10 times a second weigh on Live
+        song, other, reads = self.counting_song()
+        del reads[:]
+        for _ in range(20):
+            other._tick()
+        self.assertLessEqual(len(reads), 3)
+        song.cue_points.append(FakeCue("Song C", 64.0))  # a new locator still arrives within a second
+        self.received()
+        for _ in range(10):
+            other._tick()
+        self.assertTrue(any(len(m.get("cues", [])) == 3 for m in self.states()))
+
+    def test_locators_placed_by_openset_are_sent_at_the_next_tick(self):
+        song, other, reads = self.counting_song()
+        for _ in range(3):
+            other._tick()
+        song.tracks = [FakeTrack("Sections", [FakeClip("Verse", 8.0, 16.0)])]
+        other._handle({"cmd": "placeSectionLocators"})
+        self.received()
+        other._tick()
+        self.assertTrue(any(any(c["time"] == 8.0 and c["name"] == ">" for c in m.get("cues", [])) for m in self.states()))
+
     # ---------- C3: only OpenSet commands Live ----------
 
     def test_state_carries_a_key_new_at_every_start(self):
