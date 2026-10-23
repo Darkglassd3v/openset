@@ -51,3 +51,38 @@ test("installRemoteScript reports, never throws", () => {
   assert.equal(r.path, f.target);
   assert.match(r.error, /ENOENT/);
 });
+
+// Live's Library.cfg, where "Location of the User Library" is saved
+const libraryCfg = (projectPath, name = "User Library") =>
+  `<?xml version="1.0" encoding="UTF-8"?>\n<Ableton MajorVersion="5">\n\t<ContentLibrary>\n\t\t<UserLibrary>\n\t\t\t<LibraryProject>\n` +
+  `\t\t\t\t<ProjectPath Value="${projectPath}" />\n\t\t\t\t<ProjectName Value="${name}" />\n\t\t\t</LibraryProject>\n\t\t</UserLibrary>\n\t</ContentLibrary>\n</Ableton>\n`;
+
+test("C5: a User Library moved in Live's settings is found from Library.cfg, newest Live first", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "openset-cfg-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const prefs = path.join(home, "Library", "Preferences", "Ableton");
+  for (const [v, where] of [["Live 9.7.7", "/Old"], ["Live 12.1", "/Volumes/Dischi &amp; Suoni/Ableton"], ["Live 11.3.4", "/Users/ana/Music/Ableton"]]) {
+    fs.mkdirSync(path.join(prefs, v), { recursive: true });
+    fs.writeFileSync(path.join(prefs, v, "Library.cfg"), libraryCfg(where));
+  }
+  assert.deepEqual(userLibraries("darwin", {}, home), [
+    "/Volumes/Dischi & Suoni/Ableton/User Library",
+    "/Users/ana/Music/Ableton/User Library",
+    "/Old/User Library",
+    path.posix.join(home, "Music", "Ableton", "User Library"),
+  ]);
+});
+
+test("C5: Windows: Library.cfg in %APPDATA%\\Ableton\\Live x\\Preferences", (t) => {
+  const appData = fs.mkdtempSync(path.join(os.tmpdir(), "openset-cfg-"));
+  t.after(() => fs.rmSync(appData, { recursive: true, force: true }));
+  const dir = path.join(appData, "Ableton", "Live 12.0.5", "Preferences");
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "Library.cfg"), libraryCfg("D:\\Musica\\Ableton\\"));
+  const libs = userLibraries("win32", { USERPROFILE: "C:\\Users\\ana", APPDATA: appData }, "C:\\x");
+  assert.deepEqual(libs, [
+    "D:\\Musica\\Ableton\\User Library",
+    "C:\\Users\\ana\\Documents\\Ableton\\User Library",
+    "C:\\Users\\ana\\OneDrive\\Documents\\Ableton\\User Library",
+  ]);
+});
