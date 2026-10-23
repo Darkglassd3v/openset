@@ -269,9 +269,12 @@ test("cuesFromLive: a '>' locator on a section clip takes the clip's name and co
   assert.deepEqual(s.sections.map((x) => [x.name, x.color, x.time]), [["Verse", "red", 0], ["Chorus", "blue", 8]]);
 });
 
-test("CLIP_COLORS: one AbleSet color per column of Live's palette, by hue", () => {
-  // column 0 holds Live's pure red (second row), column 6 its teal
-  assert.deepEqual(CLIP_COLORS, ["red", "orange", "amber", "yellow", "lime", "green", "teal", "cyan", "sky", "blue", "indigo", "purple", "pink", "gray"]);
+test("F4: CLIP_COLORS is AbleSet's table, one color per column of Live's palette", () => {
+  // AbleSet's «Sections Track» page: Red (column 1) … Emerald (7), Teal (8), Violet (11) … Gray (14)
+  assert.deepEqual(CLIP_COLORS, ["red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "sky", "blue", "violet", "purple", "pink", "gray"]);
+  const clips = [6, 7, 10, 14 + 6].map((color, i) => ({ name: `S${i}`, start: i * 8, end: i * 8 + 8, color }));
+  const [s] = buildSetlist(cuesFromLive([{ name: "A", time: 0 }], [{ name: "Sections +CC", clips }]));
+  assert.deepEqual(s.sections.map((x) => x.color), ["emerald", "teal", "violet", "emerald"]);
 });
 
 test("cuesFromLive: no tracks returns the cues unchanged", () => {
