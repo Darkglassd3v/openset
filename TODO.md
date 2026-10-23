@@ -95,7 +95,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - L'aggiornamento di una password della 0.6 fermava per un attimo OpenSet (calcolo bloccante) mentre suona: ora non blocca.
   - Dopo quell'aggiornamento gli altri iPad potevano vedere comparire il pannello della password o «Password errata» senza motivo.
 - [x] S3 (RED `4df0709`, GREEN) Dalla seconda revisione, Remote Script: se una delle User Library non si può scrivere, OpenSet diceva «installazione fallita» anche se l'altra (quella del Live in uso) era stata aggiornata.
-- [ ] T1 (RED fatto) Dalla terza revisione, scalette della 0.6.1 (la conversione va nel modulo `setlist.js`, con i test, una regola sola: ogni scaletta dice se è per nome o per chiave)
+- [x] T1 (RED `0dc68fb`, GREEN) Dalla terza revisione, scalette della 0.6.1 (la conversione va nel modulo `setlist.js`, con i test, una regola sola: ogni scaletta dice se è per nome o per chiave)
   - Caricando o salvando una scaletta mentre Live non è ancora collegato, una scaletta della 0.6.1 perdeva il suo significato: la ripresa tornava senza «tolto» e senza nota, o al contrario veniva tolta per sbaglio.
   - Con set lunghi (150 brani) l'assegnazione delle chiavi faceva molti confronti più volte al secondo: ora è proporzionale ai brani.
   - Un commento descriveva ancora il vecchio comportamento.

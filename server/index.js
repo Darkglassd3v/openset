@@ -114,7 +114,8 @@ function defaultPrefs() {
     skip: [],
     stopAfter: [],
     notes: {},
-    keys: true, // false: setlist settings saved by 0.6.1 and older, by song name, converted once (S.migrateNames)
+    keys: true, // false: order/skip/stopAfter/notes saved by 0.6.1 and older, by song name (S.setlistByKey)
+    measuredKeys: true, // the same for the measured durations, which saved setlists do not carry
     keyTimes: {}, // where each song was: a reprise keeps its key, and its settings (S.buildSetlist)
     measured: {}, // song key -> seconds measured during real playback
     lastProject: null, // the last .als loaded, for Auto-Launch the Last Live Project
@@ -281,6 +282,7 @@ function start(opts = {}) {
       ...(cleanSetlist(saved, base) || {}),
       settings,
       keys: Object.keys(saved).length ? saved.keys === true : true, // no file yet: nothing from 0.6.1
+      measuredKeys: Object.keys(saved).length ? (saved.measuredKeys ?? saved.keys) === true : true,
       keyTimes:
         saved.keyTimes && typeof saved.keyTimes === "object" && !Array.isArray(saved.keyTimes)
           ? Object.fromEntries(
@@ -333,8 +335,10 @@ function start(opts = {}) {
 
   // settings saved by OpenSet 0.6.1 use song names: converted once, as soon as there are songs
   function migrate(list) {
-    if (prefs.keys || !list.length) return;
-    prefs = { ...prefs, ...S.migrateNames(prefs, list), keys: true };
+    if ((prefs.keys && prefs.measuredKeys) || !list.length) return;
+    const { order, skip, stopAfter, notes, keys } = prefs;
+    if (!keys) prefs = { ...prefs, ...S.setlistByKey({ order, skip, stopAfter, notes, keys }, list) };
+    if (!prefs.measuredKeys) prefs = { ...prefs, ...S.migrateNames({ measured: prefs.measured }, list), measuredKeys: true };
     savePrefs();
     log.info("[setlist] settings from OpenSet 0.6.1 converted song by song (same-name songs kept apart)");
   }
@@ -357,11 +361,12 @@ function start(opts = {}) {
     return S.applyOrder(list, prefs);
   }
 
-  // a saved setlist or backup from OpenSet 0.6.1 (by name), loaded now: by key, like the rest
-  function byKey(loaded, data) {
-    if (data.keys === true) return { order: loaded.order, skip: loaded.skip, stopAfter: loaded.stopAfter, notes: loaded.notes };
-    const { order, skip, stopAfter, notes } = S.migrateNames({ ...loaded, measured: {} }, songs());
-    return { order, skip, stopAfter, notes };
+  // a saved setlist or backup, loaded now: by key if there are songs, otherwise as it was saved
+  function loadSaved(raw, setlistName) {
+    const loaded = cleanSetlist(raw, defaultPrefs());
+    if (!loaded) return false;
+    const { order, skip, stopAfter, notes, keys } = S.setlistByKey({ ...loaded, keys: raw.keys === true }, songs());
+    return setPrefs({ order, skip, stopAfter, notes, keys, setlistName });
   }
 
   // Tempo map of the loaded .als: offline, or while Live plays the same set
@@ -952,9 +957,11 @@ function start(opts = {}) {
         sendToLive({ cmd: "quant", value: msg.value });
         return true;
       case "setlist": {
+        // the web app edits songs by key; with no songs yet (Live loading) there is nothing to edit,
+        // and settings still by name could not be mixed with keys
+        if (!prefs.keys) return false;
         const next = cleanSetlist(msg, prefs);
-        migrate(songs()); // missing fields come from the settings: by key first
-        return !!next && setPrefs({ ...next, keys: true });
+        return !!next && setPrefs(next);
       }
       case "settings": {
         const settings = { ...prefs.settings };
@@ -985,17 +992,15 @@ function start(opts = {}) {
         const backups = Object.hasOwn(prefs.saved, msg.name)
           ? [{ name: msg.name, at: new Date(cfg.now()).toISOString(), data: prefs.saved[msg.name] }, ...prefs.backups].slice(0, 20)
           : prefs.backups;
-        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes, keys: true } }, setlistName: msg.name, backups });
+        return setPrefs({ saved: { ...prefs.saved, [msg.name]: { order, skip, stopAfter, notes, keys: prefs.keys } }, setlistName: msg.name, backups });
       }
       case "restoreBackup": {
         const b = prefs.backups.find((x) => x.name === msg.name && x.at === msg.at);
-        const loaded = b && cleanSetlist(b.data, defaultPrefs());
-        return !!loaded && setPrefs({ ...byKey(loaded, b.data), setlistName: b.name });
+        return !!b && loadSaved(b.data, b.name);
       }
       case "loadSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;
-        const loaded = cleanSetlist(prefs.saved[msg.name], defaultPrefs());
-        return !!loaded && setPrefs({ ...byKey(loaded, prefs.saved[msg.name]), setlistName: msg.name });
+        return loadSaved(prefs.saved[msg.name], msg.name);
       }
       case "deleteSetlist": {
         if (typeof msg.name !== "string" || !Object.hasOwn(prefs.saved, msg.name)) return false;

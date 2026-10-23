@@ -64,7 +64,7 @@ function parseName(raw) {
   return { name, description, tags, duration, nosong, transpose, classes, flags, transition, color };
 }
 
-// keyTimes: { key: [name, time] } of songs that share a name, from the last setlist (see keyTimesOf)
+// keyTimes: { key: [name, time] } of every song of the last setlist (see keyTimesOf)
 function buildSetlist(cues, keyTimes = {}) {
   const songs = [];
   let current = null;
@@ -156,9 +156,14 @@ function buildSetlist(cues, keyTimes = {}) {
 function assignKeys(songs, keyTimes) {
   const names = new Set(songs.map((s) => s.name));
   const used = new Set();
-  const prev = Object.entries(keyTimes || {});
+  const prev = new Map(); // name -> [[key, time]]: a song looks only at the songs with its name
+  for (const [k, v] of Object.entries(keyTimes || {})) {
+    const n = v[0];
+    if (!prev.has(n)) prev.set(n, []);
+    prev.get(n).push([k, v[1]]);
+  }
   for (const s of songs) {
-    const hit = prev.find(([k, [n, t]]) => n === s.name && Math.abs(t - s.time) < EPS && !used.has(k) && (k === s.name || !names.has(k)));
+    const hit = (prev.get(s.name) || []).find(([k, t]) => Math.abs(t - s.time) < EPS && !used.has(k) && (k === s.name || !names.has(k)));
     if (hit) used.add((s.key = hit[0]));
   }
   for (const s of songs) {
@@ -177,15 +182,26 @@ function keyTimesOf(songs) {
 }
 
 // settings saved by OpenSet 0.6.1 and older use song names: one entry per song with that
-// name (what they meant then); names of songs not in the set stay as they are
-function migrateNames({ order = [], skip = [], stopAfter = [], notes = {}, measured = {} }, songs) {
+// name (what they meant then); names of songs not in the set stay as they are. Only the
+// fields it gets: order, skip, stopAfter (lists), notes, measured (maps)
+function migrateNames(data, songs) {
   const keysOf = (name) => {
     const keys = songs.filter((s) => s.name === name).map((s) => s.key);
     return keys.length ? keys : [name];
   };
-  const list = (names) => [...new Set(names.flatMap(keysOf))];
-  const map = (m) => Object.fromEntries(Object.entries(m).flatMap(([name, v]) => keysOf(name).map((k) => [k, v])));
-  return { order: list(order), skip: list(skip), stopAfter: list(stopAfter), notes: map(notes), measured: map(measured) };
+  const out = {};
+  for (const f of ["order", "skip", "stopAfter"]) if (data[f]) out[f] = [...new Set(data[f].flatMap(keysOf))];
+  for (const f of ["notes", "measured"])
+    if (data[f]) out[f] = Object.fromEntries(Object.entries(data[f]).flatMap(([name, v]) => keysOf(name).map((k) => [k, v])));
+  return out;
+}
+
+// A setlist (the current one, a saved one, a backup) says whether it is by key (keys: true,
+// written by 0.6.2) or by song name (0.6.1). By name it is converted only when there are
+// songs to tell same-name songs apart; until then it stays by name, and says so.
+function setlistByKey(data, songs) {
+  if (data.keys === true || !songs.length) return { ...data, keys: data.keys === true };
+  return { ...data, ...migrateNames(data, songs), keys: true };
 }
 
 // The sections track (AbleSet): named "Sections…" or flagged +SECTIONS
@@ -369,6 +385,7 @@ module.exports = {
   applyOrder,
   keyTimesOf,
   migrateNames,
+  setlistByKey,
   songAt,
   sectionAt,
   nextSong,
