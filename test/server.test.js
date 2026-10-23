@@ -2773,3 +2773,89 @@ test("F5: recording like AbleSet: start, stop and toggle over OSC, isRecording, 
   sendOsc(c, osc, "/global/stopRecording", []);
   await sent;
 });
+
+const CANVAS = {
+  name: "Palco",
+  elements: [
+    { id: "play", type: "button", x: 0, y: 0, w: 6, h: 3, props: { label: "Play", onPress: "/global/play" } },
+    { id: "bpm", type: "label", x: 6, y: 0, w: 6, h: 3, props: { text: "${osc('/global/tempo')} BPM" } },
+  ],
+};
+
+test("F5: canvases are saved, listed, sent to every page and deleted; they survive a restart", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-canvas-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const c = await setup(t, { baseDir });
+  const rev = (await c.state()).canvasRev;
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: CANVAS })).status, 200);
+  const st = await c.state();
+  assert.deepEqual(st.canvases, ["Palco"]);
+  assert.ok(st.canvasRev > rev);
+  assert.deepEqual(await (await fetch(c.url("/api/canvases"))).json(), { Palco: CANVAS });
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: { name: "", elements: [] } })).status, 400);
+  // renamed: saved under the new name, the old one goes
+  assert.equal((await c.cmd({ cmd: "saveCanvas", canvas: { ...CANVAS, name: "Batteria" }, oldName: "Palco" })).status, 200);
+  assert.deepEqual((await c.state()).canvases, ["Batteria"]);
+  await c.srv.close();
+  const d = await setup(t, { baseDir });
+  assert.deepEqual((await d.state()).canvases, ["Batteria"]);
+  assert.equal((await d.cmd({ cmd: "deleteCanvas", name: "Batteria" })).status, 200);
+  assert.deepEqual((await d.state()).canvases, []);
+  assert.equal((await d.cmd({ cmd: "deleteCanvas", name: "Batteria" })).status, 400);
+});
+
+test("F5: a button's OSC lines run in order, with //sleep and //if", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const play = c.expectCmd({ cmd: "play" });
+  const t0 = Date.now();
+  assert.equal((await c.cmd({ cmd: "oscRun", lines: "//if !playing: /global/play\n//endif\n//sleep 150\n/global/tempo 100" })).status, 200);
+  await play;
+  await c.expectCmd({ cmd: "tempo", bpm: 100 });
+  assert.ok(Date.now() - t0 >= 140, "after the sleep");
+  await c.at(10, { is_playing: true });
+  const before = c.cmds.length;
+  await c.cmd({ cmd: "oscRun", lines: "//if !playing\n/global/play\n//endif\n/global/tempo 90" });
+  await c.expectCmd({ cmd: "tempo", bpm: 90 });
+  assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "play"), "skipped: Live is playing");
+  assert.equal((await c.cmd({ cmd: "oscRun", lines: 42 })).status, 400);
+});
+
+test("F5: a page with a canvas gets OpenSet's OSC values, then only what changes", async (t) => {
+  const c = await setup(t);
+  await c.connect();
+  const ws = new WebSocket(`ws://127.0.0.1:${c.srv.httpPort}`);
+  const osc = [];
+  ws.on("message", (b) => { const m = JSON.parse(b); if (m.type === "osc") osc.push(m.values); });
+  await new Promise((r) => ws.once("open", r));
+  t.after(() => ws.close());
+  ws.send(JSON.stringify({ type: "osc", on: true }));
+  await waitFor(() => osc.length, "all the values");
+  assert.deepEqual(osc[0]["/global/tempo"], [120]);
+  assert.deepEqual(osc[0]["/setlist/activeSongName"], ["Intro Song"]);
+  await c.at(20);
+  await waitFor(() => osc.some((v, i) => i > 0 && v["/setlist/activeSectionName"]), "a change");
+  const change = osc.find((v, i) => i > 0 && v["/setlist/activeSectionName"]);
+  assert.deepEqual(change["/setlist/activeSectionName"], ["Chorus"]);
+  assert.equal(change["/global/tempo"], undefined, "only what changed");
+});
+
+test("F5: canvas images: uploaded to Canvas/Resources, listed and served; nothing outside it", async (t) => {
+  const c = await setup(t);
+  const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+  const up = (name, body = png, type = "image/png") =>
+    fetch(c.url("/api/canvas-resources?name=" + encodeURIComponent(name)), { method: "POST", headers: { "Content-Type": type }, body });
+  assert.equal((await up("logo.png")).status, 200);
+  assert.deepEqual(fs.readFileSync(path.join(c.baseDir, "Canvas", "Resources", "logo.png")), png);
+  fs.mkdirSync(path.join(c.baseDir, "Canvas", "Resources", "band"));
+  fs.writeFileSync(path.join(c.baseDir, "Canvas", "Resources", "band", "foto.jpg"), "jpg");
+  assert.deepEqual(await (await fetch(c.url("/api/canvas-resources"))).json(), ["band/foto.jpg", "logo.png"]);
+  const got = await fetch(c.url("/canvas-resources/logo.png"));
+  assert.equal(got.status, 200);
+  assert.deepEqual(Buffer.from(await got.arrayBuffer()), png);
+  assert.match(got.headers.get("content-security-policy"), /sandbox/); // an SVG put there by hand cannot run scripts
+  assert.equal((await fetch(c.url("/canvas-resources/band/foto.jpg"))).status, 200);
+  for (const name of ["../setlist.png", "a/b.png", "x.svg", "notes.txt", ""]) assert.equal((await up(name)).status, 400, name);
+  assert.equal((await fetch(c.url("/canvas-resources/..%2Fsetlist.json"))).status, 404);
+  assert.equal((await up("big.png", Buffer.alloc(11 * 1024 * 1024))).status, 413);
+});
