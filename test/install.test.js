@@ -31,7 +31,7 @@ function fixture() {
 test("installRemoteScript copies the script once, then only when it changes", () => {
   const f = fixture();
   const missing = path.join(f.root, "nope");
-  assert.deepEqual(installRemoteScript(f.src, [missing, f.lib]), { status: "installed", path: f.target });
+  assert.deepEqual(installRemoteScript(f.src, [missing, f.lib]), { status: "installed", path: f.target, paths: [f.target] });
   assert.deepEqual(fs.readdirSync(f.target).sort(), ["OpenSet.py", "__init__.py"]);
 
   assert.equal(installRemoteScript(f.src, [f.lib]).status, "current");

@@ -27,7 +27,11 @@ function configuredLibraries(platform, env, home) {
     }
     const block = (xml.match(/<UserLibrary>([\s\S]*?)<\/UserLibrary>/) || [])[1] || "";
     const value = (tag) => ((block.match(new RegExp(`<${tag}\\s+Value="([^"]*)"`)) || [])[1] || "");
-    const dir = unxml(value("ProjectPath")).replace(/[\\/]+$/, "");
+    let dir = unxml(value("ProjectPath"));
+    // the root of a disk keeps its separator: "D:" alone means "the current folder of D:"
+    if (platform === "win32" && /^[A-Za-z]:[\\/]*$/.test(dir)) dir = dir.slice(0, 2) + "\\";
+    else if (/^\/+$/.test(dir)) dir = "/";
+    else dir = dir.replace(/[\\/]+$/, "");
     const name = unxml(value("ProjectName"));
     if (dir) out.push(name && p.basename(dir) !== name ? p.join(dir, name) : dir);
   }
@@ -68,10 +72,19 @@ function same(a, b) {
   }
 }
 
-// -> { status: "installed" | "updated" | "current" | "not-found" | "error", path, error }
+// into every User Library that exists: two Live versions may use two of them
+// -> { status: "installed" | "updated" | "current" | "not-found" | "error", path, paths, error }
 function installRemoteScript(srcDir, libs) {
-  const lib = libs.find((l) => fs.existsSync(l));
-  if (!lib) return { status: "not-found" };
+  const found = [...new Set(libs)].filter((l) => fs.existsSync(l));
+  if (!found.length) return { status: "not-found" };
+  const results = found.map((lib) => installInto(srcDir, lib));
+  const failed = results.find((r) => r.status === "error");
+  if (failed) return failed;
+  const status = ["installed", "updated"].find((st) => results.some((r) => r.status === st)) || "current";
+  return { status, path: results[0].path, paths: results.map((r) => r.path) };
+}
+
+function installInto(srcDir, lib) {
   const target = path.join(lib, "Remote Scripts", "OpenSet");
   try {
     const existed = fs.existsSync(target);

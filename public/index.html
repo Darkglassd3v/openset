@@ -955,7 +955,7 @@ function renderSetlist() {
 
 function scriptNote(inst) {
   const st = inst && inst.status;
-  if (st === "installed" || st === "updated") return `Remote Script installato in <span class="mono">${esc(inst.path)}</span>.`;
+  if (st === "installed" || st === "updated") return `Remote Script installato in <span class="mono">${(inst.paths || [inst.path]).map(esc).join("</span> e in <span class=\"mono\">")}</span>.`;
   if (st === "current") return "Remote Script già installato.";
   return "Copia la cartella <b>remote-script/OpenSet</b> (accanto al programma) nella cartella " +
     "<b>Remote Scripts</b> della User Library di Live." + (st === "error" ? ` Installazione automatica fallita: ${esc(inst.error)}` : "");

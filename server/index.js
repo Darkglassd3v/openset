@@ -1621,7 +1621,7 @@ if (require.main === module) {
   const libs = userLibraries(process.platform, process.env, os.homedir());
   const install = installRemoteScript(path.join(BASE_DIR, "remote-script", "OpenSet"), libs);
   if (install.status === "installed" || install.status === "updated")
-    log.info(`[live] Remote Script ${install.status} in ${install.path}: restart Live and pick OpenSet as Control Surface`);
+    log.info(`[live] Remote Script ${install.status} in ${install.paths.join(", ")}: restart Live and pick OpenSet as Control Surface`);
   else if (install.status === "error") log.error(`[live] cannot install the Remote Script in ${install.path}: ${install.error}`);
   else if (install.status === "not-found" && libs.length)
     log.info("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
