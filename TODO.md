@@ -73,7 +73,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Con una password della 0.6, dopo lo sblocco del primo iPad gli altri già aperti continuavano a mandarla in chiaro. Ora ricevono subito il nuovo modo.
   - Il messaggio «Controllo la password…» restava scritto anche dopo, e ricompariva aprendo di nuovo il pannello.
 - [x] R2 (RED `956bbb4`, GREEN) Dalla revisione, password salvata: chi copia `setlist.json` poteva sbloccare OpenSet senza conoscere la password, e indovinare password brevi da un file o da uno sblocco ascoltato costava poco. Ora si salva solo una verifica che non basta per sbloccare (schema SCRAM), con più iterazioni, e la pagina calcola senza sprechi di memoria (gli iPad vecchi non si bloccano)
-- [ ] R3 Dalla revisione, Remote Script: con due versioni di Live e User Library diverse, OpenSet aggiornava solo una delle due (poteva restare il Remote Script vecchio). Ora lo installa in tutte. Una User Library nella radice di un disco (`D:\`) finiva in un posto sbagliato
+- [ ] R3 (RED fatto) Dalla revisione, Remote Script: con due versioni di Live e User Library diverse, OpenSet aggiornava solo una delle due (poteva restare il Remote Script vecchio). Ora lo installa in tutte. Una User Library nella radice di un disco (`D:\`) finiva in un posto sbagliato
 - [ ] R4 Dalla revisione, brani con lo stesso nome
   - Chi aggiorna dalla 0.6.1 con una ripresa già tolta o annotata la vedeva ricomparire senza nota. Ora le impostazioni salvate prima valgono come allora finché non si modifica la scaletta.
   - Un brano chiamato davvero «Intro#2» si confondeva con la ripresa di «Intro».

@@ -86,3 +86,34 @@ test("C5: Windows: Library.cfg in %APPDATA%\\Ableton\\Live x\\Preferences", (t) 
     "C:\\Users\\ana\\OneDrive\\Documents\\Ableton\\User Library",
   ]);
 });
+
+test("R3: with two User Libraries (two Live versions) the Remote Script goes into both", () => {
+  const f = fixture();
+  const lib2 = path.join(f.root, "Live 12 Library");
+  fs.mkdirSync(lib2);
+  const target2 = path.join(lib2, "Remote Scripts", "OpenSet");
+  const r = installRemoteScript(f.src, [lib2, path.join(f.root, "nope"), f.lib]);
+  assert.equal(r.status, "installed");
+  assert.equal(r.path, target2);
+  assert.deepEqual(r.paths, [target2, f.target]);
+  assert.equal(fs.readFileSync(path.join(f.target, "OpenSet.py"), "utf-8"), "# v1\n");
+  // Live 11's copy is old, Live 12's is current: it is updated too
+  fs.writeFileSync(path.join(f.target, "OpenSet.py"), "# old\n");
+  assert.equal(installRemoteScript(f.src, [lib2, f.lib]).status, "updated");
+  assert.equal(fs.readFileSync(path.join(f.target, "OpenSet.py"), "utf-8"), "# v1\n");
+  assert.equal(installRemoteScript(f.src, [lib2, f.lib]).status, "current");
+});
+
+test("R3: a User Library at the root of a disk", (t) => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), "openset-cfg-"));
+  t.after(() => fs.rmSync(home, { recursive: true, force: true }));
+  const prefs = path.join(home, "Library", "Preferences", "Ableton", "Live 12.1");
+  fs.mkdirSync(prefs, { recursive: true });
+  fs.writeFileSync(path.join(prefs, "Library.cfg"), libraryCfg("/"));
+  assert.equal(userLibraries("darwin", {}, home)[0], "/User Library");
+  const appData = path.join(home, "AppData");
+  const win = path.join(appData, "Ableton", "Live 12.1", "Preferences");
+  fs.mkdirSync(win, { recursive: true });
+  fs.writeFileSync(path.join(win, "Library.cfg"), libraryCfg("D:\\"));
+  assert.equal(userLibraries("win32", { USERPROFILE: "C:\\Users\\ana", APPDATA: appData }, "C:\\x")[0], "D:\\User Library");
+});
