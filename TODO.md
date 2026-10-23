@@ -74,10 +74,11 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Il messaggio «Controllo la password…» restava scritto anche dopo, e ricompariva aprendo di nuovo il pannello.
 - [x] R2 (RED `956bbb4`, GREEN) Dalla revisione, password salvata: chi copia `setlist.json` poteva sbloccare OpenSet senza conoscere la password, e indovinare password brevi da un file o da uno sblocco ascoltato costava poco. Ora si salva solo una verifica che non basta per sbloccare (schema SCRAM), con più iterazioni, e la pagina calcola senza sprechi di memoria (gli iPad vecchi non si bloccano)
 - [x] R3 (RED `de7fb2a`, GREEN) Dalla revisione, Remote Script: con due versioni di Live e User Library diverse, OpenSet aggiornava solo una delle due (poteva restare il Remote Script vecchio). Ora lo installa in tutte. Una User Library nella radice di un disco (`D:\`) finiva in un posto sbagliato
-- [ ] R4 (RED fatto) Dalla revisione, brani con lo stesso nome
+- [x] R4 (RED `f11654e`, GREEN) Dalla revisione, brani con lo stesso nome
   - Chi aggiorna dalla 0.6.1 con una ripresa già tolta o annotata la vedeva ricomparire senza nota. Ora le impostazioni salvate prima valgono come allora finché non si modifica la scaletta.
   - Un brano chiamato davvero «Intro#2» si confondeva con la ripresa di «Intro».
   - Aggiungendo in Live un altro brano con lo stesso nome prima della ripresa, nota e «tolto» passavano al brano sbagliato. Ora una ripresa che resta nella stessa posizione tiene le sue impostazioni.
+  - Trovato durante la correzione: con impostazioni della 0.6.1 e «Togli i brani suonati», il primo brano suonato toglieva anche la ripresa. Ora prima della modifica le impostazioni vengono convertite brano per brano (anche le durate misurate).
 - Nota: il commit `c31b597` non aggiorna `TODO.md` (storia già pubblicata sulla PR, non riscritta)
 
 ### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)

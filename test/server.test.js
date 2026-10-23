@@ -2173,3 +2173,20 @@ test("R4: a reprise keeps its settings when Live gets another song with the same
   const byTime = Object.fromEntries((await c.state()).setlist.map((s) => [s.time, [s.skip, s.notes]]));
   assert.deepEqual(byTime, { 0: [false, ""], 4: [false, ""], 8: [false, ""], 16: [true, "finale"] });
 });
+
+test("R4: with a 0.6.1 setlist, Remove Played Songs takes out only the song that was played", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ order: [], skip: [], stopAfter: [], notes: { A: "capo 2" }, measured: { A: 90 } }));
+  const c = await setup(t, { baseDir });
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "SONG END", time: 8 }, { name: "B", time: 12 }, { name: "A", time: 20 }] });
+  await c.cmd({ cmd: "settings", removePlayed: true });
+  await c.at(7.9, { is_playing: true });
+  await c.at(8.1, { is_playing: true });
+  await waitFor(async () => (await c.state()).setlist.find((s) => s.key === "A").skip, "the first A removed");
+  const reprise = (await c.state()).setlist.find((s) => s.key === "A#2");
+  assert.deepEqual([reprise.skip, reprise.notes, reprise.measured], [false, "capo 2", 90]);
+  // and after an edit from the web app
+  await c.cmd({ cmd: "setlist", stopAfter: ["B"] });
+  assert.equal((await c.state()).setlist.find((s) => s.key === "A#2").measured, 90);
+});

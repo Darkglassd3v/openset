@@ -64,7 +64,8 @@ function parseName(raw) {
   return { name, description, tags, duration, nosong, transpose, classes, flags, transition, color };
 }
 
-function buildSetlist(cues) {
+// keyTimes: { key: [name, time] } of songs that share a name, from the last setlist (see keyTimesOf)
+function buildSetlist(cues, keyTimes = {}) {
   const songs = [];
   let current = null;
   const endSong = (time, marker, p) => {
@@ -145,14 +146,37 @@ function buildSetlist(cues) {
       if (first) s.playStart = first.time;
     }
   });
-  // a reprise has the same name: setlist settings use the key, «Name#2» for the second one
-  const seen = new Map();
-  for (const s of songs) {
-    const n = (seen.get(s.name) || 0) + 1;
-    seen.set(s.name, n);
-    s.key = n > 1 ? `${s.name}#${n}` : s.name;
-  }
+  assignKeys(songs, keyTimes);
   return songs;
+}
+
+// A reprise has the same name: setlist settings use the key, «Name#2» for the second one.
+// A song that shared its name and is still where it was keeps its key, so adding another
+// song with that name earlier does not move its settings. Never the name of another song.
+function assignKeys(songs, keyTimes) {
+  const names = new Set(songs.map((s) => s.name));
+  const used = new Set();
+  const prev = Object.entries(keyTimes || {});
+  for (const s of songs) {
+    const hit = prev.find(([k, [n, t]]) => n === s.name && Math.abs(t - s.time) < EPS && !used.has(k) && (k === s.name || !names.has(k)));
+    if (hit) used.add((s.key = hit[0]));
+  }
+  for (const s of songs) {
+    if (s.key) continue;
+    let key = s.name;
+    // the name for the first one, then Name#2, Name#3…: never a key taken or the name of another song
+    for (let n = 2; used.has(key) || (key !== s.name && names.has(key)); n++) key = `${s.name}#${n}`;
+    used.add((s.key = key));
+  }
+}
+
+// where the songs that share a name (or whose key is not their name) are, for the next buildSetlist
+function keyTimesOf(songs) {
+  const count = new Map();
+  for (const s of songs) count.set(s.name, (count.get(s.name) || 0) + 1);
+  const out = {};
+  for (const s of songs) if (count.get(s.name) > 1 || s.key !== s.name) out[s.key] = [s.name, s.time];
+  return out;
 }
 
 // The sections track (AbleSet): named "Sections…" or flagged +SECTIONS
@@ -184,25 +208,31 @@ function cuesFromLive(cues, tracks) {
   return [...named, ...extra].sort((a, b) => a.time - b.time || isSection(a) - isSection(b));
 }
 
-// prefs: { order: [key], skip: [key], stopAfter: [key], notes: {key: text}, measured: {key: seconds} }
+// prefs: { order: [key], skip: [key], stopAfter: [key], notes: {key: text}, measured: {key: seconds} };
+// keys: false for settings saved by OpenSet 0.6.1 and older, by name: they apply to every song with that name
 function applyOrder(songs, prefs = {}) {
   const order = prefs.order || [];
   const skip = new Set(prefs.skip || []);
   const stopAfter = new Set(prefs.stopAfter || []);
   const notes = prefs.notes || {};
   const measured = prefs.measured || {};
+  const ids = (s) => (prefs.keys === false ? [s.key, s.name] : [s.key]);
+  const lookup = (map, s) => {
+    const k = ids(s).find((x) => Object.hasOwn(map, x));
+    return k === undefined ? undefined : map[k];
+  };
   const rank = (s) => {
-    const i = order.indexOf(s.key);
-    return i < 0 ? order.length : i;
+    const i = ids(s).map((k) => order.indexOf(k)).find((x) => x >= 0);
+    return i === undefined ? order.length : i;
   };
   let n = 0;
   return songs
     .map((s) => ({
       ...s,
-      skip: skip.has(s.key),
-      stopAfter: stopAfter.has(s.key),
-      notes: Object.hasOwn(notes, s.key) ? notes[s.key] : "",
-      measured: Object.hasOwn(measured, s.key) ? measured[s.key] : null,
+      skip: ids(s).some((k) => skip.has(k)),
+      stopAfter: ids(s).some((k) => stopAfter.has(k)),
+      notes: lookup(notes, s) ?? "",
+      measured: lookup(measured, s) ?? null,
     }))
     .sort((a, b) => rank(a) - rank(b)) // stable: unlisted songs keep timeline order
     .map((s) => ({ ...s, number: s.skip || s.nosong ? null : ++n }));
@@ -334,6 +364,7 @@ module.exports = {
   COLORS,
   CLIP_COLORS,
   applyOrder,
+  keyTimesOf,
   songAt,
   sectionAt,
   nextSong,
