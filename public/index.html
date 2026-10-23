@@ -232,6 +232,44 @@
     background: var(--ink); color: var(--text); font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
   #psLog { max-height: 220px; overflow: auto; white-space: pre-wrap; padding: 10px; border-radius: 8px; background: var(--line); font-size: 12px; }
   #psLog:empty { display: none; }
+  /* Canvas: elements on a 24-column grid of square cells (--cell set from the width) */
+  #canvas { padding: 12px 12px 24px; }
+  .cv-top { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+  .cv-top #cvName { max-width: 220px; }
+  .cv-menu { position: relative; }
+  #cvAddMenu { position: absolute; z-index: 20; top: 110%; left: 0; width: 260px; max-height: 60vh; overflow: auto; display: grid; gap: 6px;
+    padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--ink); }
+  .cv-grid { position: relative; width: 100%; --cell: 40px; }
+  .cv-grid.editing { background-image: linear-gradient(var(--line) 1px, transparent 1px), linear-gradient(90deg, var(--line) 1px, transparent 1px);
+    background-size: var(--cell) var(--cell); }
+  .cv-el { position: absolute; padding: 3px; overflow: hidden; display: flex; flex-direction: column; justify-content: center; border-radius: 8px; }
+  .cv-grid.editing .cv-el { outline: 1px dashed var(--dim); cursor: move; touch-action: none; }
+  .cv-grid.editing .cv-el.sel { outline: 2px solid var(--amber); z-index: 5; }
+  .cv-grid.editing .cv-el * { pointer-events: none; }
+  .cv-handle { position: absolute; right: 0; bottom: 0; width: 18px; height: 18px; background: var(--amber); border-radius: 4px 0 6px 0; cursor: nwse-resize; pointer-events: auto !important; }
+  .cv-panel { z-index: 0; } .cv-el:not(.cv-panel) { z-index: 1; }
+  .cv-btn { width: 100%; height: 100%; border-radius: 8px; border: 1px solid var(--line); background: var(--line); color: inherit; font: inherit; font-weight: 600; font-size: 18px; cursor: pointer; }
+  .cv-btn.on { border-color: var(--amber); }
+  .cv-text { width: 100%; overflow: hidden; overflow-wrap: anywhere; text-align: center; }
+  .cv-clock .cv-text, .cv-measure .cv-text { font: 700 clamp(18px, 4vw, 48px) ui-monospace, monospace; color: inherit; }
+  .cv-divider { border-bottom: 1px solid currentColor; color: var(--dim); font-size: 13px; letter-spacing: .1em; text-transform: uppercase; }
+  .cv-embed iframe, .cv-image img { width: 100%; height: 100%; border: 0; border-radius: 6px; }
+  .cv-input { width: 100%; height: 100%; padding: 8px; border-radius: 8px; border: 1px solid var(--line); background: var(--ink); color: var(--text); font: inherit; }
+  .cv-slider input[type="range"] { width: 100%; accent-color: var(--amber); }
+  .cv-slider input.vertical { writing-mode: vertical-lr; direction: rtl; height: 100%; width: auto; }
+  .cv-slabel { font-size: 13px; color: var(--dim); text-align: center; }
+  .cv-lyrics .cv-text { text-align: left; } .cv-lyr-now { font-size: 22px; font-weight: 600; } .cv-lyr-next { color: var(--dim); }
+  .cv-setlist .cv-text { overflow: auto; height: 100%; display: grid; align-content: start; gap: 4px; }
+  .cv-song { text-align: left; padding: 6px 8px; border-radius: 6px; border: 1px solid var(--line); background: none; color: inherit; font: inherit; }
+  .cv-song.now { border-color: var(--amber); color: var(--amber); } .cv-song.skip { opacity: .45; }
+  .cv-bar-track { position: relative; width: 100%; height: 100%; min-height: 10px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .cv-bar-track.pill { border-radius: 999px; }
+  .cv-secs { display: flex; height: 100%; } .cv-secs span, .cv-sec { flex-shrink: 0; } .cv-sec { border: 0; border-right: 1px solid var(--ink); background: var(--c-gray); color: #fff; font-size: 12px; overflow: hidden; white-space: nowrap; cursor: pointer; }
+  .cv-head { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--text); }
+  .cv-fill { height: 100%; width: 0; }
+  .cv-metronome .cv-text { display: flex; gap: 6px; height: 100%; } .cv-metronome span { flex: 1; border-radius: 6px; background: var(--line); }
+  #cvProps { margin-top: 14px; display: grid; gap: 8px; max-width: 640px; }
+  #cvProps label { display: grid; gap: 4px; } .cv-pos { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
   .lyr-track { display: block; text-align: center; margin-bottom: 18px; color: var(--dim); font-size: 14px; }
 
   /* ---- settings ---- */
@@ -339,6 +377,7 @@
   <button role="tab" data-view="stage">Palco</button>
   <button role="tab" data-view="lyrics">Testi</button>
   <button role="tab" data-view="mixer">Mixer</button>
+  <button role="tab" data-view="canvas" id="tabCanvas" hidden>Canvas</button>
   <button role="tab" data-view="settings">Opzioni</button>
 </nav>
 
@@ -368,6 +407,7 @@
   </div>
   <div id="lyrics" hidden></div>
   <div id="mixer" hidden></div>
+  <div id="canvas" hidden></div>
   <div id="settings" class="settings" hidden>
     <h2>Connetti un dispositivo</h2>
     <p>Telefono o tablet sulla stessa rete del computer: inquadra il codice con la fotocamera o apri l'indirizzo nel browser.</p>
@@ -377,7 +417,7 @@
     <h2>Generale</h2>
     <label>Vista all'apertura <select id="defaultView">
       <option value="setlist">Scaletta</option><option value="stage">Palco</option>
-      <option value="lyrics">Testi</option><option value="mixer">Mixer</option><option value="settings">Opzioni</option></select></label>
+      <option value="lyrics">Testi</option><option value="mixer">Mixer</option><option value="canvas">Canvas</option><option value="settings">Opzioni</option></select></label>
     <p class="dim">Vale per i dispositivi nuovi: gli altri riaprono l'ultima vista usata, o quella scelta in «Questo dispositivo».</p>
     <label>Apri OpenSet nel browser <select id="openBrowser">
       <option value="start">all'avvio di OpenSet</option><option value="live">quando Live si collega</option>
@@ -438,7 +478,7 @@
     <label>Nome di questo dispositivo <input class="field" id="devName" maxlength="64" placeholder="es. ipad-1, palco" aria-label="Nome di questo dispositivo"></label>
     <label>Vista all'apertura <select id="devView" aria-label="Vista all'apertura">
       <option value="">L'ultima usata</option><option value="setlist">Scaletta</option>
-      <option value="stage">Palco</option><option value="lyrics">Testi</option><option value="mixer">Mixer</option></select></label>
+      <option value="stage">Palco</option><option value="lyrics">Testi</option><option value="mixer">Mixer</option><option value="canvas">Canvas</option></select></label>
     <div class="row"><button class="btn" id="lockBtn">Blocca questo dispositivo</button>
       <span class="dim">Bloccato, ignora tocchi e tasti; si sblocca tenendo premuto il lucchetto o con <kbd>⇧</kbd> <kbd>L</kbd>.</span></div>
     <p id="installHint">Su iPad/iPhone: Safari → Condividi → Aggiungi alla schermata Home, per aprire OpenSet a schermo intero come un'app.</p>
@@ -551,6 +591,13 @@
     <div class="row"><button class="btn primary" id="psSave">Salva ed esegui</button>
       <button class="btn" id="psStop">Ferma</button> <span id="psStatus" class="dim" role="status"></span></div>
     <pre id="psLog" class="mono" aria-label="Registro dello script"></pre>
+
+    <h2>Canvas</h2>
+    <p>Schermate fatte a piacere, come in AbleSet: pulsanti con comandi OSC, testi con valori dal vivo
+      (<span class="mono">${osc("/global/tempo")}</span>), cursori legati alle variabili condivise, testi delle canzoni,
+      avanzamento, metronomo, immagini. Si salvano con il progetto e si aprono dalla scheda Canvas.</p>
+    <ul id="cvList"></ul>
+    <button class="btn" id="cvNew">Nuovo canvas</button>
   </div>
 </main>
 
@@ -609,7 +656,7 @@ const KEYS = {
   ArrowDown: "nextSection", ArrowUp: "prevSection", l: "loopToggle",
   j: "jumpToQueued", c: "clearQueue",
 };
-const VIEW_NAMES = { setlist: "Scaletta", stage: "Palco", lyrics: "Testi", mixer: "Mixer", settings: "Opzioni" };
+const VIEW_NAMES = { setlist: "Scaletta", stage: "Palco", lyrics: "Testi", mixer: "Mixer", canvas: "Canvas", settings: "Opzioni" };
 
 let state = null;
 const newDevice = !store.get("openset.view", ""); // AbleSet's Default View applies to new devices only
@@ -655,6 +702,7 @@ function connect() {
     sendDevice();
     const token = store.get("openset.token", "");
     if (token) send({ type: "auth", token });
+    if (view === "canvas") cvSubscribe(true);
   };
   ws.onmessage = (e) => {
     lastMessage = Date.now();
@@ -667,6 +715,7 @@ function connect() {
       else render();
     }
     if (msg.type === "cue") onCue(msg.cue);
+    if (msg.type === "osc") { Object.assign(CV.osc, msg.values); if (view === "canvas") cvUpdate(); }
     if (msg.type === "device") onDeviceCommand(msg);
     if (msg.type === "access") onAccess(msg);
     // a 0.6 password just updated by another device: from now on this page sends a proof too
@@ -891,6 +940,8 @@ function deviceSettings() {
 }
 function sendDevice() { send({ type: "device", name: device.name || "", view, locked: !!device.locked, settings: deviceSettings() }); }
 function onDeviceCommand(msg) {
+  if (msg.action === "showPage" && msg.view === "canvas" && /^canvas\/./.test(msg.page || "")) device.canvas = msg.page.slice(7);
+  if (msg.action === "showPage" && msg.view === "lyrics" && /^lyrics\/./.test(msg.page || "")) { device.lyricsTrack = msg.page.slice(7); saveDevice(); }
   if (msg.action === "showPage" && VIEW_NAMES[msg.view]) showView(msg.view);
   if (msg.action === "reload") location.reload();
   if (msg.action === "lock") setLocked(msg.locked);
@@ -964,6 +1015,8 @@ function render() {
   if (view === "stage") renderStage();
   if (view === "lyrics") renderLyrics();
   if (view === "mixer") renderMixer();
+  if (view === "canvas") renderCanvas();
+  $("tabCanvas").hidden = !(state.canvases.length || CV.edit);
   if (view === "settings") renderSettings();
 }
 
@@ -1440,13 +1493,13 @@ $("stQuick").addEventListener("click", (e) => {
 // ---------- lyrics ----------
 // the +LYRICS track this device shows, by slug ("" = the first one with lines), like AbleSet
 const lyricsTrack = () => device.lyricsTrack || "";
-const lyricsId = (s) => s.key + "|" + lyricsTrack();
-async function fetchLyrics(s) {
-  const id = lyricsId(s);
+const lyricsId = (s, track = lyricsTrack()) => s.key + "|" + track;
+async function fetchLyrics(s, track = lyricsTrack()) {
+  const id = lyricsId(s, track);
   lyr.cache[id] = undefined; // loading: the screen keeps what it shows
   try {
     // by key: a reprise with the same name has its own lines
-    const r = await fetch("/api/lyrics/" + encodeURIComponent(s.key) + (lyricsTrack() ? "?track=" + encodeURIComponent(lyricsTrack()) : ""));
+    const r = await fetch("/api/lyrics/" + encodeURIComponent(s.key) + (track ? "?track=" + encodeURIComponent(track) : ""));
     lyr.cache[id] = r.ok ? await r.json() : null; // null: this song has no lyrics
   } catch {
     // network error: retry soon, not "Nessun testo" for the rest of the show
@@ -1455,6 +1508,7 @@ async function fetchLyrics(s) {
   }
   lyr.song = null; // force a rebuild
   if (view === "lyrics") renderLyrics();
+  if (view === "canvas") cvUpdate();
 }
 
 function lineHtml(l, i) {
@@ -1467,10 +1521,10 @@ function lineHtml(l, i) {
 }
 
 // cached lyrics of a song; undefined while loading (the fetch starts here)
-function lyricsFor(s) {
+function lyricsFor(s, track = lyricsTrack()) {
   if (state.lyricsRev !== lyr.rev) { lyr.cache = {}; lyr.rev = state.lyricsRev; lyr.song = null; }
-  if (!(lyricsId(s) in lyr.cache)) { fetchLyrics(s); return undefined; }
-  return lyr.cache[lyricsId(s)];
+  if (!(lyricsId(s, track) in lyr.cache)) { fetchLyrics(s, track); return undefined; }
+  return lyr.cache[lyricsId(s, track)];
 }
 
 // with two or more +LYRICS tracks (two singers): which one this device shows
@@ -1588,6 +1642,507 @@ setInterval(() => { if (view === "settings") loadScript(); }, 1000);
 $("psSave").onclick = () => { send({ cmd: "setProjectScript", code: $("psCode").value }); setTimeout(loadScript, 400); };
 $("psStop").onclick = () => { send({ cmd: "stopProjectScript" }); setTimeout(loadScript, 200); };
 
+// ---------- Canvas (AbleSet): screens made of elements on a 24-column grid ----------
+// CV.list: every canvas (from /api/canvases); CV.edit: a working copy while editing;
+// CV.osc: OpenSet's OSC values (for ${osc("…")} in templates), pushed by the server
+const CV = { list: {}, rev: -1, edit: null, sel: null, osc: {}, key: "", armed: 0, listKey: "", lyricsKey: "" };
+const CV_NAMES = {
+  button: "Pulsante", label: "Etichetta", clock: "Orologio", measure: "Misura", divider: "Divisore", embed: "Pagina web",
+  image: "Immagine", input: "Campo di testo", slider: "Cursore", lyrics: "Testi", panel: "Pannello", setlist: "Scaletta",
+  songProgress: "Avanzamento del brano", sectionProgress: "Avanzamento della sezione", metronome: "Metronomo visivo",
+};
+// default size [w, h] in cells, and default properties
+const CV_NEW = {
+  button: [4, 3, { label: "Pulsante", onPress: "" }], label: [6, 2, { text: "Testo", size: 20 }], clock: [6, 3, { h24: true }],
+  measure: [4, 3, { showBeat: true }], divider: [24, 1, { title: "" }], embed: [12, 8, { url: "https://" }],
+  image: [6, 6, { src: "", fit: "contain" }], input: [8, 2, { inputType: "text", variable: "" }],
+  slider: [8, 2, { variable: "", min: 0, max: 1, step: 0.01 }], lyrics: [12, 6, { track: "", showNext: true }],
+  panel: [12, 6, { color: "gray" }], setlist: [8, 10, {}], songProgress: [24, 2, { names: true, colors: true }],
+  sectionProgress: [24, 1, {}], metronome: [8, 2, {}],
+};
+// AbleSet's presets: buttons that show the state of Live
+const CV_PRESETS = {
+  playPause: ["Play/Pausa", { label: '${osc("/global/isPlaying") ? "Pausa" : "Play"}', onPress: "/global/playPause", activeWhen: 'osc("/global/isPlaying")', activeColor: "green" }],
+  playStop: ["Play/Stop", { label: '${osc("/global/isPlaying") ? "Stop" : "Play"}', onPress: "/global/playStop", activeWhen: 'osc("/global/isPlaying")', activeColor: "green" }],
+  play: ["Play", { label: "Play", onPress: "/global/play", activeWhen: 'osc("/global/isPlaying")', activeColor: "green" }],
+  pause: ["Pausa", { label: "Pausa", onPress: "/global/pause", activeWhen: '!osc("/global/isPlaying")', activeColor: "amber" }],
+  stop: ["Stop", { label: "Stop", onPress: "/global/stop", activeColor: "red" }],
+  loop: ["Loop", { label: "Loop", onPress: "//if looping: /loop/escape\n//endif\n//if !looping: /loop/enable", activeWhen: 'osc("/setlist/loopEnabled")', activeColor: "amber" }],
+  record: ["Registra", { label: "● Rec", onPress: "/global/toggleRecording", activeWhen: 'osc("/global/isRecording")', activeColor: "red" }],
+};
+const CV_COLORS = ["", "gray", "red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal", "cyan", "sky", "blue", "indigo", "violet", "purple", "fuchsia", "pink", "rose"];
+// the fields of each element in the editor: [property, label, kind, options]
+const CV_FIELDS = {
+  button: [["label", "Testo (anche ${…})", "text"], ["onPress", "Comandi OSC alla pressione (uno per riga, //sleep, //if)", "osc"],
+    ["onRelease", "Comandi OSC al rilascio", "osc"], ["script", "Script alla pressione (JavaScript)", "osc"],
+    ["link", "Link: /lyrics, /canvas/Nome o https://…", "text"], ["activeWhen", 'Acceso quando (es. osc("/global/isPlaying"))', "text"],
+    ["color", "Sfondo", "color"], ["activeColor", "Sfondo da acceso", "color"], ["textColor", "Testo", "color"]],
+  label: [["text", "Testo (anche ${…})", "area"], ["size", "Dimensione del testo (px)", "num"], ["align", "Allineamento", "select", ["center", "left", "right"]],
+    ["color", "Sfondo", "color"], ["textColor", "Testo", "color"]],
+  clock: [["h24", "24 ore", "bool"], ["seconds", "Secondi", "bool"], ["textColor", "Colore", "color"]],
+  measure: [["showBeat", "Mostra il battito", "bool"], ["textColor", "Colore", "color"]],
+  divider: [["title", "Titolo", "text"], ["textColor", "Colore", "color"]],
+  embed: [["url", "Indirizzo (https://…)", "text"], ["interactive", "Si può toccare", "bool"], ["color", "Sfondo", "color"]],
+  image: [["src", "Immagine", "image"], ["fit", "Adatta", "select", ["contain", "cover"]]],
+  input: [["inputType", "Tipo", "select", ["text", "number", "email", "multiline"]], ["placeholder", "Suggerimento", "text"],
+    ["variable", "Variabile condivisa collegata", "text"], ["value", "Valore (anche ${…})", "text"],
+    ["onChange", "Script al cambio (value)", "osc"], ["onEnter", "Script con Invio (value)", "osc"]],
+  slider: [["label", "Etichetta", "text"], ["variable", "Variabile condivisa collegata", "text"], ["value", "Valore (anche ${…})", "text"],
+    ["min", "Minimo", "num"], ["max", "Massimo", "num"], ["step", "Passo", "num"], ["vertical", "Verticale", "bool"],
+    ["onChange", "Script al cambio (value)", "osc"], ["onRelease", "Script al rilascio (value)", "osc"]],
+  lyrics: [["track", "Traccia dei testi", "lyricsTrack"], ["showNext", "Dopo l'ultima riga, il prossimo brano", "bool"]],
+  panel: [["color", "Sfondo", "color"]],
+  setlist: [],
+  songProgress: [["names", "Nomi delle sezioni", "bool"], ["colors", "Colori delle sezioni", "bool"], ["pill", "Arrotondato", "bool"]],
+  sectionProgress: [["color", "Colore (vuoto: quello della sezione)", "color"], ["pill", "Arrotondato", "bool"]],
+  metronome: [["textColor", "Colore (vuoto: quello della sezione)", "color"]],
+};
+const cvColor = (c) => (CV_COLORS.includes(c) && c ? `var(--c-${c})` : "");
+
+// ${…} in templates and the scripts: what AbleSet offers there
+const cvOsc = (key, index = 0) => { const v = CV.osc[key]; return v === undefined ? undefined : index === "all" ? v : v[index]; };
+const cvShared = (key, fallback) => (state && state.shared && Object.hasOwn(state.shared, key) ? state.shared[key] : fallback);
+const cvLocals = (() => { try { return JSON.parse(store.get("openset.locals", "{}")) || {}; } catch { return {}; } })();
+const cvLocal = (key, fallback) => (Object.hasOwn(cvLocals, key) ? cvLocals[key] : fallback);
+const cvDuration = (s) => { s = Math.max(0, Math.round(Number(s) || 0)); const two = (n) => String(n).padStart(2, "0"); const h = Math.floor(s / 3600); return (h ? h + ":" : "") + two(Math.floor((s % 3600) / 60)) + ":" + two(s % 60); };
+const cvFns = new Map();
+function cvEval(expr) {
+  if (!cvFns.has(expr)) {
+    let f;
+    try { f = new Function("osc", "shared", "local", "formatDuration", "now", `return (${expr});`); } catch { f = () => "⚠"; }
+    cvFns.set(expr, f);
+  }
+  try { return cvFns.get(expr)(cvOsc, cvShared, cvLocal, cvDuration, Date.now); } catch { return "⚠"; }
+}
+function tpl(text) {
+  return String(text == null ? "" : text).replace(/\$\{([^}]*)\}/g, (_, e) => {
+    const v = cvEval(e);
+    return v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v);
+  });
+}
+const oscLine = (cmd, args) => [cmd, ...args.map((a) => (typeof a === "string" ? `"${a.replace(/"/g, "'")}"` : String(a)))].join(" ");
+function cvNavigate(p) {
+  const path = String(p || "");
+  if (/^https?:\/\//.test(path)) return void (location.href = path);
+  const [first, ...rest] = path.replace(/^\//, "").split("/");
+  if (first === "canvas" && rest.length) return openCanvas(decodeURIComponent(rest.join("/")));
+  const v = { performance: "stage", stage: "stage", setlist: "setlist", lyrics: "lyrics", mixer: "mixer", settings: "settings" }[first];
+  if (v) showView(v);
+}
+// a script of a canvas element, with AbleSet's canvas functions; value, min, max, step for inputs and sliders
+async function cvScript(code, extra = {}) {
+  if (!code || !String(code).trim()) return;
+  const api = {
+    osc: cvOsc, shared: cvShared, local: cvLocal, formatDuration: cvDuration, now: Date.now,
+    log: (...a) => console.log("[canvas]", ...a),
+    sleep: (ms) => new Promise((r) => setTimeout(r, Number(ms) || 0)),
+    sendOsc: (cmd, ...args) => send({ cmd: "oscRun", lines: oscLine(String(cmd), args) }),
+    setShared: (key, value) => send({ cmd: "setShared", key, value }),
+    resetShared: (key) => send({ cmd: "resetShared", key }),
+    setLocal: (key, value, persist) => {
+      cvLocals[key] = value;
+      if (persist) store.set("openset.locals", JSON.stringify(cvLocals));
+      cvUpdate();
+    },
+    resetLocal: (key) => { if (key === undefined) for (const k of Object.keys(cvLocals)) delete cvLocals[k]; else delete cvLocals[key]; store.set("openset.locals", JSON.stringify(cvLocals)); cvUpdate(); },
+    int: (n) => Math.trunc(Number(n) || 0),
+    navigate: cvNavigate, pathname: "/canvas/" + (cvCurrent() || {}).name,
+    ...extra,
+  };
+  try {
+    await new Function(...Object.keys(api), `return (async () => {\n${code}\n})();`)(...Object.values(api));
+  } catch (e) {
+    console.error("[canvas]", e);
+  }
+}
+
+// the canvas on screen: the one being edited, the one this device chose, or the first
+function cvCurrent() {
+  if (CV.edit) return CV.edit;
+  return CV.list[device.canvas] || Object.values(CV.list)[0] || null;
+}
+function openCanvas(name) {
+  device.canvas = name;
+  saveDevice();
+  CV.key = "";
+  showView("canvas");
+}
+async function fetchCanvases() {
+  try { CV.list = await (await fetch("/api/canvases")).json(); } catch { return; }
+  CV.key = "";
+  if (view === "canvas") renderCanvas();
+  if (view === "settings") settingsKey = "";
+}
+function cvSubscribe(on) { send({ type: "osc", on }); }
+
+function cvElementHtml(e, editing) {
+  const p = e.props;
+  const style = `left:${(e.x / 24) * 100}%;width:${(e.w / 24) * 100}%;top:calc(var(--cell) * ${e.y});height:calc(var(--cell) * ${e.h});` +
+    (cvColor(p.color) && !["sectionProgress", "button"].includes(e.type) ? `background:${cvColor(p.color)};` : "") + (cvColor(p.textColor) ? `color:${cvColor(p.textColor)};` : "");
+  let inner = "";
+  switch (e.type) {
+    case "button": inner = `<button class="cv-btn" type="button"></button>`; break;
+    case "label": inner = `<div class="cv-text" style="font-size:min(${Number(p.size) || 20}px, calc(var(--cell) * ${e.h} * .6));text-align:${["left", "right"].includes(p.align) ? p.align : "center"}"></div>`; break;
+    case "divider": inner = `<div class="cv-divider">${esc(p.title || "")}</div>`; break;
+    case "embed": inner = /^https?:\/\//.test(p.url || "") ? `<iframe src="${esc(p.url)}" title="${esc(p.url)}" sandbox="allow-scripts allow-same-origin allow-forms" style="${p.interactive && !editing ? "" : "pointer-events:none"}"></iframe>` : ""; break;
+    case "image": inner = p.src ? `<img alt="" src="/canvas-resources/${p.src.split("/").map(encodeURIComponent).join("/")}" style="object-fit:${p.fit === "cover" ? "cover" : "contain"}">` : ""; break;
+    case "input": inner = p.inputType === "multiline" ? `<textarea class="cv-input" placeholder="${esc(p.placeholder || "")}"></textarea>`
+      : `<input class="cv-input" type="${["number", "email"].includes(p.inputType) ? p.inputType : "text"}" placeholder="${esc(p.placeholder || "")}">`; break;
+    case "slider": inner = `${p.label ? `<div class="cv-slabel">${esc(p.label)}</div>` : ""}<input type="range" class="${p.vertical ? "vertical" : ""}" min="${Number(p.min) || 0}" max="${p.max == null ? 1 : Number(p.max)}" step="${Number(p.step) || "any"}" aria-label="${esc(p.label || p.variable || "Cursore")}">`; break;
+    case "songProgress": inner = `<div class="cv-bar-track${p.pill ? " pill" : ""}"><div class="cv-secs"></div><div class="cv-head"></div></div>`; break;
+    case "sectionProgress": inner = `<div class="cv-bar-track${p.pill ? " pill" : ""}"><div class="cv-fill"></div></div>`; break;
+    default: inner = `<div class="cv-text"></div>`;
+  }
+  return `<div class="cv-el cv-${e.type}${editing && CV.sel === e.id ? " sel" : ""}" data-id="${esc(e.id)}" style="${style}">${inner}${editing ? '<div class="cv-handle" aria-hidden="true"></div>' : ""}</div>`;
+}
+
+function renderCanvas() {
+  const el = $("canvas");
+  if (state.canvasRev !== CV.rev) { CV.rev = state.canvasRev; fetchCanvases(); }
+  const c = cvCurrent();
+  const editing = !!CV.edit;
+  // while editing, drawn again only when asked (CV.key = ""): typing in a field keeps its focus
+  const key = editing ? CV.key || "edit" + Date.now() : JSON.stringify([c, Object.keys(CV.list), access.control]);
+  if (key !== CV.key) {
+    CV.key = key;
+    CV.listKey = CV.lyricsKey = "";
+    const names = Object.keys(CV.list);
+    const rows = c ? Math.max(12, ...c.elements.map((e) => e.y + e.h)) + (editing ? 6 : 0) : 0;
+    const sel = editing && c.elements.find((e) => e.id === CV.sel);
+    el.innerHTML = `<div class="cv-top">
+        ${editing
+          ? `<input class="field" id="cvName" maxlength="64" aria-label="Nome del canvas" value="${esc(c.name)}">
+             <div class="cv-menu"><button class="btn" id="cvAdd" aria-expanded="false">+ Elemento</button>
+               <div id="cvAddMenu" hidden>${Object.entries(CV_NAMES).map(([t, n]) => `<button class="btn" data-add="${t}">${n}</button>`).join("")}
+                 <p class="dim">Preimpostati</p>${Object.entries(CV_PRESETS).map(([k, [n]]) => `<button class="btn" data-add="preset:${k}">${n}</button>`).join("")}</div></div>
+             <button class="btn primary" id="cvSave">Salva</button><button class="btn" id="cvCancel">Annulla</button>
+             ${CV.edit.oldName ? `<button class="btn" id="cvDelete">${CV.armed ? "Conferma: elimina" : "Elimina canvas"}</button>` : ""}
+             <span id="cvMsg" class="dim" role="status"></span>`
+          : `${names.length > 1 ? `<select id="cvPick" aria-label="Canvas">${names.map((n) => `<option${c && n === c.name ? " selected" : ""}>${esc(n)}</option>`).join("")}</select>` : ""}
+             ${c && canControlHere() ? `<button class="btn" id="cvEdit">Modifica</button>` : ""}`}
+      </div>
+      ${c ? `<div class="cv-grid${editing ? " editing" : ""}" id="cvGrid" style="height:calc(var(--cell) * ${rows})">${c.elements.map((e) => cvElementHtml(e, editing)).join("")}</div>`
+        : `<div class="lyr-none">Nessun canvas. Creane uno da Opzioni → Canvas.</div>`}
+      ${sel ? cvPropsHtml(sel) : editing ? '<div id="cvProps" class="dim">Tocca un elemento per modificarlo, o aggiungine uno con «+ Elemento».</div>' : ""}`;
+    cvResize();
+  }
+  cvUpdate();
+}
+const canControlHere = () => access.control;
+function cvResize() {
+  const g = $("cvGrid");
+  if (g) g.style.setProperty("--cell", g.clientWidth / 24 + "px");
+}
+addEventListener("resize", cvResize);
+
+function cvPropsHtml(e) {
+  const field = ([prop, label, kind, options]) => {
+    const v = e.props[prop];
+    const id = `data-prop="${prop}"`;
+    if (kind === "bool") return `<label><input type="checkbox" ${id}${v ? " checked" : ""}> ${esc(label)}</label>`;
+    if (kind === "num") return `<label>${esc(label)} <input class="field" type="number" step="any" ${id} value="${esc(v == null ? "" : v)}"></label>`;
+    if (kind === "area" || kind === "osc") return `<label>${esc(label)}<textarea class="field mono" rows="${kind === "osc" ? 3 : 2}" ${id} spellcheck="false">${esc(v == null ? "" : v)}</textarea></label>`;
+    const opts = kind === "select" ? options.map((o) => [o, o]) : kind === "color" ? CV_COLORS.map((o) => [o, o || "predefinito"])
+      : kind === "lyricsTrack" ? [["", "la prima con righe"], ...(state.lyricsTracks || []).map((t) => [t.slug, t.name])]
+      : kind === "image" ? [["", "nessuna"], ...(CV.images || []).map((i) => [i, i])] : null;
+    if (opts) return `<label>${esc(label)} <select ${id}>${opts.map(([o, n]) => `<option value="${esc(o)}"${o === (v == null ? "" : v) ? " selected" : ""}>${esc(n)}</option>`).join("")}</select></label>`
+      + (kind === "image" ? ` <label class="btn">Carica un'immagine<input type="file" accept="image/png,image/jpeg,image/gif,image/webp" id="cvUpload" hidden></label>` : "");
+    return `<label>${esc(label)} <input class="field" ${id} value="${esc(v == null ? "" : v)}"></label>`;
+  };
+  return `<div id="cvProps"><b>${esc(CV_NAMES[e.type])}</b>
+    <div class="cv-pos">${["x", "y", "w", "h"].map((k) => `<label>${{ x: "Colonna", y: "Riga", w: "Larghezza", h: "Altezza" }[k]} <input class="field" type="number" min="${k === "w" || k === "h" ? 1 : 0}" data-pos="${k}" value="${e[k]}"></label>`).join("")}</div>
+    ${CV_FIELDS[e.type].map(field).join("")}
+    <div class="row"><button class="btn" id="cvDup">Duplica</button><button class="btn" id="cvDel">Elimina elemento</button></div></div>`;
+}
+
+// the live parts, at every state or OSC update: texts, active buttons, inputs, progress
+function cvUpdate() {
+  const g = $("cvGrid");
+  const c = cvCurrent();
+  if (!g || !c || !state) return;
+  const song = curSong();
+  for (const e of c.elements) {
+    const box = g.querySelector(`[data-id="${CSS.escape(e.id)}"]`);
+    if (!box) continue;
+    const p = e.props;
+    const text = box.querySelector(".cv-text");
+    switch (e.type) {
+      case "button": {
+        const b = box.querySelector(".cv-btn");
+        const t = tpl(p.label);
+        if (b.textContent !== t) b.textContent = t;
+        const on = !!(p.activeWhen && cvEval(p.activeWhen));
+        b.classList.toggle("on", on);
+        b.style.background = on ? cvColor(p.activeColor) || "var(--amber-dim)" : cvColor(p.color);
+        break;
+      }
+      case "label": { const t = tpl(p.text); if (text.textContent !== t) text.textContent = t; break; }
+      case "clock": {
+        const d = new Date();
+        text.textContent = d.toLocaleTimeString(p.h24 === false ? "en-US" : "it-IT", { hour: "2-digit", minute: "2-digit", ...(p.seconds ? { second: "2-digit" } : {}), hour12: p.h24 === false });
+        break;
+      }
+      case "measure": {
+        const [bar, beat] = cvOsc("/global/humanPosition", "all") || [1, 1];
+        text.textContent = p.showBeat === false ? String(bar) : `${bar}.${beat}`;
+        break;
+      }
+      case "input": case "slider": {
+        const i = box.querySelector(".cv-input, input[type=range]");
+        if (document.activeElement === i) break; // never under the user's finger
+        const v = p.variable ? cvShared(p.variable, p.value ? tpl(p.value) : "") : p.value ? tpl(p.value) : null;
+        if (v != null && String(i.value) !== String(v)) i.value = v;
+        break;
+      }
+      case "lyrics": {
+        const lyrics = song && lyricsFor(song, p.track || "");
+        const lines = (lyrics && lyrics.lines) || [];
+        const rel = (state.beat || 0) - (song ? song.time : 0);
+        let now = -1;
+        lines.forEach((l, i) => { if (rel >= l.beat - 0.001) now = i; });
+        const plain = (l) => (l ? l.segments.map((s) => s.text).join("").trim() : "");
+        const next = state.setlist[state.next];
+        const after = now >= lines.length - 1 && p.showNext !== false && next ? `→ ${next.name}` : plain(lines[now + 1]);
+        const html = `<div class="cv-lyr-now">${esc(plain(lines[now]))}</div><div class="cv-lyr-next">${esc(after)}</div>`;
+        if (text.innerHTML !== html) text.innerHTML = html;
+        break;
+      }
+      case "setlist": {
+        const k = JSON.stringify([state.setlist.map((s) => [s.name, s.skip]), state.current]);
+        if (box.dataset.k === k) break;
+        box.dataset.k = k;
+        text.innerHTML = state.setlist.map((s, i) => `<button class="cv-song${i === state.current ? " now" : ""}${s.skip ? " skip" : ""}" data-song="${i}">${esc(s.name)}</button>`).join("");
+        break;
+      }
+      case "songProgress": {
+        const secs = song ? song.sections : [];
+        const len = song && song.end != null ? song.end - song.time : 0;
+        const k = JSON.stringify([state.current, secs.map((s) => [s.name, s.time, s.color]), p.names, p.colors]);
+        if (box.dataset.k !== k) {
+          box.dataset.k = k;
+          // the part of the song before its first section stays empty
+          const lead = len > 0 && secs.length ? `<span style="width:${((secs[0].time - song.time) / len) * 100}%"></span>` : "";
+          box.querySelector(".cv-secs").innerHTML = lead + (len > 0 ? secs.map((s, i) => {
+            const end = i + 1 < secs.length ? secs[i + 1].time : song.end;
+            return `<button class="cv-sec" data-time="${s.time}" style="width:${((end - s.time) / len) * 100}%;${p.colors !== false && s.color ? `background:var(--c-${s.color})` : ""}">${p.names !== false ? esc(s.name) : ""}</button>`;
+          }).join("") : "");
+        }
+        box.querySelector(".cv-head").style.left = len > 0 ? Math.max(0, Math.min(100, (((state.beat || 0) - song.time) / len) * 100)) + "%" : "0";
+        break;
+      }
+      case "sectionProgress": {
+        const sec = song && song.sections[state.section];
+        const end = sec && (song.sections[state.section + 1] ? song.sections[state.section + 1].time : song.end);
+        const fill = box.querySelector(".cv-fill");
+        fill.style.width = sec && end > sec.time ? Math.max(0, Math.min(100, (((state.beat || 0) - sec.time) / (end - sec.time)) * 100)) + "%" : "0";
+        fill.style.background = cvColor(p.color) || (sec && sec.color ? `var(--c-${sec.color})` : "var(--amber)");
+        break;
+      }
+      case "metronome": {
+        const n = state.sig_num || 4;
+        const beat = Math.floor(((state.beat || 0) % ((n * 4) / (state.sig_den || 4))) / (4 / (state.sig_den || 4)));
+        const color = cvColor(p.textColor) || (song && song.sections[state.section] && song.sections[state.section].color ? `var(--c-${song.sections[state.section].color})` : "var(--amber)");
+        const html = Array.from({ length: n }, (_, i) => `<span style="${i === beat && state.is_playing ? `background:${color}` : ""}"></span>`).join("");
+        if (text.innerHTML !== html) text.innerHTML = html;
+        break;
+      }
+    }
+  }
+}
+
+// ---- using a canvas: buttons, inputs, sliders, the setlist and the song progress ----
+$("canvas").addEventListener("pointerdown", (ev) => {
+  if (CV.edit) return cvEditPointer(ev);
+  const box = ev.target.closest(".cv-el");
+  const e = box && cvCurrent().elements.find((x) => x.id === box.dataset.id);
+  if (!e || e.type !== "button") return;
+  if (e.props.onPress) send({ cmd: "oscRun", lines: e.props.onPress });
+  if (e.props.script) cvScript(e.props.script);
+  if (e.props.link) cvNavigate(e.props.link);
+  const up = () => {
+    removeEventListener("pointerup", up);
+    if (e.props.onRelease) send({ cmd: "oscRun", lines: e.props.onRelease });
+  };
+  addEventListener("pointerup", up);
+});
+$("canvas").addEventListener("click", (ev) => {
+  if (CV.edit) return;
+  const song = ev.target.closest("[data-song]");
+  if (song) send({ cmd: "song", index: +song.dataset.song });
+  const sec = ev.target.closest(".cv-sec");
+  if (sec) send({ cmd: "jump", time: +sec.dataset.time });
+});
+function cvValue(input, e) {
+  const v = input.type === "range" || (e.type === "input" && e.props.inputType === "number") ? Number(input.value) : input.value;
+  return { value: v, min: Number(e.props.min) || 0, max: e.props.max == null ? 1 : Number(e.props.max), step: Number(e.props.step) || 0 };
+}
+$("canvas").addEventListener("input", (ev) => {
+  if (CV.edit) return cvEditInput(ev);
+  const box = ev.target.closest(".cv-el");
+  const e = box && cvCurrent().elements.find((x) => x.id === box.dataset.id);
+  if (!e || !["input", "slider"].includes(e.type)) return;
+  const v = cvValue(ev.target, e);
+  if (e.props.variable) send({ cmd: "setShared", key: e.props.variable, value: v.value });
+  cvScript(e.props.onChange, v);
+});
+$("canvas").addEventListener("change", (ev) => {
+  if (CV.edit) return cvEditInput(ev);
+  if (ev.target.id === "cvPick") return openCanvas(ev.target.value);
+  const box = ev.target.closest(".cv-el");
+  const e = box && cvCurrent().elements.find((x) => x.id === box.dataset.id);
+  if (e && e.type === "slider") cvScript(e.props.onRelease, cvValue(ev.target, e));
+});
+$("canvas").addEventListener("keydown", (ev) => {
+  if (CV.edit || ev.key !== "Enter" || ev.shiftKey) return;
+  const box = ev.target.closest(".cv-el");
+  const e = box && cvCurrent().elements.find((x) => x.id === box.dataset.id);
+  if (e && e.type === "input") cvScript(e.props.onEnter, cvValue(ev.target, e));
+});
+
+// ---- editing: select, drag to move, drag the corner to resize, fields for the rest ----
+function newCanvas() {
+  let n = 1;
+  while (CV.list["Canvas " + n]) n++;
+  CV.edit = { name: "Canvas " + n, elements: [] };
+  CV.sel = null;
+  showView("canvas");
+}
+function cvAdd(what) {
+  const [type, props] = what.startsWith("preset:") ? ["button", CV_PRESETS[what.slice(7)][1]] : [what, CV_NEW[what][2]];
+  const [w, h] = CV_NEW[type];
+  const y = Math.max(0, ...CV.edit.elements.map((e) => e.y + e.h));
+  let id;
+  do id = type + Math.random().toString(36).slice(2, 7); while (CV.edit.elements.some((e) => e.id === id));
+  CV.edit.elements.push({ id, type, x: 0, y, w, h, props: { ...props } });
+  CV.sel = id;
+}
+const cvSel = () => CV.edit && CV.edit.elements.find((e) => e.id === CV.sel);
+function cvEditPointer(ev) {
+  const box = ev.target.closest(".cv-el");
+  if (!box || ev.target.closest("#cvProps")) return;
+  const e = CV.edit.elements.find((x) => x.id === box.dataset.id);
+  if (!e) return;
+  ev.preventDefault();
+  const cell = $("cvGrid").clientWidth / 24;
+  const resize = ev.target.classList.contains("cv-handle");
+  const start = { px: ev.clientX, py: ev.clientY, x: e.x, y: e.y, w: e.w, h: e.h };
+  const move = (m) => {
+    const dx = Math.round((m.clientX - start.px) / cell);
+    const dy = Math.round((m.clientY - start.py) / cell);
+    if (resize) {
+      e.w = Math.max(1, Math.min(24 - e.x, start.w + dx));
+      e.h = Math.max(1, Math.min(100, start.h + dy));
+    } else {
+      e.x = Math.max(0, Math.min(24 - e.w, start.x + dx));
+      e.y = Math.max(0, Math.min(399, start.y + dy));
+    }
+    Object.assign(box.style, { left: (e.x / 24) * 100 + "%", width: (e.w / 24) * 100 + "%", top: `calc(var(--cell) * ${e.y})`, height: `calc(var(--cell) * ${e.h})` });
+  };
+  const up = () => {
+    removeEventListener("pointermove", move);
+    removeEventListener("pointerup", up);
+    CV.sel = e.id;
+    CV.key = "";
+    renderCanvas();
+  };
+  addEventListener("pointermove", move);
+  addEventListener("pointerup", up);
+}
+function cvEditInput(ev) {
+  const t = ev.target;
+  if (t.id === "cvName") return void (CV.edit.name = t.value);
+  const e = cvSel();
+  if (!e) return;
+  if (t.dataset.pos) {
+    const k = t.dataset.pos;
+    const v = Math.trunc(Number(t.value));
+    if (!Number.isFinite(v)) return;
+    if (k === "x") e.x = Math.max(0, Math.min(24 - e.w, v));
+    if (k === "w") e.w = Math.max(1, Math.min(24 - e.x, v));
+    if (k === "y") e.y = Math.max(0, Math.min(399, v));
+    if (k === "h") e.h = Math.max(1, Math.min(100, v));
+  } else if (t.dataset.prop) {
+    const kind = (CV_FIELDS[e.type].find((f) => f[0] === t.dataset.prop) || [])[2];
+    e.props[t.dataset.prop] = kind === "bool" ? t.checked : kind === "num" ? Number(t.value) || 0 : t.value;
+  } else return;
+  cvRedraw(e);
+}
+// one element drawn again, the fields stay as they are
+function cvRedraw(e) {
+  const g = $("cvGrid");
+  const old = g && g.querySelector(`[data-id="${CSS.escape(e.id)}"]`);
+  if (!old) return;
+  old.outerHTML = cvElementHtml(e, true);
+  g.style.height = `calc(var(--cell) * ${Math.max(12, ...CV.edit.elements.map((x) => x.y + x.h)) + 6})`;
+  cvUpdate();
+}
+$("canvas").addEventListener("click", async (ev) => {
+  if (!CV.edit) {
+    if (ev.target.id === "cvEdit") {
+      const c = cvCurrent();
+      CV.edit = { ...JSON.parse(JSON.stringify(c)), oldName: c.name };
+      CV.sel = null;
+      CV.armed = 0;
+      cvImages();
+      renderCanvas();
+    }
+    return;
+  }
+  const id = ev.target.id;
+  const add = ev.target.closest("[data-add]");
+  if (id === "cvAdd") { const m = $("cvAddMenu"); m.hidden = !m.hidden; ev.target.setAttribute("aria-expanded", String(!m.hidden)); return; }
+  if (add) cvAdd(add.dataset.add);
+  else if (id === "cvCancel") { CV.edit = null; CV.sel = null; }
+  else if (id === "cvDup") { const e = cvSel(); cvAdd(e.type); Object.assign(cvSel(), { props: { ...e.props }, w: e.w, h: e.h }); }
+  else if (id === "cvDel") { CV.edit.elements = CV.edit.elements.filter((e) => e.id !== CV.sel); CV.sel = null; }
+  else if (id === "cvDelete") {
+    if (!CV.armed) { CV.armed = Date.now(); CV.key = ""; renderCanvas(); setTimeout(() => { CV.armed = 0; CV.key = ""; if (view === "canvas") renderCanvas(); }, 3000); return; }
+    await cvCommand({ cmd: "deleteCanvas", name: CV.edit.oldName });
+    CV.edit = null;
+  } else if (id === "cvSave") {
+    const { oldName, ...canvas } = CV.edit;
+    canvas.name = canvas.name.trim() || "Canvas";
+    if (!(await cvCommand({ cmd: "saveCanvas", canvas, ...(oldName ? { oldName } : {}) }))) return;
+    device.canvas = canvas.name;
+    saveDevice();
+    CV.list = { ...CV.list, [canvas.name]: canvas };
+    if (oldName && oldName !== canvas.name) delete CV.list[oldName];
+    CV.edit = null;
+  } else if (!ev.target.closest(".cv-el, #cvProps, .cv-top")) CV.sel = null;
+  else return;
+  CV.key = "";
+  renderCanvas();
+});
+// saved over HTTP: a canvas can be bigger than a WebSocket message
+async function cvCommand(body) {
+  try {
+    const r = await fetch("/api/cmd", { method: "POST", headers: { "Content-Type": "application/json", ...authHeaders() }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error(String(r.status));
+    return true;
+  } catch (e) {
+    cvMessage("Canvas non salvato: " + e.message);
+    return false;
+  }
+}
+async function cvImages() {
+  try { CV.images = await (await fetch("/api/canvas-resources")).json(); } catch {}
+}
+$("canvas").addEventListener("change", async (ev) => {
+  if (!CV.edit || ev.target.id !== "cvUpload" || !ev.target.files[0]) return;
+  const f = ev.target.files[0];
+  const r = await fetch("/api/canvas-resources?name=" + encodeURIComponent(f.name), { method: "POST", headers: { "Content-Type": f.type, ...authHeaders() }, body: f });
+  if (!r.ok) return cvMessage("Immagine non caricata: .png, .jpg, .gif o .webp fino a 10 MB");
+  await cvImages();
+  const e = cvSel();
+  if (e) e.props.src = (await r.json()).path;
+  CV.key = "";
+  renderCanvas();
+});
+const cvMessage = (text) => { const m = $("cvMsg"); if (m) m.textContent = text; };
+
+$("cvNew").onclick = newCanvas;
+$("cvList").addEventListener("click", (e) => { const b = e.target.closest("[data-canvas]"); if (b) openCanvas(b.dataset.canvas); });
+
 // ---------- spoken cues (Web Speech API, on this device) ----------
 function speak(text, interrupt) {
   if (!("speechSynthesis" in window) || !text) return;
@@ -1621,6 +2176,11 @@ function renderSettings() {
     if (p) el.textContent = p.drift;
   });
   $("sharedList").textContent = Object.entries(state.shared || {}).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(" · ") || "nessuna";
+  const cvNames = JSON.stringify(state.canvases);
+  if ($("cvList").dataset.k !== cvNames) {
+    $("cvList").dataset.k = cvNames;
+    $("cvList").innerHTML = state.canvases.map((n) => `<li><button class="btn" data-canvas="${esc(n)}">Apri «${esc(n)}»</button></li>`).join("");
+  }
 }
 function buildSettings() {
   document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });
@@ -1840,8 +2400,9 @@ function showView(v) {
   view = v;
   store.set("openset.view", v);
   document.querySelectorAll("nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.view === v)));
-  for (const id of ["setlist", "stage", "lyrics", "mixer", "settings"]) $(id).hidden = id !== v;
-  stageKey = settingsKey = mixerKey = "";
+  for (const id of ["setlist", "stage", "lyrics", "mixer", "canvas", "settings"]) $(id).hidden = id !== v;
+  stageKey = settingsKey = mixerKey = CV.key = "";
+  cvSubscribe(v === "canvas"); // OSC values for the templates, only while a canvas is on screen
   lyr.song = null;
   if (v === "settings") { loadConnect(); loadScript(); }
   sendDevice();

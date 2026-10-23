@@ -537,7 +537,7 @@ test("devices: OSC and HTTP commands reach the matching browsers only", async (t
   await phone.got({ action: "reload" });
   assert.ok(!phone.msgs.some((m) => m.action === "showPage"), "phone kept its page");
   assert.equal((await c.cmd({ cmd: "devices", action: "lock", devices: "phone" })).status, 200);
-  assert.equal((await c.cmd({ cmd: "devices", action: "showPage", devices: "all", page: "canvas" })).status, 400);
+  assert.equal((await c.cmd({ cmd: "devices", action: "showPage", devices: "all", page: "audio-interfaces" })).status, 400); // not in OpenSet
   assert.equal((await c.cmd({ cmd: "devices", action: "explode", devices: "all" })).status, 400);
 });
 

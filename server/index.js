@@ -83,7 +83,7 @@ const validName = (n) => typeof n === "string" && n.trim().length > 0 && n.lengt
 const SETTING_VALUES = {
   jumpMode: JUMP_MODES,
   countInBars: [1, 2, 4],
-  defaultView: ["setlist", "stage", "lyrics", "mixer", "settings"],
+  defaultView: ["setlist", "stage", "lyrics", "mixer", "canvas", "settings"],
   openBrowser: ["start", "live", "off"], // AbleSet: Open AbleSet on Start (when Live connects)
   scene: ["main", "backup"], // AbleNet: Connected Scene
   network: (v) => typeof v === "string" && v.length <= 64, // Preferred Network: an interface name, "" for all
@@ -1330,7 +1330,7 @@ function start(opts = {}) {
     const targets = new Set(matchDevices([...devices.values()], spec));
     for (const [ws, d] of devices) {
       if (!targets.has(d)) continue;
-      if (action === "showPage") ws.send(JSON.stringify({ type: "device", action, view }));
+      if (action === "showPage") ws.send(JSON.stringify({ type: "device", action, view, page: String(page || "") })); // page: "canvas/<name>"
       else if (action === "reload") ws.send(JSON.stringify({ type: "device", action }));
       else {
         d.locked = action === "toggleLock" ? !d.locked : action === "lock";

@@ -419,3 +419,14 @@ test("F5: a canvas slider sets a shared variable that a label shows on every dev
   await expect.poll(async () => (await openset.state()).shared.luci).toBe(7);
   await other.close();
 });
+
+test("F3: «show page lyrics/<slug>» (OSC /devices/showPage) opens that +LYRICS track, like AbleSet", async ({ page, openset }) => {
+  await openset.clips([
+    { name: "Leo +LYRICS", clips: [{ name: "Riga di Leo", start: 0, end: 4 }] },
+    { name: "Backing Vox +LYRICS", clips: [{ name: "Riga dei cori", start: 0, end: 4 }] },
+  ]);
+  await page.goto(openset.url());
+  await connected(page);
+  await openset.cmd({ cmd: "devices", action: "showPage", devices: "all", page: "lyrics/backing-vox" });
+  await expect(page.locator("#lyrics")).toContainText("Riga dei cori");
+});
