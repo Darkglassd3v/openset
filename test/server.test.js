@@ -2938,3 +2938,87 @@ test("F1: a song added by hand gets the same key on the backup computer", async 
   await waitFor(async () => (await backup.state()).setlist.some((s) => s.manual), "copied to the backup");
   assert.equal((await backup.state()).setlist.find((s) => s.manual).key, key);
 });
+
+// a multi-file project with three songs, and OpenSet's hands on Live faked: what it opens and saves
+async function multiSetup(t, extra = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-multi-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const f of ["01 Intro.als", "02 Roads [3.00].als", "03 Finale.als"]) fs.writeFileSync(path.join(dir, f), "als");
+  const opened = [];
+  const saved = [];
+  const c = await setup(t, { openFile: (f) => opened.push(f), saveLiveSet: () => saved.push(Date.now()), ...extra });
+  await c.connect({ ...LIVE, key: "a".repeat(32), cues: [{ name: "Intro", time: 0 }, { name: "SONG END", time: 16 }] });
+  return { c, dir, opened, saved };
+}
+// Live has loaded a file: the Remote Script starts again (a new key) with that file's locators
+const loadedInLive = (c, n, cues) => c.sendLive({ ...LIVE, key: String(n).repeat(32), cues });
+
+test("F9: a multi-file project: the files are the setlist; choosing one saves the open set and opens the file in Live", async (t) => {
+  const { c, dir, opened, saved } = await multiSetup(t);
+  assert.equal((await c.cmd({ cmd: "multiFile", folder: path.join(dir, "nope") })).status, 400);
+  assert.equal((await c.cmd({ cmd: "multiFile", folder: dir })).status, 200);
+  let st = await c.state();
+  assert.deepEqual(st.setlist.map((s) => s.name), ["01 Intro", "02 Roads", "03 Finale"]);
+  assert.equal(st.setlist[1].seconds, 180); // [3.00] in the file name
+  assert.equal(st.multiFile.folder, dir);
+
+  await c.cmd({ cmd: "song", index: 1 });
+  await waitFor(() => opened.length, "the file opened in Live");
+  assert.equal(opened[0], path.join(dir, "02 Roads [3.00].als"));
+  assert.equal(saved.length, 1); // Save Changes Before Loading Project is on by default
+  assert.equal((await c.state()).multiFile.loading, "02 Roads [3.00]");
+
+  loadedInLive(c, "b", [{ name: "Roads", time: 0 }, { name: ">Verse", time: 4 }, { name: "SONG END", time: 32 }]);
+  await waitFor(async () => (await c.state()).multiFile.loaded === "02 Roads [3.00]", "the file loaded");
+  st = await c.state();
+  assert.equal(st.multiFile.loading, null);
+  assert.deepEqual(st.setlist[1].sections.map((x) => x.name), ["Verse"]);
+  assert.equal(st.current, 1);
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.has("/global/projectName"), "file values over OSC");
+  assert.deepEqual([got.get("/global/projectName"), got.get("/global/isLoadingFile")], [["02 Roads [3.00]"], [0]]);
+
+  // the loaded song ends: Live stops and the next file is loaded (Jump to the next song after a stop)
+  await c.at(28, { is_playing: true });
+  for (const beat of [30, 31.9, 32.1]) await c.at(beat, { is_playing: true });
+  await waitFor(() => opened.length === 2, "the next file");
+  assert.equal(opened[1], path.join(dir, "03 Finale.als"));
+  assert.equal((await c.cmd({ cmd: "multiFile", folder: "" })).status, 200); // off: back to the locators
+  assert.equal((await c.state()).multiFile.folder, "");
+});
+
+test("F9: Delay Before Jumping to Song File: Next pressed twice opens only the song two ahead", async (t) => {
+  const { c, dir, opened } = await multiSetup(t);
+  await c.cmd({ cmd: "multiFile", folder: dir });
+  await c.cmd({ cmd: "settings", songFileDelay: 500, saveBeforeLoading: false });
+  await c.cmd({ cmd: "next" });
+  await c.cmd({ cmd: "next" });
+  await pause(200);
+  assert.equal(opened.length, 0, "still waiting");
+  await waitFor(() => opened.length, "opened after the delay");
+  await pause(300);
+  assert.deepEqual(opened, [path.join(dir, "03 Finale.als")]);
+  assert.equal((await c.cmd({ cmd: "settings", songFileDelay: 700 })).status, 400); // None, 500 ms, 1, 2 or 3 s
+});
+
+test("F9: Sync Group Solos & Mutes (and Volumes) Between Songs carries the mixer into the next file", async (t) => {
+  const { c, dir } = await multiSetup(t);
+  await c.cmd({ cmd: "multiFile", folder: dir });
+  await c.cmd({ cmd: "settings", mixerTransferGroupStates: true, mixerTransferGroupVolumes: true, saveBeforeLoading: false });
+  c.sendLive({ type: "mixer", tracks: [{ i: 0, name: "Vox +G:VOX", mute: true, solo: false, volume: 0.5, meter: 0 }] });
+  await c.at(9);
+  await waitFor(async () => (await c.state()).mixer.length === 1, "mixer of the first file");
+  await c.cmd({ cmd: "song", index: 2 });
+  loadedInLive(c, "c", [{ name: "Finale", time: 0 }, { name: "SONG END", time: 16 }]);
+  await waitFor(async () => (await c.state()).multiFile.loaded === "03 Finale", "loaded");
+  const muted = c.expectCmd({ cmd: "mixer", track: 3, name: "Cori +G:VOX", mute: true });
+  const volume = c.expectCmd({ cmd: "mixer", track: 3, name: "Cori +G:VOX", volume: 0.5 });
+  c.sendLive({ type: "mixer", tracks: [{ i: 3, name: "Cori +G:VOX", mute: false, solo: false, volume: 0.85, meter: 0 }] });
+  await c.at(1);
+  await muted;
+  await volume;
+});
