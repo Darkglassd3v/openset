@@ -247,6 +247,14 @@ class OpenSetTest(unittest.TestCase):
         self.assertEqual([(x.name, x.color_index) for x in (a, b, c)], [("Verse", 9), ("Chorus", 5), ("Solo x", 1)])
         self.assertEqual((other.name, other.color_index), ("Pad [red]", 3))  # no +CC/+CLIPCOLORS: untouched
 
+    def test_clip_colors_from_names_read_back_as_the_same_color(self):
+        # AbleSet's table (CLIP_COLORS in server/setlist.js): column of Live's palette -> color.
+        # A section written "[teal]" gets a clip color that OpenSet reads back as teal
+        table = ["red", "orange", "amber", "yellow", "lime", "green", "emerald", "teal",
+                 "sky", "blue", "violet", "purple", "pink", "gray"]
+        for column, name in enumerate(table):
+            self.assertEqual(script.COLOR_COLUMNS[name], column, name)
+
     def test_place_and_remove_section_locators(self):
         self.song.cue_points = [FakeCue("Song A", 0.0), FakeCue(">Chorus", 8.0)]
         clips = [FakeClip("Verse", 0.0, 8.0), FakeClip("Chorus", 8.0, 16.0), FakeClip("Bridge", 16.0, 24.0)]
