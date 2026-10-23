@@ -2556,3 +2556,40 @@ test("F2: a +LOOP section from a clip, with no locator at its end, also waits fo
   assert.ok(!c.cmds.slice(before).some((m) => m.cmd === "jump"), "Live could not quantize it to the section end");
   assert.equal((await c.state()).queued.time, 24);
 });
+
+test("F3: several +LYRICS tracks: listed in the state, chosen per request, sent over OSC, and jumped by lines", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 16 }, { name: "A", time: 32 }, { name: "SONG END", time: 48 }] });
+  c.sendLive({
+    type: "clips",
+    tracks: [
+      { name: "Leo +LYRICS", clips: [{ name: "[G]Uno", start: 0, end: 4 }, { name: "Due", start: 4, end: 8 }, { name: "Tre", start: 8, end: 12 }, { name: "Ripresa", start: 32, end: 36 }] },
+      { name: "Backing Vox +LYRICS", clips: [{ name: "Uh", start: 2, end: 6 }] },
+    ],
+  });
+  await waitFor(async () => (await c.state()).lyricsTracks?.length === 2, "lyrics tracks in the state");
+  assert.deepEqual((await c.state()).lyricsTracks, [{ slug: "leo", name: "Leo" }, { slug: "backing-vox", name: "Backing Vox" }]);
+
+  const get = async (p) => (await fetch(c.url(p))).json();
+  const backing = await get("/api/lyrics/A?track=backing-vox");
+  assert.equal(backing.track, "backing-vox");
+  assert.deepEqual(backing.lines.map((l) => l.segments[0].text), ["Uh"]);
+  assert.equal((await get("/api/lyrics/A")).track, "leo");
+  // the reprise (same name) shows its own lines: songs are asked for by key
+  assert.deepEqual((await get("/api/lyrics/A%232")).lines.map((l) => l.segments[0].text), ["Ripresa"]);
+
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  await c.at(5);
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.get("/lyrics/leo/current")?.[0] === "Due", "current line of leo");
+  assert.deepEqual(got.get("/lyrics/leo/previous"), ["Uno"]); // without the chord
+  assert.deepEqual(got.get("/lyrics/leo/next"), ["Tre"]);
+  assert.deepEqual(got.get("/lyrics/backing-vox/current"), ["Uh"]);
+
+  const jumped = c.expectCmd({ cmd: "jump", time: 8 });
+  sendOsc(c, osc, "/lyrics/jumpByLines", ["leo", 1]);
+  await jumped;
+});

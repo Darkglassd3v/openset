@@ -61,6 +61,8 @@ const test = base.test.extend({
       url: (p = "/", host = "127.0.0.1") => `http://${host}:${srv.httpPort}${p}`,
       // changes what the fake Live reports
       live: (extra = {}) => { state = { ...state, ...extra }; if (running) send(); },
+      // the clips of the Sections and +LYRICS tracks, sent by Live in their own message
+      clips: (tracks) => live.send(JSON.stringify({ type: "clips", tracks }), srv.statePort, "127.0.0.1"),
       state: async () => (await fetch(o.url("/api/state"))).json(),
       cmd: (body) => fetch(o.url("/api/cmd"), { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }),
       stop: async () => { running = false; await srv.close(); },

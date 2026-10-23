@@ -321,3 +321,20 @@ test("T2: with a password OpenSet cannot read, the page sends nothing and says t
   await expect(page.locator("#authStatus")).toContainText("computer");
   expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
 });
+
+test("F3: with two singers each device picks its +LYRICS track, and keeps it", async ({ page, openset }) => {
+  await openset.clips([
+    { name: "Leo +LYRICS", clips: [{ name: "Riga di Leo", start: 0, end: 4 }] },
+    { name: "Backing Vox +LYRICS", clips: [{ name: "Riga dei cori", start: 0, end: 4 }] },
+  ]);
+  await page.goto(openset.url());
+  await connected(page);
+  await tab(page, "lyrics");
+  await expect(page.locator("#lyrics")).toContainText("Riga di Leo");
+  await page.selectOption("#lyrTrack", "backing-vox");
+  await expect(page.locator("#lyrics")).toContainText("Riga dei cori");
+  await page.reload();
+  await connected(page);
+  await expect(page.locator("#lyrics")).toContainText("Riga dei cori");
+  await expect(page.locator("#lyrTrack")).toHaveValue("backing-vox");
+});
