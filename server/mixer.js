@@ -73,7 +73,8 @@ function mixerCommands(tracks, group, change) {
     for (const t of tracks) if (neverMute(t.name)) set(t.i, "solo", on || others);
   } else if ("volume" in change) {
     if (typeof change.volume !== "number" || !Number.isFinite(change.volume)) return null;
-    for (const i of g.tracks) set(i, "volume", Math.max(0, Math.min(1, change.volume)));
+    // always to every track: during a fade Live reports the volume a moment late
+    for (const i of g.tracks) want.set(i, { volume: Math.max(0, Math.min(1, change.volume)) });
   } else return null;
   return [...want].sort((a, b) => a[0] - b[0]).map(([i, fields]) => ({ track: i, name: byIndex.get(i).name, ...fields }));
 }

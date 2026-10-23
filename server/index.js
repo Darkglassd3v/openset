@@ -18,6 +18,7 @@ const { WebSocketServer } = require("ws");
 const { parseAls } = require("./als-parser");
 const S = require("./setlist");
 const L = require("./lyrics");
+const M = require("./mixer");
 const osc = require("./osc");
 const { createEngine } = require("./engine");
 const { createMeter } = require("./meter");
@@ -260,6 +261,10 @@ function start(opts = {}) {
   };
   let cues = []; // Live's cue points, sent only when they change
   let tracks = []; // Sections / +LYRICS clips
+  let mixerTracks = []; // AbleSet's mixer: tracks in a group, Click, +NEVERMUTE ({ i, name, mute, solo, volume, meter })
+  const fades = new Map(); // group -> { to, speed, value }: a fadeTo under way
+  const fadeFrom = new Map(); // group -> its volume before the last fade ("previous")
+  let fadeTimer = null;
   let lyricsRev = 0;
   let lastLiveMsg = 0;
   let lastStateAt = 0; // when the last state arrived: tells a seek from a late report
@@ -492,6 +497,7 @@ function start(opts = {}) {
       lyricsRev,
       lyricsTracks: L.lyricsTracks(currentTracks()), // each device picks one (AbleSet: by slug)
       shared: prefs.shared,
+      mixer: M.mixerState(mixerTracks).map((g) => ({ ...g, isFading: fades.has(g.name) })),
       scriptInstall: cfg.scriptInstall,
       devices: [...devices.values()],
       passwordSet: !!prefs.auth,
@@ -540,6 +546,13 @@ function start(opts = {}) {
     lastLiveMsg = Date.now();
     if (msg.type === "chunk") return handleChunk(msg);
     if (msg.type === "log") return log.info(`[script] ${String(msg.msg)}`);
+    if (msg.type === "mixer") {
+      // from a local UDP port: checked like any input; shown with the next state (~100 ms)
+      const ok = (t) => t && Number.isInteger(t.i) && typeof t.name === "string" && typeof t.mute === "boolean" &&
+        typeof t.solo === "boolean" && num(t.volume) && num(t.meter);
+      mixerTracks = Array.isArray(msg.tracks) ? msg.tracks.filter(ok).slice(0, 500) : [];
+      return;
+    }
     if (msg.type === "clips") {
       const next = Array.isArray(msg.tracks) ? msg.tracks : [];
       if (JSON.stringify(next) === JSON.stringify(tracks)) return; // periodic resend: lyrics stay as they are
@@ -867,6 +880,28 @@ function start(opts = {}) {
     return true;
   }
 
+  // fades move the volume 20 times a second until every one has reached its target
+  function runFades() {
+    if (fadeTimer) return;
+    let last = Date.now(); // real time even when cfg.now is a test clock
+    fadeTimer = setInterval(() => {
+      const now = Date.now();
+      const dt = (now - last) / 1000;
+      last = now;
+      for (const [group, f] of fades) {
+        f.value = M.fadeStep(f.value, f.to, f.speed, dt);
+        const cmds = M.mixerCommands(mixerTracks, group, { volume: f.value });
+        for (const c of cmds || []) sendToLive({ cmd: "mixer", ...c });
+        if (!cmds || f.value === f.to) fades.delete(group);
+      }
+      if (!fades.size) {
+        clearInterval(fadeTimer);
+        fadeTimer = null;
+        changed();
+      }
+    }, 50);
+  }
+
   // a slider moves a variable many times a second: saved once it settles
   let saveTimer = null;
   function sharedChanged() {
@@ -1073,6 +1108,29 @@ function start(opts = {}) {
       }
       case "devices":
         return deviceCommand(msg);
+      case "mixer": {
+        // one change per command: { group, mute | solo (true, false, "toggle") | volume (0-1) }
+        const what = ["mute", "solo", "volume"].filter((k) => k in msg);
+        if (what.length !== 1) return false;
+        const cmds = M.mixerCommands(mixerTracks, msg.group, { [what[0]]: msg[what[0]] });
+        if (!cmds) return false;
+        if (what[0] === "volume" && fades.delete(msg.group)) changed(); // a hand on the fader stops the fade
+        for (const c of cmds) sendToLive({ cmd: "mixer", ...c });
+        return true;
+      }
+      case "mixerFade": {
+        // AbleSet's fadeTo: to a volume (0-1) or "previous", speed 1 = 5 s for the whole range
+        const g = M.mixerState(mixerTracks).find((x) => x.name === msg.group);
+        const to = msg.to === "previous" ? fadeFrom.get(msg.group) : msg.to;
+        const speed = msg.speed ?? 1;
+        if (!g || !num(to) || to < 0 || to > 1 || !num(speed) || speed <= 0 || speed > 100) return false;
+        const value = fades.has(msg.group) ? fades.get(msg.group).value : g.volume;
+        fadeFrom.set(msg.group, value);
+        fades.set(msg.group, { to, speed, value });
+        runFades();
+        changed();
+        return true;
+      }
       case "setShared": {
         if (!validSharedKey(msg.key) || !validSharedValue(msg.value)) return false;
         if (!Object.hasOwn(prefs.shared, msg.key) && Object.keys(prefs.shared).length >= SHARED_MAX) return false;
@@ -1143,6 +1201,17 @@ function start(opts = {}) {
     // AbleSet: /shared/<name> value…, several values make a list
     if (address.startsWith("/shared/")) return runOsc({ cmd: "setShared", key: address.slice(8), value: args.length === 1 ? args[0] : args });
     const [a, b] = args;
+    // AbleSet's mixer: /mixer/<group>/mute|solo|volume|fadeTo, and /click/mute|solo for the Click group
+    let mix = /^\/mixer\/([^/]+)\/(mute|solo|volume|fadeTo)$/.exec(address);
+    if (!mix && /^\/click\/(mute|solo)$/.test(address)) mix = [address, "CLICK", address.slice(7)];
+    if (mix) {
+      const [, group, what] = mix;
+      if (what === "volume") return runOsc({ cmd: "mixer", group, volume: Number(a) });
+      if (what === "fadeTo")
+        return runOsc({ cmd: "mixerFade", group, to: a === "previous" ? a : Number(a), ...(b !== undefined ? { speed: Number(b) } : {}) });
+      const on = M.boolArg(a);
+      return on !== null && runOsc({ cmd: "mixer", group, [what]: on });
+    }
     const list = setlist();
     const cur = S.songAt(list, liveState.beat);
     const song = list[cur];
@@ -1304,6 +1373,14 @@ function start(opts = {}) {
       "/setlist/queuedIndex": st.queued ? [st.queued.song, st.queued.section] : [-1, -1],
       ...lyricsOsc(song, st.beat),
       ...Object.fromEntries(Object.entries(st.shared).map(([k, v]) => [`/shared/${k}`, Array.isArray(v) ? v : [v]])),
+      "/mixer/names": st.mixer.map((g) => g.name),
+      ...Object.fromEntries(st.mixer.flatMap((g) => [
+        [`/mixer/${g.name}/muted`, [g.muted ? 1 : 0]],
+        [`/mixer/${g.name}/soloed`, [g.soloed ? 1 : 0]],
+        [`/mixer/${g.name}/volume`, [g.volume]],
+        [`/mixer/${g.name}/isFading`, [g.isFading ? 1 : 0]],
+        [`/mixer/${g.name}/meter`, [g.meter]],
+      ])),
     };
   }
 
@@ -1708,6 +1785,7 @@ function start(opts = {}) {
     clearInterval(timer);
     clearInterval(peerTimer);
     clearInterval(pingTimer);
+    clearInterval(fadeTimer);
     for (const c of wss.clients) c.terminate();
     wss.close();
     for (const u of [udp, stateUdp]) try { u.close(); } catch {} // the OSC socket is closed when its port was busy
