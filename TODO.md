@@ -62,7 +62,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
 - [x] C4 (RED `f5fc84c`, GREEN) Log: se OpenSet restava acceso per giorni, `openset.log` cresceva senza limite (si accorciava solo all'avvio). Ora oltre 1 MB passa a `openset.old.log` anche mentre è acceso.
 - [x] C5 (RED `e9102ef`, GREEN) User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
 - [x] C6 (RED `4962104`, GREEN) Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
-- [ ] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Trovare la causa e toglierla.
+- [x] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Causa trovata: non era OpenSet ma lo strumento usato per misurare (Chrome comandato da `chrome-devtools`). Misurato in Chrome normale, dal computer e dall'indirizzo di rete, con Live collegato e 300 locator: primo stato in 40-100 ms, «Live connesso» in 100-220 ms; anche la versione di allora (`f883623`) è veloce. Test di guardia in `e2e/ui.spec.js` (primo stato entro 1 s)
 - [ ] Rilascio 0.6.2: copertura, CHANGELOG, report TDD, versione, `code-review` e correzione di tutto quello che trova, PR, CI, merge, tag
 
 ### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
@@ -87,6 +87,8 @@ Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per
 
 ### Da verificare su un computer vero (qui non si può provare)
 - C5: formato di `Library.cfg` (`<UserLibrary><LibraryProject><ProjectPath Value=…/><ProjectName Value=…/>`) su un Mac e un Windows con Live 11/12 e la User Library spostata: se il formato è diverso, OpenSet usa ancora le cartelle standard come prima
+
+- C7: tempo della prima connessione su Safari di un iPad vero (in Chrome 40-100 ms)
 
 ### Non fattibili su questo computer (detto all'utente il 2026-10-23)
 - Pacchetto log del tester (bug della scaletta che sparisce): serve il file che deve mandare lui.
@@ -179,7 +181,7 @@ Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per
 - [x] GREEN: `remote-script/OpenSet/OpenSet.py`, server (clip uguali ignorate)
 - Non corretti: lettura dei cue a ogni tick con set molto grandi (non misurato in Live, da rivedere se il pacchetto log mostra rallentamenti); comandi da altri programmi dello stesso computer (la porta 39050 è già solo su 127.0.0.1)
 - [x] `ecc:e2e-testing` (Playwright) per i flussi principali della UI: `e2e/ui.spec.js` (A2), in CI su Ubuntu
-- [ ] Verificare su Safari/iPad il tempo della prima connessione WebSocket: nel Chrome di test 1-2,4 s (da Node 8 ms, HTTP 3 ms)
+- [x] Tempo della prima connessione WebSocket: misurato in C7 (v0.6.2), 40-100 ms in Chrome; su Safari/iPad vero resta in «Da verificare»
 - [ ] prima di ogni merge `code-review` sulla PR; ai rilasci grossi `ecc:orch-review`
 - Un primo audit generico era partito in background ed è stato fermato su richiesta dell'utente (si rifà con queste skill)
 

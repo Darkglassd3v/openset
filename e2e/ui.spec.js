@@ -231,3 +231,20 @@ test("C3: unlocking sends a proof made from the password, never the password", a
   expect(sent.some((p) => p.includes('"proof"'))).toBe(true);
   expect(sent.filter((p) => p.includes("palco-2026"))).toEqual([]);
 });
+
+test("C7: the first state arrives quickly after the page opens", async ({ page, openset }) => {
+  // measured in the page, from the start of the navigation: browser start-up does not count
+  await page.addInitScript(() => {
+    const W = window.WebSocket;
+    window.WebSocket = function (u) {
+      const ws = new W(u);
+      ws.addEventListener("message", () => { if (!window.firstMessageAt) window.firstMessageAt = performance.now(); });
+      return ws;
+    };
+    window.WebSocket.prototype = W.prototype;
+  });
+  await page.goto(openset.url());
+  await connected(page);
+  // ~50 ms on a developer computer; 1-2.4 s was the delay of the chrome-devtools tool used to measure
+  expect(await page.evaluate(() => window.firstMessageAt)).toBeLessThan(1000);
+});
