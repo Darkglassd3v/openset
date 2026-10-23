@@ -85,6 +85,17 @@ const SETTING_VALUES = {
   scene: ["main", "backup"], // AbleNet: Connected Scene
   network: (v) => typeof v === "string" && v.length <= 64, // Preferred Network: an interface name, "" for all
 };
+// AbleSet's shared variables: a name (slashes allowed, no spaces) and a value or a list of values
+const sharedScalar = (v) =>
+  v === null || typeof v === "boolean" || (typeof v === "string" && v.length <= 1000) || (typeof v === "number" && Number.isFinite(v));
+const validSharedKey = (k) => typeof k === "string" && /^\S{1,128}$/.test(k);
+const validSharedValue = (v) => sharedScalar(v) || (Array.isArray(v) && v.length <= 64 && v.every(sharedScalar));
+const SHARED_MAX = 500;
+function cleanShared(obj) {
+  if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
+  return Object.fromEntries(Object.entries(obj).filter(([k, v]) => validSharedKey(k) && validSharedValue(v)).slice(0, SHARED_MAX));
+}
+
 const validSetting = (k, v) => {
   const rule = SETTING_VALUES[k];
   return typeof rule === "function" ? rule(v) : rule ? rule.includes(v) : typeof v === "boolean";
@@ -147,7 +158,10 @@ function defaultPrefs() {
       scene: "main",
       driftCorrection: false,
       network: "",
+      // MIDI Mapping, OSC & Scripting
+      persistSharedVariables: false,
     },
+    shared: {}, // AbleSet's shared variables (/shared/<name>), saved only with persistSharedVariables
     saved: {},
     backups: [], // saved setlists replaced by a newer save: { name, at, data }, newest first
     setlistName: null,
@@ -281,6 +295,7 @@ function start(opts = {}) {
       ...base,
       ...(cleanSetlist(saved, base) || {}),
       settings,
+      shared: settings.persistSharedVariables ? cleanShared(saved.shared) : {},
       keys: Object.keys(saved).length ? saved.keys === true : true, // no file yet: nothing from 0.6.1
       measuredKeys: Object.keys(saved).length ? (saved.measuredKeys ?? saved.keys) === true : true,
       keyTimes:
@@ -314,7 +329,8 @@ function start(opts = {}) {
       const tmp = PREFS_FILE + ".tmp";
       fs.rmSync(tmp, { force: true });
       const auth = prefs.auth && prefs.auth.unreadable ? prefs.auth.raw : prefs.auth; // as it was in the file
-      fs.writeFileSync(tmp, JSON.stringify({ ...prefs, auth }, null, 2), { mode: 0o600 });
+      const shared = prefs.settings.persistSharedVariables ? prefs.shared : {};
+      fs.writeFileSync(tmp, JSON.stringify({ ...prefs, auth, shared }, null, 2), { mode: 0o600 });
       fs.renameSync(tmp, PREFS_FILE);
     } catch (e) {
       log.error(`[prefs] cannot save ${PREFS_FILE}: ${e.message}`);
@@ -475,6 +491,7 @@ function start(opts = {}) {
       queued: queued && queuedInfo(list),
       lyricsRev,
       lyricsTracks: L.lyricsTracks(currentTracks()), // each device picks one (AbleSet: by slug)
+      shared: prefs.shared,
       scriptInstall: cfg.scriptInstall,
       devices: [...devices.values()],
       passwordSet: !!prefs.auth,
@@ -850,6 +867,20 @@ function start(opts = {}) {
     return true;
   }
 
+  // a slider moves a variable many times a second: saved once it settles
+  let saveTimer = null;
+  function sharedChanged() {
+    if (prefs.settings.persistSharedVariables) {
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        saveTimer = null;
+        savePrefs();
+      }, 300);
+    }
+    changed();
+    return true;
+  }
+
   function setPrefs(patch) {
     prefs = { ...prefs, ...patch };
     savePrefs();
@@ -1042,6 +1073,18 @@ function start(opts = {}) {
       }
       case "devices":
         return deviceCommand(msg);
+      case "setShared": {
+        if (!validSharedKey(msg.key) || !validSharedValue(msg.value)) return false;
+        if (!Object.hasOwn(prefs.shared, msg.key) && Object.keys(prefs.shared).length >= SHARED_MAX) return false;
+        prefs.shared = { ...prefs.shared, [msg.key]: msg.value };
+        return sharedChanged();
+      }
+      case "resetShared": {
+        if (!validSharedKey(msg.key)) return false;
+        const { [msg.key]: _gone, ...rest } = prefs.shared;
+        prefs.shared = rest;
+        return sharedChanged();
+      }
       case "setPassword": {
         // "" removes it; only browsers that may command get here. A promise: computed without
         // blocking (Live keeps playing), and the HTTP answer waits for it
@@ -1097,6 +1140,8 @@ function start(opts = {}) {
   // AbleSet-compatible OSC: https://ableset.com/docs/osc (subset)
   function handleOsc({ address, args }, rinfo) {
     const runOsc = (msg) => runCommand(msg, "osc");
+    // AbleSet: /shared/<name> value…, several values make a list
+    if (address.startsWith("/shared/")) return runOsc({ cmd: "setShared", key: address.slice(8), value: args.length === 1 ? args[0] : args });
     const [a, b] = args;
     const list = setlist();
     const cur = S.songAt(list, liveState.beat);
@@ -1258,6 +1303,7 @@ function start(opts = {}) {
       "/settings/safeMode": [st.settings.safeMode ? 1 : 0],
       "/setlist/queuedIndex": st.queued ? [st.queued.song, st.queued.section] : [-1, -1],
       ...lyricsOsc(song, st.beat),
+      ...Object.fromEntries(Object.entries(st.shared).map(([k, v]) => [`/shared/${k}`, Array.isArray(v) ? v : [v]])),
     };
   }
 
@@ -1655,6 +1701,10 @@ function start(opts = {}) {
   function close() {
     if (closed) return Promise.resolve();
     closed = true;
+    if (saveTimer) {
+      clearTimeout(saveTimer); // shared variables still waiting to be saved
+      savePrefs();
+    }
     clearInterval(timer);
     clearInterval(peerTimer);
     clearInterval(pingTimer);

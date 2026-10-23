@@ -523,6 +523,8 @@
     <p>OSC compatibile con AbleSet sulla porta UDP <b>39051</b> (TouchOSC, Bitfocus Companion).
       HTTP: <span class="mono">POST /api/cmd</span> con <span class="mono">{"cmd":"next"}</span>.
       Stile personalizzato: <span class="mono">custom.css</span> accanto all'eseguibile.</p>
+    <p>Variabili condivise (OSC <span class="mono">/shared/nome valore</span>, come AbleSet): <span id="sharedList" class="mono"></span></p>
+    <label><input type="checkbox" data-set="persistSharedVariables"> Conserva le variabili condivise dopo un riavvio di OpenSet</label>
   </div>
 </main>
 
@@ -1526,6 +1528,7 @@ function renderSettings() {
     const p = state.peers[+el.dataset.i];
     if (p) el.textContent = p.drift;
   });
+  $("sharedList").textContent = Object.entries(state.shared || {}).map(([k, v]) => `${k} = ${JSON.stringify(v)}`).join(" · ") || "nessuna";
 }
 function buildSettings() {
   document.querySelectorAll("[data-set]").forEach((c) => { c.checked = !!state.settings[c.dataset.set]; });

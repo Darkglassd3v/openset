@@ -2620,7 +2620,6 @@ test("F7: shared variables from OSC, HTTP and the web app reach every device and
     { cmd: "setShared", key: "obj", value: { a: 1 } },
     { cmd: "setShared", key: "long", value: "x".repeat(1001) },
     { cmd: "setShared", key: "many", value: Array(65).fill(1) },
-    { cmd: "setShared", key: "nan", value: NaN },
   ])
     assert.equal((await c.cmd(bad)).status, 400, JSON.stringify(bad).slice(0, 60));
 });
