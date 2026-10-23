@@ -59,7 +59,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - Chi prova password a caso con IPv6 poteva cambiare indirizzo a ogni tentativo e non essere mai fermato. Ora i tentativi si contano per rete (/64).
   - Un dispositivo poteva aprire connessioni senza limite fino a rallentare OpenSet. Ora al massimo 20 per indirizzo e 100 in tutto.
   - Un altro programma sullo stesso computer poteva comandare Live al posto di OpenSet. Ora il Remote Script accetta solo i comandi con la chiave che manda a OpenSet.
-- [ ] C4 (RED fatto) Log: se OpenSet restava acceso per giorni, `openset.log` cresceva senza limite (si accorciava solo all'avvio). Ora oltre 1 MB passa a `openset.old.log` anche mentre è acceso.
+- [x] C4 (RED `f5fc84c`, GREEN) Log: se OpenSet restava acceso per giorni, `openset.log` cresceva senza limite (si accorciava solo all'avvio). Ora oltre 1 MB passa a `openset.old.log` anche mentre è acceso.
 - [ ] C5 User Library spostata: se in Live la User Library non è nella cartella standard, OpenSet non trovava dove installare il Remote Script. Ora legge la posizione da `Library.cfg` di Live.
 - [ ] C6 Set grandi: con centinaia di locator il Remote Script li rileggeva 10 volte al secondo, appesantendo Live. Ora una volta al secondo (una modifica ai locator arriva entro 1 s).
 - [ ] C7 Prima connessione lenta: aprendo la pagina passavano 1-2,4 s prima di vedere lo stato (nel Chrome dei test). Trovare la causa e toglierla.

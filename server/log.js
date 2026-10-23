@@ -5,11 +5,19 @@ const path = require("path");
 
 function createLog({ file = null, max = 500, maxBytes = 1000000, now = Date.now, echo = false } = {}) {
   const ring = [];
+  let size = 0; // bytes in the file, so it is shortened while OpenSet stays on for days
+  // one previous file is kept, so a log never grows without limit
+  const rotate = () => {
+    try {
+      fs.renameSync(file, file.replace(/\.log$/, "") + ".old.log");
+    } catch {}
+    size = 0;
+  };
   if (file) {
     try {
-      // one previous file is kept, so a log never grows without limit
-      if (fs.statSync(file).size > maxBytes) fs.renameSync(file, file.replace(/\.log$/, "") + ".old.log");
+      size = fs.statSync(file).size;
     } catch {}
+    if (size > maxBytes) rotate();
   }
   function write(level, msg) {
     const line = `${new Date(now()).toISOString()} ${level} ${msg}`;
@@ -18,8 +26,11 @@ function createLog({ file = null, max = 500, maxBytes = 1000000, now = Date.now,
     // echo: true prints every line, "errors" only the errors (tests, quiet mode)
     if (echo === true || (echo === "errors" && level === "ERROR")) (level === "ERROR" ? console.error : console.log)(msg);
     if (file) {
+      const bytes = Buffer.byteLength(line) + 1;
+      if (size && size + bytes > maxBytes) rotate();
       try {
         fs.appendFileSync(file, line + "\n");
+        size += bytes;
       } catch {} // a log that cannot be written must not stop the show
     }
   }
