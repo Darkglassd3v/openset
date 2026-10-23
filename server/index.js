@@ -96,6 +96,10 @@ const validSharedValue = (v) => sharedScalar(v) || (Array.isArray(v) && v.length
 const SHARED_MAX = 500;
 const SCRIPT_MAX = 200000; // characters of the project script
 const CANVAS_MAX = 50; // canvases per project
+// a song added by hand: { id (8 hex digits), name, seconds, lyrics? }
+const validManual = (m) =>
+  !!m && /^[0-9a-f]{8}$/.test(m.id) && validName(m.name) && num(m.seconds) && m.seconds >= 0 && m.seconds <= 36000 &&
+  (m.lyrics === undefined || (typeof m.lyrics === "string" && m.lyrics.length <= 20000));
 // AbleSet's Canvas: saved canvases, each checked again by C.cleanCanvas
 function cleanCanvases(obj) {
   if (!obj || typeof obj !== "object" || Array.isArray(obj)) return {};
@@ -188,6 +192,7 @@ function defaultPrefs() {
     auth: null, // web app password: { salt, iter, storedKey } (SCRAM), or { salt, hash } from OpenSet 0.6
     projectScript: "", // AbleSet's Project Script (JavaScript), run by server/script.js
     canvases: {}, // AbleSet's Canvas: name -> { name, elements } (server/canvas.js)
+    manualSongs: [], // songs added by hand, without a Live project (S.manualSongs)
   };
 }
 
@@ -291,6 +296,7 @@ function start(opts = {}) {
   let lastStateAt = 0; // when the last state arrived: tells a seek from a late report
   let offlineProject = null; // from .als parsing
   let queued = null; // { time, type: "song"|"section" }: a jump waiting for its moment
+  let manualCurrent = null; // key of the song played by hand right now (Live is not playing it)
   let prefs = loadPrefs();
   const engine = createEngine();
   const meter = createMeter();
@@ -324,6 +330,7 @@ function start(opts = {}) {
       shared: settings.persistSharedVariables ? cleanShared(saved.shared) : {},
       projectScript: typeof saved.projectScript === "string" && saved.projectScript.length <= SCRIPT_MAX ? saved.projectScript : "",
       canvases: cleanCanvases(saved.canvases),
+      manualSongs: Array.isArray(saved.manualSongs) ? saved.manualSongs.filter(validManual).slice(0, 200) : [],
       keys: Object.keys(saved).length ? saved.keys === true : true, // no file yet: nothing from 0.6.1
       measuredKeys: Object.keys(saved).length ? (saved.measuredKeys ?? saved.keys) === true : true,
       keyTimes:
@@ -375,7 +382,7 @@ function start(opts = {}) {
 
   function songs() {
     const source = useLive() ? cues : offlineProject.locators;
-    return S.buildSetlist(S.cuesFromLive(source, currentTracks()), prefs.keyTimes);
+    return [...S.buildSetlist(S.cuesFromLive(source, currentTracks()), prefs.keyTimes), ...S.manualSongs(prefs.manualSongs)];
   }
 
   // settings saved by OpenSet 0.6.1 use song names: converted once, as soon as there are songs
@@ -490,12 +497,18 @@ function start(opts = {}) {
     return out;
   }
 
+  // the current song: one played by hand while chosen, otherwise where Live's playhead is
+  function currentIndex(list) {
+    const m = manualCurrent === null ? -1 : list.findIndex((s) => s.key === manualCurrent);
+    return m >= 0 ? m : S.songAt(list, liveState.beat);
+  }
+
   function publicState(list = setlist()) {
     const tempo = liveState.connected
       ? liveState.tempo
       : (offlineProject && offlineProject.tempo) || liveState.tempo;
     const map = tempoMap();
-    const current = S.songAt(list, liveState.beat);
+    const current = currentIndex(list);
     return {
       ...liveState,
       version: VERSION,
@@ -671,6 +684,7 @@ function start(opts = {}) {
     const { type, cues: newCues, key, ...rest } = msg;
     if (typeof key === "string") liveKey = key; // kept out of the published state
     liveState = { ...liveState, ...rest, connected: true };
+    if (liveState.is_playing && !wasPlaying) manualCurrent = null; // Live plays again: its song is the current one
     if (!wasConnected && prefs.settings.openBrowser === "live") openUi();
     if (!wasConnected)
       log.info(
@@ -968,6 +982,20 @@ function start(opts = {}) {
     return !!sec.flags.LOOPFULL || !located;
   }
 
+  // a song of the setlist: a Live song is a jump; one played by hand becomes the current song
+  // and Live stops (it has nothing to play for it)
+  function goToSong(s) {
+    if (!s.manual) {
+      manualCurrent = null;
+      return jumpTo(s.playStart, "song");
+    }
+    manualCurrent = s.key;
+    queued = null;
+    if (liveState.is_playing) sendToLive({ cmd: "stop" });
+    changed();
+    return true;
+  }
+
   // A jump from the user. In the queued jump modes, while playing, it waits
   // for the engine (end of section/song) or for J / Shift+J / a stop.
   function jumpTo(time, type = "section") {
@@ -1033,7 +1061,7 @@ function start(opts = {}) {
   function handleCommand(msg, safe = false) {
     if (!msg || typeof msg !== "object") return false;
     const list = setlist();
-    const cur = S.songAt(list, liveState.beat);
+    const cur = currentIndex(list);
     const song = list[cur];
     const sec = S.sectionAt(song, liveState.beat);
     switch (msg.cmd) {
@@ -1088,23 +1116,44 @@ function start(opts = {}) {
       case "song": {
         if (safe) return false;
         const i = typeof msg.name === "string" ? list.findIndex((s) => s.name === msg.name) : msg.index;
-        return Number.isInteger(i) && !!list[i] && jumpTo(list[i].playStart, "song");
+        return Number.isInteger(i) && !!list[i] && goToSong(list[i]);
       }
       case "next": {
         if (safe) return false;
         const n = S.nextSong(list, cur);
-        if (n >= 0) jumpTo(list[n].playStart, "song");
+        if (n >= 0) goToSong(list[n]);
         return true;
       }
       case "prev": {
         // like AbleSet: back to the start of the song first, unless forced
-        if (song && !msg.force && prefs.settings.restartBeforeBack && liveState.beat - song.playStart > 1)
+        if (song && !song.manual && !msg.force && prefs.settings.restartBeforeBack && liveState.beat - song.playStart > 1)
           return jumpTo(song.playStart, "song");
         if (safe) return false;
         const p = S.prevSong(list, cur);
-        if (p >= 0) jumpTo(list[p].playStart, "song");
-        else if (song) jumpTo(song.playStart, "song");
+        if (p >= 0) goToSong(list[p]);
+        else if (song && !song.manual) jumpTo(song.playStart, "song");
         return true;
+      }
+      case "addManualSong":
+      case "updateManualSong": {
+        const update = msg.cmd === "updateManualSong";
+        const old = update ? prefs.manualSongs.find((m) => m.id === msg.id) : null;
+        if (update && !old) return false;
+        const song = { ...old };
+        for (const k of ["name", "seconds", "lyrics"]) if (msg[k] !== undefined) song[k] = msg[k];
+        if (!update) {
+          // the id goes out with the command copied to the backups: the same key there
+          if (msg.id === undefined) msg.id = crypto.randomBytes(4).toString("hex");
+          if (prefs.manualSongs.some((m) => m.id === msg.id) || prefs.manualSongs.length >= 200) return false;
+          song.id = msg.id;
+        }
+        if (!validManual(song)) return false;
+        return setPrefs({ manualSongs: update ? prefs.manualSongs.map((m) => (m.id === song.id ? song : m)) : [...prefs.manualSongs, song] });
+      }
+      case "deleteManualSong": {
+        if (!prefs.manualSongs.some((m) => m.id === msg.id)) return false;
+        if (manualCurrent === "manual:" + msg.id) manualCurrent = null;
+        return setPrefs({ manualSongs: prefs.manualSongs.filter((m) => m.id !== msg.id) });
       }
       case "section": {
         if (!song) return false;
@@ -1670,6 +1719,11 @@ function start(opts = {}) {
     const list = setlist();
     const song = list.find((s) => s.key === req.params.song) || list.find((s) => s.name === req.params.song);
     const name = song && song.name;
+    // a song added by hand: its own text, one line each, not timed
+    if (song && song.manual) {
+      const lines = song.lyrics.split("\n").filter((l) => l.trim()).map((text) => ({ beat: 0, text }));
+      return lines.length ? res.json({ ...L.normalizeLyrics({ lines }, null), static: true }) : res.status(404).json({ error: "No lyrics for this song" });
+    }
     let lyr = null;
     let transpose = song && song.transpose;
     // only songs of the setlist: no reads of names like CON or NUL on Windows

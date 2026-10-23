@@ -2901,13 +2901,10 @@ test("F1: a song added by hand: in the setlist, chosen without Live playing it, 
   assert.deepEqual([lyr.static, lyr.lines.map((l) => l.segments[0].text)], [true, ["Prima riga", "Seconda riga"]]);
 
   // Perché ends and the next song is played by hand: Live stops instead of jumping
-  await c.at(60, { is_playing: true });
+  const playing = { is_playing: true };
+  await c.at(60, playing);
   const stopped = c.expectCmd({ cmd: "stop" });
-  await c.at(63);
-  await c.at(66);
-  await c.at(69);
-  await c.at(71.9);
-  await c.at(72.1);
+  for (const beat of [63, 66, 69, 71.9, 72.1]) await c.at(beat, playing);
   await stopped;
   await c.at(72.1, { is_playing: false });
   // chosen: it becomes the current song; Live is not asked to play
