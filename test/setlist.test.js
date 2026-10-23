@@ -7,6 +7,7 @@ const {
   CLIP_COLORS,
   applyOrder,
   keyTimesOf,
+  migrateNames,
   songAt,
   sectionAt,
   nextSong,
@@ -482,13 +483,22 @@ test("R4: a reprise that stays where it was keeps its key when a song with the s
   assert.deepEqual(removed.map((s) => s.key), ["B", "Intro#2"]);
 });
 
-test("R4: settings saved by OpenSet 0.6.1 (by name) still apply to every song with that name", () => {
-  const base = buildSetlist([{ name: "Intro", time: 0 }, { name: "B", time: 8 }, { name: "Intro", time: 16 }]);
-  const old = { keys: false, order: ["B", "Intro"], skip: ["Intro"], stopAfter: ["Intro"], notes: { Intro: "capo 2" }, measured: { Intro: 90 } };
-  assert.deepEqual(
-    applyOrder(base, old).map((s) => [s.key, s.skip, s.stopAfter, s.notes, s.measured]),
-    [["B", false, false, "", null], ["Intro", true, true, "capo 2", 90], ["Intro#2", true, true, "capo 2", 90]]
-  );
-  // saved by 0.6.2: the key is the song
-  assert.deepEqual(applyOrder(base, { ...old, keys: true }).map((s) => s.skip), [false, true, false]);
+test("S1: settings saved by OpenSet 0.6.1 (by name) become one entry per song with that name", () => {
+  const songs = buildSetlist([{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }]);
+  const old = { order: ["B", "A"], skip: ["A"], stopAfter: ["A"], notes: { A: "capo 2" }, measured: { A: 90, Gone: 10 } };
+  assert.deepEqual(migrateNames(old, songs), {
+    order: ["B", "A", "A#2"],
+    skip: ["A", "A#2"],
+    stopAfter: ["A", "A#2"],
+    notes: { A: "capo 2", "A#2": "capo 2" },
+    measured: { A: 90, "A#2": 90, Gone: 10 },
+  });
+  // an order left to the timeline stays so: songs added later in Live go in their place
+  assert.deepEqual(migrateNames({ order: [], skip: [], stopAfter: [], notes: {}, measured: {} }, songs).order, []);
+});
+
+test("S1: a second song with the name of one already there does not take its settings", () => {
+  const one = buildSetlist([{ name: "Intro", time: 100 }]);
+  const two = buildSetlist([{ name: "Intro", time: 40 }, { name: "Intro", time: 100 }], keyTimesOf(one));
+  assert.deepEqual(two.map((s) => s.key), ["Intro#2", "Intro"]);
 });

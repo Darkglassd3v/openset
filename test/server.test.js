@@ -2161,6 +2161,7 @@ test("R4: a setlist saved by OpenSet 0.6.1 keeps its meaning until it is edited"
   // the old saved setlist, loaded again, means what it meant
   await c.cmd({ cmd: "loadSetlist", name: "Tour" });
   assert.deepEqual(await skips(), [["A", true, "capo 2"], ["A#2", true, "capo 2"], ["B", false, ""]]);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).saved.Tour.keys, undefined); // kept as it was
 });
 
 test("R4: a reprise keeps its settings when Live gets another song with the same name before it", async (t) => {
@@ -2186,7 +2187,45 @@ test("R4: with a 0.6.1 setlist, Remove Played Songs takes out only the song that
   await waitFor(async () => (await c.state()).setlist.find((s) => s.key === "A").skip, "the first A removed");
   const reprise = (await c.state()).setlist.find((s) => s.key === "A#2");
   assert.deepEqual([reprise.skip, reprise.notes, reprise.measured], [false, "capo 2", 90]);
+  // the order stays with the timeline: a locator added later in Live goes in its place
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(baseDir, "setlist.json"), "utf-8")).order, []);
   // and after an edit from the web app
   await c.cmd({ cmd: "setlist", stopAfter: ["B"] });
   assert.equal((await c.state()).setlist.find((s) => s.key === "A#2").measured, 90);
+});
+
+test("S1: a reprise keeps its settings across a restart of OpenSet", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  const cues = [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }];
+  const more = [cues[0], { name: "A", time: 4 }, ...cues.slice(1)];
+  const c = await setup(t, { baseDir });
+  await c.connect({ ...LIVE, cues });
+  await c.cmd({ cmd: "setlist", order: [], skip: ["A#2"], stopAfter: [], notes: { "A#2": "finale" } });
+  c.sendLive({ ...LIVE, cues: more });
+  await waitFor(async () => (await c.state()).setlist.length === 4, "the new song");
+  await c.srv.close();
+  const d = await setup(t, { baseDir });
+  await d.state(); // a page asks before Live sends its locators
+  await d.connect({ ...LIVE, cues: more });
+  const byTime = Object.fromEntries((await d.state()).setlist.map((s) => [s.time, [s.skip, s.notes]]));
+  assert.deepEqual(byTime[16], [true, "finale"]);
+  assert.deepEqual(byTime[4], [false, ""]);
+});
+
+test("S1: a new OpenSet (no settings yet) uses the song keys from the start", async (t) => {
+  const c = await setup(t);
+  await c.cmd({ cmd: "settings", removePlayed: true });
+  assert.equal(JSON.parse(fs.readFileSync(path.join(c.baseDir, "setlist.json"), "utf-8")).keys, true);
+});
+
+test("S1: with 0.6.1 settings, a partial edit keeps the reprise's settings", async (t) => {
+  const baseDir = fs.mkdtempSync(path.join(os.tmpdir(), "openset-keys-"));
+  t.after(() => fs.rmSync(baseDir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(baseDir, "setlist.json"), JSON.stringify({ order: [], skip: ["A"], stopAfter: [], notes: { A: "capo 2" } }));
+  const c = await setup(t, { baseDir });
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: "B", time: 8 }, { name: "A", time: 16 }, { name: "SONG END", time: 24 }] });
+  await c.cmd({ cmd: "setlist", stopAfter: ["B"] });
+  const list = (await c.state()).setlist;
+  assert.deepEqual(list.filter((s) => s.name === "A").map((s) => [s.skip, s.notes]), [[true, "capo 2"], [true, "capo 2"]]);
 });
