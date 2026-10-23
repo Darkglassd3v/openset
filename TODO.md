@@ -117,7 +117,7 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - [x] U6 Computer di riserva aggiornato dalla 0.6.1 e acceso prima che Live caricasse il set: le modifiche alla scaletta copiate dal computer principale venivano rifiutate senza dirlo, e le due scalette restavano diverse. Ora una scaletta intera (ordine, tolti, stop, note) viene accettata; solo una parte, o una scaletta incollata come testo prima che Live abbia i brani (non troverebbe nulla e svuoterebbe la scaletta), resta rifiutata finché la scaletta è per nome.
   - [x] U7 Password: se dopo aver salvato la nuova password qualcosa andava storto nell'avvisare le pagine, la web app diceva «comando non valido» e il log «impossibile impostare la password», ma la password era già cambiata. Ora risponde che è impostata e il log dice cosa non è andato.
   - [x] U8 Velocità: caricare una scaletta salvata ricostruiva la scaletta due volte, e la conversione dei nomi della 0.6.1 confrontava ogni nome con ogni brano. Ora una volta sola e con un indice per nome.
-  - [ ] U9 Semplificazione: la scelta «per chiave o per nome» stava in due punti (`migrate` e `setlistByKey`); ora in uno.
+  - [x] U9 Semplificazione: la scelta «per chiave o per nome» stava in due punti (`migrate` e `setlistByKey`); ora in uno.
   - [ ] U10 Commit `caa0365`: mette insieme più correzioni (tetto della memoria del limitatore, avviso HTTP nella guida, CHANGELOG, password non bloccante, password illeggibile, corse). Già pubblicato sul branch della PR: non riscritto (servirebbe un force push); da qui in avanti un commit per modulo.
 
 ### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)

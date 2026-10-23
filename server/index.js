@@ -338,7 +338,7 @@ function start(opts = {}) {
   function migrate(list) {
     if ((prefs.keys && prefs.measuredKeys) || !list.length) return;
     const { order, skip, stopAfter, notes, keys } = prefs;
-    if (!keys) prefs = { ...prefs, ...S.setlistByKey({ order, skip, stopAfter, notes, keys }, list) };
+    prefs = { ...prefs, ...S.setlistByKey({ order, skip, stopAfter, notes, keys }, list) }; // unchanged if by key
     if (!prefs.measuredKeys) prefs = { ...prefs, ...S.migrateNames({ measured: prefs.measured }, list), measuredKeys: true };
     savePrefs();
     log.info("[setlist] settings from OpenSet 0.6.1 converted song by song (same-name songs kept apart)");
