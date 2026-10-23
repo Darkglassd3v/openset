@@ -46,5 +46,8 @@ test("F5: OSC command lines like AbleSet's, with //sleep, //awaitJump and //if â
     ]
   );
   assert.deepEqual(parseOscLines("//if looping; /loop/escape"), [{ if: "looping", not: false }, { address: "/loop/escape", args: [] }]);
+  // to another program: host:port before the address
+  assert.deepEqual(parseOscLines("192.168.1.20:8000/luci 1"), [{ host: "192.168.1.20", port: 8000, address: "/luci", args: [1] }]);
+  assert.deepEqual(parseOscLines("luci.local:99999/x"), []); // not a port
   assert.deepEqual(parseOscLines("nonsense\n//sleep forever\n//if raining"), []); // ignored, like AbleSet
 });

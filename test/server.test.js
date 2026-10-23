@@ -2859,3 +2859,29 @@ test("F5: canvas images: uploaded to Canvas/Resources, listed and served; nothin
   assert.equal((await fetch(c.url("/canvas-resources/..%2Fsetlist.json"))).status, 404);
   assert.equal((await up("big.png", Buffer.alloc(11 * 1024 * 1024))).status, 413);
 });
+
+test("F5: loop values like AbleSet's, and OSC lines that go out to another program", async (t) => {
+  const c = await setup(t);
+  await c.connect({ ...LIVE, cues: [{ name: "A", time: 0 }, { name: ">Verse", time: 0 }, { name: ">Chorus +LOOPFULL:3", time: 8 }, { name: ">Out", time: 16 }, { name: "B", time: 24 }] });
+  const osc = await udpSocket();
+  t.after(() => osc.close());
+  const got = new Map();
+  osc.on("message", (b) => { for (const m of decode(b)) got.set(m.address, m.args); });
+  await c.at(10, { loop: true, loop_start: 8, loop_length: 8 });
+  sendOsc(c, osc, "/subscribe", [osc.address().port]);
+  await waitFor(() => got.has("/setlist/loopEnabled"), "loop values");
+  assert.deepEqual(got.get("/setlist/loopEnabled"), [1]);
+  assert.deepEqual(got.get("/setlist/loopStart"), [8]);
+  assert.deepEqual(got.get("/setlist/loopEnd"), [16]);
+  assert.deepEqual(got.get("/setlist/activeSectionLoopMode"), ["loopfull"]);
+  assert.deepEqual(got.get("/setlist/activeSectionLoopCount"), [3]);
+
+  // a canvas button for the lights: "host:port/address" goes out over UDP
+  const lights = await udpSocket();
+  t.after(() => lights.close());
+  const seen = [];
+  lights.on("message", (b) => seen.push(...decode(b)));
+  await c.cmd({ cmd: "oscRun", lines: `127.0.0.1:${lights.address().port}/luci/scena 2 "blu"` });
+  await waitFor(() => seen.length, "the OSC message");
+  assert.deepEqual(seen[0], { address: "/luci/scena", args: [2, "blu"] });
+});
