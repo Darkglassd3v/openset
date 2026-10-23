@@ -81,9 +81,17 @@ function installRemoteScript(srcDir, libs) {
   const results = found.map((lib) => installInto(srcDir, lib));
   const done = results.filter((r) => r.status !== "error");
   const errors = results.filter((r) => r.status === "error").map(({ path: p, error }) => ({ path: p, error }));
-  if (!done.length) return results[0];
+  if (!done.length) return { ...results[0], errors };
   const status = ["installed", "updated"].find((st) => done.some((r) => r.status === st)) || "current";
   return { status, path: done[0].path, paths: done.map((r) => r.path), ...(errors.length ? { errors } : {}) };
+}
+
+// one line for the log and the log package: where it went, and where it could not be written
+function installSummary(r) {
+  if (!r) return "-";
+  const parts = [r.paths ? `${r.status} in ${r.paths.join(", ")}` : r.status];
+  for (const e of r.errors || []) parts.push(`cannot write ${e.path} (${e.error})`);
+  return parts.join("; ");
 }
 
 function installInto(srcDir, lib) {
@@ -101,4 +109,4 @@ function installInto(srcDir, lib) {
   }
 }
 
-module.exports = { userLibraries, installRemoteScript };
+module.exports = { userLibraries, installRemoteScript, installSummary };
