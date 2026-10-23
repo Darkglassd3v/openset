@@ -17,8 +17,8 @@ Non verificato su un Mac: comando di diagnosi dato all'utente (lsof + Log.txt).
 Richiesta dell'utente (2026-10-23, prima di andare a dormire): «correggi tutte le cose … FAI TUTTO NON LASCIARE NIENTE IN SOSPESO», piano con `ecc:plan` e `ecc:tdd-workflow`, bug descritti in parole semplici; se qualcosa non va si segna qui «da verificare»; **alla fine spegnere il PC (`systemctl poweroff`) comunque**.
 
 - [x] v0.6.2 — correzioni (sezione «v0.6.2» sotto): PR #9 (merge `d22b983`), tag `v0.6.2`, release https://github.com/Darkglassd3v/openset/releases/tag/v0.6.2 (run 39939293668): 4 zip con la versione, guida dentro, note brevi, 0 artefatti, «Latest»
-- [ ] 1.0.0 — funzioni di AbleSet che mancavano e Node recente dentro i programmi, in un'unica versione (decisione dell'utente, 2026-10-24: «rilasciarle su una 1.0.0 e taggare tutto»); sezione «v1.0.0» sotto, branch `release/v1.0.0`
-- [ ] fine: `/ecc:ck save`, memoria aggiornata; spegnere il PC solo quando anche la sessione «sciclub-donbosco» ha finito (richiesta dell'utente, 2026-10-24)
+- [x] 1.0.0 — funzioni di AbleSet che mancavano e Node recente dentro i programmi, in un'unica versione: PR #10 (merge `cf4d496`), tag `v1.0.0`, release https://github.com/Darkglassd3v/openset/releases/tag/v1.0.0 (run 40010174869): 4 zip con la versione, guida dentro, note brevi, 0 artefatti, «Latest»
+- [x] fine: memoria aggiornata; la sessione «sciclub-donbosco» ha finito (non più attiva); spegnimento del PC (richiesta dell'utente, 2026-10-27: «continua e poi spegni»)
 
 - [x] v0.5.1: PR #2 (merge `d93fe1d`), tag `v0.5.1` pubblicato il 2026-10-24 (la vecchia `release.yml` partita dal tag annullata subito, run 39938930663; l'unico artefatto che aveva caricato, 17,8 MB, cancellato); nessuna release con gli zip (decisione dell'utente: la 0.6.x la sostituisce, e sarebbe apparsa come «ultima»); zip e guida restano in `build/release-0.5.1/`
 - [x] v0.6.0: PR #3 (merge `279f7fa`), 4 zip e guida PDF anche in `build/release-0.6.0/`; release su GitHub dal tag (vedi sotto), CI verde su Windows, macOS e Ubuntu
@@ -160,7 +160,7 @@ Live finto dei test e va nella lista «Da verificare su un computer vero».
   - [x] V21 Canvas: il comando «al rilascio» non partiva se il tocco veniva interrotto (pointercancel)
   - [x] V22-V23 (oscDiff unico in `canvas.js`, usato da pagine e script; valori OSC una volta per aggiornamento) Efficienza: valori OSC calcolati due volte per aggiornamento; lo stesso calcolo «cosa è cambiato» in tre punti
   - [x] V24 (registrato nel report: non riscritti perché già pubblicati) Commit `5ba5088`, `88de48a`, `b5d16e9` senza aggiornamento di `TODO.md` (già pubblicati: non riscritti)
-- [ ] Rilascio 1.0.0: versione, CHANGELOG, guida, README, report TDD (copertura righe 97.25%, rami 93.16%) fatti; revisione corretta; PR #10 con CI verde; merge, tag `v1.0.0` e controllo della release in corso
+- [x] Rilascio 1.0.0: versione, CHANGELOG, guida, README, report TDD (copertura righe 97.25%, rami 93.16%), revisione corretta (24 punti), PR #10 con CI verde, merge `cf4d496`, tag `v1.0.0`, release controllata (zip Windows e Mac aperti: programma con la versione e guida dentro)
 
 ### Da verificare su un computer vero (qui non si può provare)
 - 1.0.0, con Live 11/12 veri (qui il Live è finto): mixer (mute, solo, volume, livelli), registrazione, Remote Script nuovo
