@@ -2067,6 +2067,8 @@ test("C3: commands to Live carry the key the Remote Script sent with its state",
   const sent = c.expectCmd({ cmd: "play" });
   await c.cmd({ cmd: "play" });
   assert.equal((await sent).key, "a".repeat(32));
+  // never published: a program on this computer could read it from /api/state
+  assert.ok(!JSON.stringify(await c.state()).includes("a".repeat(32)));
   await c.at(9); // a state without the key (an older Remote Script) keeps the last one
   const again = c.expectCmd({ cmd: "stop" });
   await c.cmd({ cmd: "stop" });

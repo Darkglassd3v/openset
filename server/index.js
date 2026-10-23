@@ -459,8 +459,9 @@ function start(opts = {}) {
     if (prefs.settings.reEnableAutomation) sendToLive({ cmd: "reEnableAutomation" });
     if (prefs.settings.backToArrangement) sendToLive({ cmd: "backToArrangement" });
   }
+  let liveKey = null; // from the Remote Script's state: it obeys only commands that carry it
   function sendToLive(obj, fromEngine = false) {
-    stateUdp.send(Buffer.from(JSON.stringify(obj)), cfg.livePort, cfg.liveHost);
+    stateUdp.send(Buffer.from(JSON.stringify(liveKey ? { ...obj, key: liveKey } : obj)), cfg.livePort, cfg.liveHost);
     // AbleSet: Re-Enable Automation / Reset Tracks Back to Arrangement on Song Jump
     const { reEnableAutomation, backToArrangement } = prefs.settings;
     if ((obj.cmd === "jump" || obj.cmd === "seek") && (reEnableAutomation || backToArrangement) &&
@@ -486,7 +487,8 @@ function start(opts = {}) {
     const wasConnected = liveState.connected;
     const wasPlaying = liveState.is_playing;
     const prevBeat = liveState.beat;
-    const { type, cues: newCues, ...rest } = msg;
+    const { type, cues: newCues, key, ...rest } = msg;
+    if (typeof key === "string") liveKey = key; // kept out of the published state
     liveState = { ...liveState, ...rest, connected: true };
     if (!wasConnected && prefs.settings.openBrowser === "live") openUi();
     if (!wasConnected)

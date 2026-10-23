@@ -3,7 +3,9 @@
 # Install: copy the "OpenSet" folder into your User Library / Remote Scripts
 # then select "OpenSet" as a Control Surface in Live's Link/MIDI preferences.
 
+import binascii
 import json
+import os
 import re
 import socket
 import time
@@ -79,6 +81,8 @@ class OpenSet(ControlSurface):
         self._clips_sent = None
         self._soloed = []         # tracks soloed for a count-in, unsoloed after it
         self._nudge_ticks = 0     # ticks left with a phase nudge button held
+        # sent only to OpenSet with the state: commands without it (another program) are ignored
+        self._key = binascii.hexlify(os.urandom(16)).decode("ascii")
         self._log("OpenSet script %s started (Live %s)" % (VERSION, self._live_version or "unknown"))
         if not self._cmd_port:
             self._log("OpenSet: port %d busy" % LISTEN_PORT)
@@ -184,6 +188,7 @@ class OpenSet(ControlSurface):
                 "script_version": VERSION,
                 "live_version": self._live_version,
                 "cmd_port": self._cmd_port,
+                "key": self._key,
             }
             key = json.dumps(cues)
             if key != self._cues_sent:
@@ -239,7 +244,11 @@ class OpenSet(ControlSurface):
             except OSError:
                 break
             try:
-                self._handle(json.loads(data.decode("utf-8")))
+                msg = json.loads(data.decode("utf-8"))
+                if not isinstance(msg, dict) or msg.get("key") != self._key:
+                    self._log("OpenSet: a command without OpenSet's key was ignored")
+                    continue
+                self._handle(msg)
             except Exception as e:
                 self._log("OpenSet cmd error: %s" % e)
 
