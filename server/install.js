@@ -94,6 +94,19 @@ function installSummary(r) {
   return parts.join("; ");
 }
 
+// what OpenSet logs at start about the Remote Script, as [level, text]: a failure only as an error.
+// libsKnown: how many User Libraries there are to look for (none on Linux)
+function installLog(r, libsKnown) {
+  const lines = [];
+  if (r.status === "installed" || r.status === "updated")
+    lines.push(["info", `[live] Remote Script ${r.status} in ${r.paths.join(", ")}: restart Live and pick OpenSet as Control Surface`]);
+  else if (r.status === "current") lines.push(["info", `[live] Remote Script current in ${r.paths.join(", ")}`]);
+  else if (r.status === "not-found" && libsKnown)
+    lines.push(["info", "[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder"]);
+  if (r.errors) lines.push(["error", `[live] Remote Script ${installSummary(r)}`]);
+  return lines;
+}
+
 function installInto(srcDir, lib) {
   const target = path.join(lib, "Remote Scripts", "OpenSet");
   try {
@@ -109,4 +122,4 @@ function installInto(srcDir, lib) {
   }
 }
 
-module.exports = { userLibraries, installRemoteScript, installSummary };
+module.exports = { userLibraries, installRemoteScript, installSummary, installLog };

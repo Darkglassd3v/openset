@@ -24,7 +24,7 @@ const { createMeter } = require("./meter");
 const { cuesBetween } = require("./cues");
 const { dataDir, migrateData } = require("./datadir");
 const { parseArgs, openBrowser, liveRunning } = require("./launch");
-const { userLibraries, installRemoteScript, installSummary } = require("./install");
+const { userLibraries, installRemoteScript, installSummary, installLog } = require("./install");
 const { deviceUrls, lanInterfaces, bonjourName, qrSvg } = require("./connect");
 const { matchDevices, pageView, VIEWS } = require("./devices");
 const { searchSongs, setlistText, parseSetlistText } = require("./editor");
@@ -1719,12 +1719,7 @@ if (require.main === module) {
   const args = parseArgs(process.argv.slice(2));
   const libs = userLibraries(process.platform, process.env, os.homedir());
   const install = installRemoteScript(path.join(BASE_DIR, "remote-script", "OpenSet"), libs);
-  if (install.status === "installed" || install.status === "updated")
-    log.info(`[live] Remote Script ${install.status} in ${install.paths.join(", ")}: restart Live and pick OpenSet as Control Surface`);
-  else if (install.status === "not-found" && libs.length)
-    log.info("[live] Live's User Library not found: copy remote-script/OpenSet into its Remote Scripts folder");
-  else if (install.path) log.info(`[live] Remote Script ${install.status} in ${install.path}`);
-  if (install.errors) log.error(`[live] Remote Script ${installSummary(install)}`);
+  for (const [level, text] of installLog(install, libs.length)) log[level](text);
   const openUrl = (url, opts) => openBrowser(url, process.platform, undefined, opts);
   start({
     baseDir: dir,
