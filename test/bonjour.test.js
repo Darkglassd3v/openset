@@ -22,17 +22,17 @@ test("F11: an app browsing for _osc._udp finds OpenSet: PTR, then SRV, TXT (serv
   assert.equal(bonjourAnswer({}, info), null);
 });
 
-test("F11: started, OpenSet announces itself; stopped, it says goodbye (TTL 0) and closes the socket", () => {
+test("F11: started, OpenSet announces itself; stopped, it says goodbye (TTL 0) and closes the socket", async () => {
   const sent = [];
   const fake = new EventEmitter();
-  fake.respond = (r) => sent.push(r);
+  fake.respond = (r, cb) => (sent.push(r), cb && cb());
   fake.destroy = () => (fake.destroyed = true);
   const b = startBonjour({ mdns: fake, info: () => info });
   assert.ok(sent[0].answers.some((a) => a.type === "PTR" && a.data === INSTANCE));
   fake.emit("query", { questions: [{ name: "_osc._udp.local", type: "PTR" }] });
   fake.emit("query", { questions: [{ name: "_airplay._tcp.local", type: "PTR" }] });
   assert.equal(sent.length, 2);
-  b.stop();
+  await b.stop();
   assert.ok(sent.at(-1).answers.every((a) => a.ttl === 0));
   assert.equal(fake.destroyed, true);
   fake.emit("error", new Error("EADDRINUSE")); // a socket error after the end never throws

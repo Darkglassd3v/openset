@@ -154,7 +154,7 @@ Live finto dei test e va nella lista «Da verificare su un computer vero».
   - [ ] V15 Canvas: «Nuovo canvas» prima che l'elenco fosse caricato, o un cambio di nome, poteva sovrascrivere un canvas salvato senza chiedere
   - [ ] V16 (oscDiff in `canvas.js`; server da collegare) Canvas su Wi-Fi lento: un valore saltato restava sbagliato (segnato come mandato anche quando non partiva)
   - [ ] V17 (oscDiff in `canvas.js`; server, script e pagina da collegare) Canvas e script: un valore tolto (variabile azzerata, gruppo tolto) restava in `osc()`
-  - [ ] V18 Bonjour: l'arrivederci alla chiusura probabilmente non partiva (socket chiuso subito dopo)
+  - [x] V18 Bonjour: l'arrivederci alla chiusura probabilmente non partiva (socket chiuso subito dopo)
   - [ ] V19 Script di progetto: `shared()` poteva restituire un valore vecchio o uno rifiutato dal server
   - [ ] V20 Brani a mano: un testo oltre 20000 caratteri veniva rifiutato senza dirlo, a pannello già chiuso
   - [ ] V21 Canvas: il comando «al rilascio» non partiva se il tocco veniva interrotto (pointercancel)

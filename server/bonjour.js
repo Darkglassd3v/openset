@@ -50,12 +50,26 @@ function startBonjour({ mdns, info }) {
   say(everything(null));
   const again = setTimeout(() => say(everything(null)), 1000); // mDNS announces twice
   return {
+    // goodbye (browsers drop OpenSet at once), and the socket closes once it has gone out
     stop() {
       clearTimeout(again);
-      say(everything(0)); // goodbye: browsers drop OpenSet at once
-      try {
-        mdns.destroy();
-      } catch {}
+      return new Promise((resolve) => {
+        let done = false;
+        const end = () => {
+          if (done) return;
+          done = true;
+          try {
+            mdns.destroy();
+          } catch {}
+          resolve();
+        };
+        setTimeout(end, 500); // a network that never answers does not hold OpenSet's exit
+        try {
+          mdns.respond(everything(0), end);
+        } catch {
+          end();
+        }
+      });
     },
   };
 }
