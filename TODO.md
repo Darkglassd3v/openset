@@ -95,6 +95,19 @@ Ogni voce: prima cosa succede in parole semplici, poi il dettaglio tecnico.
   - L'aggiornamento di una password della 0.6 fermava per un attimo OpenSet (calcolo bloccante) mentre suona: ora non blocca.
   - Dopo quell'aggiornamento gli altri iPad potevano vedere comparire il pannello della password o «Password errata» senza motivo.
 - [x] S3 (RED `4df0709`, GREEN) Dalla seconda revisione, Remote Script: se una delle User Library non si può scrivere, OpenSet diceva «installazione fallita» anche se l'altra (quella del Live in uso) era stata aggiornata.
+- [ ] T1 Dalla terza revisione, scalette della 0.6.1 (la conversione va nel modulo `setlist.js`, con i test, una regola sola: ogni scaletta dice se è per nome o per chiave)
+  - Caricando o salvando una scaletta mentre Live non è ancora collegato, una scaletta della 0.6.1 perdeva il suo significato: la ripresa tornava senza «tolto» e senza nota, o al contrario veniva tolta per sbaglio.
+  - Con set lunghi (150 brani) l'assegnazione delle chiavi faceva molti confronti più volte al secondo: ora è proporzionale ai brani.
+  - Un commento descriveva ancora il vecchio comportamento.
+- [ ] T2 Dalla terza revisione, password
+  - Se una password della 0.6 veniva aggiornata proprio mentre dal computer si cambiava la password (o si toglieva un brano suonato), la modifica fatta in quell'istante veniva persa: la password vecchia poteva tornare.
+  - Una password vecchia controllata mentre dal computer la si cambiava sbloccava comunque il dispositivo.
+  - Con una password che OpenSet non sa leggere, gli iPad mandavano la password in chiaro a ogni tentativo (senza mai riuscire), e al primo salvataggio la password originale veniva cancellata dal file. Ora non si manda nulla, la pagina dice di reimpostarla dal computer, e il file resta com'era.
+  - Impostare la password dal computer bloccava ancora OpenSet per un attimo: ora anche quello non blocca (una funzione sola).
+  - Con migliaia di tentativi da indirizzi diversi ogni tentativo diventava lento e la memoria cresceva: ora c'è un tetto.
+  - Se il calcolo per aggiornare una password della 0.6 falliva, l'iPad restava con «Sblocca» disattivato.
+  - Con IPv6 lo sblocco vale in tutta la rete del locale (/64): scelta voluta, perché gli iPad cambiano indirizzo da soli. Su HTTP senza cifratura chi legge il traffico del Wi-Fi può copiare un accesso in ogni caso (anche legandolo all'indirizzo esatto, che sulla stessa rete si può imitare): la guida lo dice e consiglia una rete Wi-Fi propria per la band.
+- [ ] T3 Dalla terza revisione, Remote Script: «Reinstalla il Remote Script» dalla web app e il pacchetto log non mostravano le User Library non scrivibili; se nessuna era scrivibile si vedeva solo il primo errore.
 
 ### v0.7.0 — funzioni di AbleSet che mancavano (branch `release/v0.7.0`)
 Comportamento preso dal manuale di AbleSet (https://ableset.com/docs/), voce per voce.
